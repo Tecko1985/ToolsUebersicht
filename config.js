@@ -1,4 +1,4 @@
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -88,6 +88,20 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.1",
+    groups: [
+      {
+        title: "Nutzergruppen & Massenanlage",
+        items: [
+          "Nutzergruppen anlegen (z.B. 'Vorstand', 'Trainer U15') und Mitglieder per Checkliste zuordnen.",
+          "Tools können jetzt zusätzlich auf bestimmte Gruppen eingeschränkt werden, nicht nur auf 'jeder eingeloggte Nutzer'.",
+          "Nutzer anlegen per Vorname/Nachname statt freiem Nutzernamen — der Nutzername wird automatisch generiert.",
+          "Text-Massenimport: mehrere Nutzer auf einmal anlegen (ein Name pro Zeile)."
+        ]
+      }
+    ]
+  },
   {
     version: "2.0",
     groups: [
