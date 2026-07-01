@@ -516,7 +516,14 @@ function renderToolGrid() {
     container.appendChild(group);
   });
 
-  document.getElementById("uebersicht-empty").style.display = anyVisible ? "none" : "block";
+  const emptyEl = document.getElementById("uebersicht-empty");
+  emptyEl.style.display = anyVisible ? "none" : "block";
+  if (!anyVisible) {
+    document.getElementById("uebersicht-empty-text").textContent = currentUser
+      ? "Aktuell sind keine Tools für dich sichtbar."
+      : "Melde dich an, um deine Tools zu sehen.";
+    document.getElementById("btn-empty-login").style.display = currentUser ? "none" : "inline-block";
+  }
 }
 
 function renderVisibilityList() {
@@ -572,6 +579,7 @@ function setupTabs() {
   document.querySelectorAll("nav button[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
+  document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
 }
 
 function renderAdminPanels() {

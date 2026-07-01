@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=2.6" />
+<link rel="stylesheet" href="style.css?v=2.7" />
 </head>
 <body>
 
@@ -22,7 +22,10 @@
 
   <section class="tab-section active" id="tab-uebersicht">
     <div id="tool-groups"></div>
-    <div class="empty-state" id="uebersicht-empty" style="display:none;">Aktuell sind keine Tools sichtbar.</div>
+    <div class="empty-state" id="uebersicht-empty" style="display:none;">
+      <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
+      <button type="button" class="btn" id="btn-empty-login" style="display:none; margin-top:14px;">Jetzt anmelden</button>
+    </div>
   </section>
 
   <section class="tab-section" id="tab-admin">
@@ -180,7 +183,7 @@
 
 </main>
 
-<script src="config.js?v=2.6"></script>
-<script src="app.js?v=2.6"></script>
+<script src="config.js?v=2.7"></script>
+<script src="app.js?v=2.7"></script>
 </body>
 </html>

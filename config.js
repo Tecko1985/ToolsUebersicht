@@ -1,4 +1,4 @@
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.7";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.7",
+    groups: [
+      {
+        title: "Hinweis bei leerer Übersicht",
+        items: [
+          "Ist niemand angemeldet und dadurch kein Tool sichtbar, erscheint jetzt ein 'Jetzt anmelden'-Button statt einer reinen Leermeldung."
+        ]
+      }
+    ]
+  },
   {
     version: "2.6",
     groups: [
