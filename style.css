@@ -191,6 +191,7 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 .collapsible summary::before { content: "▸ "; }
 .collapsible[open] summary::before { content: "▾ "; }
 .collapsible[open] summary { margin-bottom: 8px; }
+.card.collapsible > summary { font-size: 17px; }
 
 /* ---------- Nutzerverwaltung ---------- */
 

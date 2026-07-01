@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.3";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.3",
+    groups: [
+      {
+        title: "Admin-Tab: Platz sparen",
+        items: [
+          "Alle Bereiche im Admin-Tab (Nutzer, Massenimport, Gruppen, Sichtbarkeit, Versionshistorie) sind jetzt einzeln auf-/zuklappbar und standardmäßig eingeklappt."
+        ]
+      }
+    ]
+  },
   {
     version: "2.2",
     groups: [
