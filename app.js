@@ -133,15 +133,52 @@ function renderUsersList(users) {
     const row = document.createElement("div");
     row.className = "user-row";
     row.innerHTML = `
-      <span class="ur-name">${escapeHtml(u.displayName || u.username)}</span>
-      <span class="muted">(${escapeHtml(u.username)})</span>
-      ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
-      ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
-      ${groupNames.map((n) => `<span class="group-chip">${escapeHtml(n)}</span>`).join("")}
-      <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
+      <div class="ur-main">
+        <span class="ur-name">${escapeHtml(u.displayName || u.username)}</span>
+        <span class="muted">(${escapeHtml(u.username)})</span>
+        ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
+        ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
+        ${groupNames.map((n) => `<span class="group-chip">${escapeHtml(n)}</span>`).join("")}
+        <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
+        <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
+      </div>
+      <div class="ur-groups" data-user-groups-for="${escapeHtml(u.username)}" style="display:none;"></div>
     `;
     container.appendChild(row);
   });
+
+  container.querySelectorAll("[data-toggle-user-groups]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const username = btn.dataset.toggleUserGroups;
+      const panel = btn.closest(".user-row").querySelector("[data-user-groups-for]");
+      const isOpen = panel.style.display !== "none";
+      if (isOpen) {
+        panel.style.display = "none";
+        return;
+      }
+      const user = usersState.find((u) => u.username === username);
+      panel.innerHTML = `
+        <div class="group-picker"></div>
+        <button type="button" class="btn small" data-save-user-groups="${escapeHtml(username)}">Speichern</button>
+      `;
+      renderGroupCheckboxes(panel.querySelector(".group-picker"), user ? user.groupIds : []);
+      panel.style.display = "block";
+      panel.querySelector("[data-save-user-groups]").addEventListener("click", async () => {
+        const desiredGroupIds = getCheckedValues(panel.querySelector(".group-picker"));
+        const errorEl = document.getElementById("users-error");
+        errorEl.style.display = "none";
+        try {
+          await applyUserGroupMembership(username, desiredGroupIds);
+          await loadAndRenderGroups();
+          await loadAndRenderUsers();
+        } catch (e) {
+          errorEl.textContent = e.message;
+          errorEl.style.display = "block";
+        }
+      });
+    });
+  });
+
   container.querySelectorAll("[data-reset-user]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const errorEl = document.getElementById("users-error");
@@ -155,6 +192,20 @@ function renderUsersList(users) {
       }
     });
   });
+}
+
+// Gleicht die Gruppenmitgliedschaft eines Nutzers auf den gewünschten Stand
+// ab, indem nur die tatsächlich geänderten Gruppen einzeln aktualisiert werden.
+async function applyUserGroupMembership(username, desiredGroupIds) {
+  for (const group of groupsState) {
+    const isMember = group.memberUsernames.includes(username);
+    const shouldBeMember = desiredGroupIds.includes(group.id);
+    if (isMember === shouldBeMember) continue;
+    const memberUsernames = shouldBeMember
+      ? [...group.memberUsernames, username]
+      : group.memberUsernames.filter((m) => m !== username);
+    await callWorker("update-group-members", { groupId: group.id, memberUsernames });
+  }
 }
 
 async function loadAndRenderGroups() {
@@ -208,11 +259,66 @@ function renderGroupsList() {
         <span class="gr-name">${escapeHtml(g.name)}</span>
         <span class="muted">${g.memberUsernames.length} Mitglied(er)</span>
         <button type="button" class="btn secondary small" data-toggle-members="${escapeHtml(g.id)}">Mitglieder</button>
+        <button type="button" class="btn secondary small" data-toggle-tools="${escapeHtml(g.id)}">Apps</button>
         <button type="button" class="btn secondary small" data-delete-group="${escapeHtml(g.id)}">Löschen</button>
       </div>
       <div class="gr-members" data-members-for="${escapeHtml(g.id)}" style="display:none;"></div>
+      <div class="gr-members" data-tools-for="${escapeHtml(g.id)}" style="display:none;"></div>
     `;
     container.appendChild(row);
+  });
+
+  container.querySelectorAll("[data-toggle-tools]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const groupId = btn.dataset.toggleTools;
+      const panel = btn.closest(".group-row").querySelector("[data-tools-for]");
+      const isOpen = panel.style.display !== "none";
+      if (isOpen) {
+        panel.style.display = "none";
+        return;
+      }
+      panel.innerHTML = `
+        <div class="group-picker"></div>
+        <button type="button" class="btn small" data-save-group-tools="${escapeHtml(groupId)}">Speichern</button>
+      `;
+      const picker = panel.querySelector(".group-picker");
+      TOOLS.forEach((t) => {
+        const entry = visibilityState[t.id] || {};
+        const checked = (entry.groupIds || []).includes(groupId);
+        const label = document.createElement("label");
+        label.className = "checkbox-label";
+        label.innerHTML = `<input type="checkbox" value="${escapeHtml(t.id)}" ${checked ? "checked" : ""} /> ${t.icon || "🔗"} ${escapeHtml(t.name)}`;
+        picker.appendChild(label);
+      });
+      panel.style.display = "block";
+      panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
+        const selectedToolIds = getCheckedValues(picker);
+        const errorEl = document.getElementById("groups-error");
+        errorEl.style.display = "none";
+        try {
+          const updatedTools = {};
+          TOOLS.forEach((t) => {
+            const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [] };
+            const groupIds = new Set(entry.groupIds || []);
+            const shouldHaveAccess = selectedToolIds.includes(t.id);
+            if (shouldHaveAccess) groupIds.add(groupId); else groupIds.delete(groupId);
+            updatedTools[t.id] = {
+              visible: entry.visible !== false,
+              loginRequired: shouldHaveAccess ? true : !!entry.loginRequired,
+              groupIds: Array.from(groupIds)
+            };
+          });
+          await callWorker("save-visibility", { tools: updatedTools });
+          visibilityState = updatedTools;
+          renderToolGrid();
+          renderVisibilityList();
+          panel.style.display = "none";
+        } catch (e) {
+          errorEl.textContent = e.message;
+          errorEl.style.display = "block";
+        }
+      });
+    });
   });
 
   container.querySelectorAll("[data-toggle-members]").forEach((btn) => {

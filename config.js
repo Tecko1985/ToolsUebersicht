@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -88,6 +88,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.2",
+    groups: [
+      {
+        title: "Einfachere Gruppen-Zuweisung",
+        items: [
+          "Nutzerliste: Gruppen-Zugehörigkeit direkt in der Nutzerzeile über Checkboxen zuweisen, ohne den Umweg über die Gruppenverwaltung.",
+          "Gruppenverwaltung: neuer 'Apps'-Bereich je Gruppe legt direkt fest, welche Tools diese Gruppe nutzen darf."
+        ]
+      }
+    ]
+  },
   {
     version: "2.1",
     groups: [

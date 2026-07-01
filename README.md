@@ -20,10 +20,10 @@ Seit v2.0 gibt es echte Nutzerkonten statt eines geteilten PIN:
 
 Solange `admin-worker.js` noch nicht mit den unten genannten Secrets deployed ist, läuft die Seite im Fallback-Modus: alle Tools aus `config.js` gelten als öffentlich sichtbar, der Admin-Tab meldet einen Verbindungsfehler.
 
-## Nutzergruppen (seit v2.1)
+## Nutzergruppen (seit v2.1, Zuweisung vereinfacht in v2.2)
 
-- Im Admin-Tab unter "Gruppen" können Gruppen angelegt werden (z.B. "Vorstand", "Trainer U15"). Mitglieder werden über eine Checkbox-Liste je Gruppe zugeordnet.
-- Bei der Sichtbarkeits-Einstellung eines Tools kann zusätzlich zu "nur eingeloggt" eine oder mehrere Gruppen ausgewählt werden — dann sehen nur Mitglieder dieser Gruppen (plus Admins, die immer alles sehen) das Tool. Leer gelassen gilt weiterhin "jeder eingeloggte Nutzer".
+- Im Admin-Tab unter "Gruppen" können Gruppen angelegt werden (z.B. "Vorstand", "Trainer U15"). Mitglieder werden über eine Checkbox-Liste je Gruppe zugeordnet ("Mitglieder"-Button) — alternativ direkt in der Nutzerliste über den "Gruppen"-Button je Nutzer.
+- Bei der Sichtbarkeits-Einstellung eines Tools kann zusätzlich zu "nur eingeloggt" eine oder mehrere Gruppen ausgewählt werden — dann sehen nur Mitglieder dieser Gruppen (plus Admins, die immer alles sehen) das Tool. Leer gelassen gilt weiterhin "jeder eingeloggte Nutzer". Alternativ direkt über den "Apps"-Button je Gruppe: dort legt man fest, welche Tools diese Gruppe nutzen darf (setzt bei Bedarf automatisch "nur eingeloggt").
 - Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt, damit kein Tool versehentlich für alle unsichtbar bleibt.
 - Nutzer anlegen erfolgt jetzt über Vorname/Nachname — der Nutzername (z.B. `max.muster`) wird automatisch generiert, bei Namensgleichheit mit angehängter Zahl (`max.muster2`).
 - Für größere Listen gibt es einen Text-Massenimport (Admin-Tab → "Nutzer-Massenimport"): ein Name pro Zeile im Format `Vorname Nachname`, alle Personen werden mit `mustSetPassword` angelegt und durchlaufen beim ersten Login den normalen Erstlogin-Flow.

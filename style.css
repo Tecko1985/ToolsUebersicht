@@ -181,15 +181,14 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 /* ---------- Nutzerverwaltung ---------- */
 
 .user-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   margin-bottom: 8px;
 }
-.user-row .ur-name { font-weight: 700; flex: 1; }
+.ur-main { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.ur-main .ur-name { font-weight: 700; flex: 1; }
+.ur-groups { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
 
 .badge-warning {
   display: inline-flex;
