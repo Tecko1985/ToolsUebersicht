@@ -1,4 +1,4 @@
-const APP_VERSION = "2.7";
+const APP_VERSION = "1.0";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -97,129 +97,52 @@ const TOOLS = [
 
 const APP_CHANGELOG = [
   {
-    version: "2.7",
-    groups: [
-      {
-        title: "Hinweis bei leerer Übersicht",
-        items: [
-          "Ist niemand angemeldet und dadurch kein Tool sichtbar, erscheint jetzt ein 'Jetzt anmelden'-Button statt einer reinen Leermeldung."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.6",
-    groups: [
-      {
-        title: "Sichere Passwörter",
-        items: [
-          "Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- und Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten (gilt für Admin-Anlage und Erstlogin)."
-        ]
-      },
-      {
-        title: "Einfacherer Erststart",
-        items: [
-          "Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) öffnet sich direkt das Formular zum Anlegen des Admin-Kontos."
-        ]
-      },
-      {
-        title: "Gruppen-Sichtbarkeit",
-        items: [
-          "Entfernt man im \"Apps\"-Bereich einer Gruppe das letzte Häkchen eines Tools, wird das Tool wieder versteckt, statt für alle eingeloggten Nutzer sichtbar zu werden.",
-          "Eine neu angelegte Gruppe erscheint sofort in der Sichtbarkeits-Verwaltung."
-        ]
-      },
-      {
-        title: "Sicherheit",
-        items: [
-          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in den Bearbeiten-Formularen korrekt maskiert."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.5",
-    groups: [
-      {
-        title: "Nutzer bearbeiten",
-        items: [
-          "Nutzerliste: neuer 'Bearbeiten'-Button je Nutzer zum Ändern von Vorname, Nachname und Admin-Status. Dem letzten Admin-Account kann der Admin-Status nicht entzogen werden."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.4",
-    groups: [
-      {
-        title: "Nutzer löschen",
-        items: [
-          "Nutzerliste: neuer 'Löschen'-Button je Nutzer (mit Sicherheitsabfrage), entfernt den Nutzer auch aus allen Gruppen. Der letzte Admin-Account kann nicht gelöscht werden."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.3",
-    groups: [
-      {
-        title: "Admin-Tab: Platz sparen",
-        items: [
-          "Alle Bereiche im Admin-Tab (Nutzer, Massenimport, Gruppen, Sichtbarkeit, Versionshistorie) sind jetzt einzeln auf-/zuklappbar und standardmäßig eingeklappt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.2",
-    groups: [
-      {
-        title: "Einfachere Gruppen-Zuweisung",
-        items: [
-          "Nutzerliste: Gruppen-Zugehörigkeit direkt in der Nutzerzeile über Checkboxen zuweisen, ohne den Umweg über die Gruppenverwaltung.",
-          "Gruppenverwaltung: neuer 'Apps'-Bereich je Gruppe legt direkt fest, welche Tools diese Gruppe nutzen darf."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.1",
-    groups: [
-      {
-        title: "Nutzergruppen & Massenanlage",
-        items: [
-          "Nutzergruppen anlegen (z.B. 'Vorstand', 'Trainer U15') und Mitglieder per Checkliste zuordnen.",
-          "Tools können jetzt zusätzlich auf bestimmte Gruppen eingeschränkt werden, nicht nur auf 'jeder eingeloggte Nutzer'.",
-          "Nutzer anlegen per Vorname/Nachname statt freiem Nutzernamen — der Nutzername wird automatisch generiert.",
-          "Text-Massenimport: mehrere Nutzer auf einmal anlegen (ein Name pro Zeile)."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.0",
-    groups: [
-      {
-        title: "Echtes Nutzer-Login",
-        items: [
-          "Der geteilte Admin-PIN entfällt komplett — stattdessen echte Nutzerkonten mit Nutzername/Passwort.",
-          "Admin legt Nutzernamen an, jeder Nutzer vergibt sich beim ersten Login selbst ein Passwort.",
-          "Pro Tool zusätzlich einstellbar: 'nur für eingeloggte Nutzer' sichtbar (statt nur öffentlich/versteckt).",
-          "Admin-Bereich: Nutzerverwaltung (anlegen, Passwort zurücksetzen) direkt im Admin-Tab.",
-          "Anmeldung bleibt bis zu 30 Tage im Browser gespeichert."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
       {
-        title: "Erste Version",
+        title: "Tools-Übersicht",
         items: [
-          "Kartenraster mit Links zu allen Tools.",
-          "Admin-Tab: Sichtbarkeit jedes Links per PIN gesteuert ein-/ausblendbar.",
-          "Sichtbarkeits-Konfiguration wird zentral über Nextcloud gespeichert und gilt für alle Besucher."
+          "Kartenraster mit Links zu allen Vereins- und privaten Tools, gruppiert nach Kategorie.",
+          "Ist niemand angemeldet und dadurch kein Tool sichtbar, erscheint ein Hinweis mit 'Jetzt anmelden'-Button statt einer reinen Leermeldung."
+        ]
+      },
+      {
+        title: "Login & Nutzerverwaltung",
+        items: [
+          "Echte Nutzerkonten statt geteiltem PIN: Admin legt per Vorname/Nachname an (Nutzername wird automatisch generiert), jeder Nutzer vergibt sich selbst ein Passwort beim ersten Login.",
+          "Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- und Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten.",
+          "Passwörter werden mit PBKDF2 (Web Crypto, 100.000 Iterationen, Salt pro Nutzer) gehasht, niemals im Klartext gespeichert. Sessions sind signierte Bearer-Token (30 Tage gültig).",
+          "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
+          "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
+          "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt."
+        ]
+      },
+      {
+        title: "Nutzergruppen & Sichtbarkeit",
+        items: [
+          "Gruppen anlegen (z.B. 'Vorstand', 'Trainer U15'), Mitglieder per Checkbox zuordnen — direkt in der Nutzerliste oder in der Gruppenverwaltung.",
+          "Pro Tool einstellbar: versteckt, öffentlich, für alle eingeloggten Nutzer, oder nur für bestimmte Gruppen. Der 'Apps'-Bereich je Gruppe legt alternativ direkt fest, welche Tools diese Gruppe nutzen darf.",
+          "Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden. Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt."
+        ]
+      },
+      {
+        title: "WebDAV-Login-Gateway",
+        items: [
+          "Andere Vereins-Apps (Materialliste, TrainerCheckliste, Spielertool), die ihre Daten per WebDAV in derselben Nextcloud speichern, nutzen dieselbe Anmeldung: kein eigenes WebDAV-Formular und kein App-Passwort mehr in diesen Apps nötig.",
+          "Der Worker prüft Login-Token und Gruppen-Sichtbarkeit, bevor er serverseitig mit den Vereins-Zugangsdaten auf die jeweilige Nextcloud-Datei zugreift — der Client erhält nie ein Passwort zu Gesicht."
+        ]
+      },
+      {
+        title: "Admin-Tab & Bedienung",
+        items: [
+          "Alle Admin-Bereiche (Nutzer, Massenimport, Gruppen, Sichtbarkeit, Versionshistorie) sind einzeln auf-/zuklappbar und standardmäßig eingeklappt.",
+          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in allen Formularen korrekt maskiert."
+        ]
+      },
+      {
+        title: "Daten & Speicherung",
+        items: [
+          "Sichtbarkeits-Konfiguration und Nutzerkonten werden zentral über Nextcloud gespeichert (zwei JSON-Dateien) und gelten für alle Besucher, ohne zusätzliches Worker-Secret für Gruppen."
         ]
       }
     ]
