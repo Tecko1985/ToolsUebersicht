@@ -1,8 +1,5 @@
 // Worker-URL des admin-worker.js (siehe README für Deploy-Anleitung).
-// Solange dort keine echte *.workers.dev-URL steht, läuft die Seite im
-// Fallback-Modus: alle Tools aus config.js gelten als sichtbar, der
-// Admin-Tab meldet "Worker nicht erreichbar".
-const WORKER_URL = "https://toolsuebersicht.michel-brunner.workers.dev";
+const WORKER_URL = "https://landingpage.michel-brunner.workers.dev";
 
 let visibilityState = {};
 let currentPin = null;
