@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🧰 Tools-Übersicht</title>
+<meta name="theme-color" content="#1a56a0" />
+<link rel="stylesheet" href="style.css?v=1.0" />
+</head>
+<body>
+
+<header>
+  <h1>🧰 Tools-Übersicht <span class="version-badge" id="version-badge"></span></h1>
+</header>
+
+<nav>
+  <button data-tab="uebersicht" class="active">Übersicht</button>
+  <button data-tab="admin">Admin</button>
+</nav>
+
+<main>
+
+  <section class="tab-section active" id="tab-uebersicht">
+    <div id="tool-groups"></div>
+    <div class="empty-state" id="uebersicht-empty" style="display:none;">Aktuell sind keine Tools sichtbar.</div>
+  </section>
+
+  <section class="tab-section" id="tab-admin">
+
+    <!-- PIN-Gate -->
+    <div class="pin-gate" id="admin-pin-gate">
+      <div class="card">
+        <h2>Admin-Bereich</h2>
+        <p class="muted" style="margin-bottom:14px;">PIN eingeben, um festzulegen, welche Links auf der Übersicht sichtbar sind.</p>
+        <form id="pin-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>PIN</label>
+            <input type="password" id="admin-pin-input" autocomplete="off" required />
+          </div>
+          <p class="muted" id="pin-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-pin-submit">Entsperren</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Sichtbarkeits-Verwaltung (erst nach korrekter PIN sichtbar) -->
+    <div class="card" id="admin-visibility-panel" style="display:none;">
+      <h2>Sichtbarkeit der Tools</h2>
+      <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht.</p>
+      <div id="visibility-list"></div>
+      <p class="muted" id="admin-save-error" style="display:none; color:#c0392b; margin:10px 0;"></p>
+      <p class="muted" id="admin-save-success" style="display:none; color:#2d8c4e; margin:10px 0;">Gespeichert.</p>
+      <div class="btn-row" style="margin-top:14px;">
+        <button type="button" class="btn" id="btn-save-visibility">Speichern</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Versionshistorie <span class="version-badge" id="version-badge-2"></span></h3>
+      <div id="changelog-list"></div>
+    </div>
+
+  </section>
+
+</main>
+
+<script src="config.js?v=1.0"></script>
+<script src="app.js?v=1.0"></script>
+</body>
+</html>
