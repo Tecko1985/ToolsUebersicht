@@ -65,9 +65,7 @@ export default {
     const requiredSecrets = ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD", "NEXTCLOUD_NUTZER_URL", "SESSION_SECRET"];
     const missingSecrets = requiredSecrets.filter((name) => !env[name]);
     if (missingSecrets.length > 0) {
-      // TEMPORÄR (Debugging fehlender Secrets): zeigt nur Variablennamen, keine Werte.
-      const seenKeys = Object.keys(env).filter((k) => typeof env[k] === "string");
-      return json({ error: "Worker-Secrets nicht konfiguriert: " + missingSecrets.join(", "), debugSeenKeys: seenKeys }, 500, corsHeaders);
+      return json({ error: "Worker-Secrets nicht konfiguriert: " + missingSecrets.join(", ") }, 500, corsHeaders);
     }
 
     const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
