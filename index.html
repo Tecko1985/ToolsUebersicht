@@ -51,31 +51,44 @@
       </div>
     </div>
 
-    <!-- Login-Gate -->
+    <!-- Login-Gate: Schritt 1, nur Nutzername -->
     <div class="pin-gate" id="admin-login-gate">
       <div class="card">
         <h2>Anmelden</h2>
         <p class="muted" style="margin-bottom:14px;">Mit Nutzername anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
         <form id="login-form">
-          <div class="form-field" style="margin-bottom:10px;">
+          <div class="form-field" style="margin-bottom:14px;">
             <label>Nutzername</label>
             <input type="text" id="login-username" autocomplete="username" required />
           </div>
-          <div class="form-field" style="margin-bottom:14px;">
-            <label>Passwort</label>
-            <input type="password" id="login-password" autocomplete="current-password" required />
-          </div>
           <p class="muted" id="login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
-          <button type="submit" class="btn" id="btn-login-submit">Anmelden</button>
+          <button type="submit" class="btn" id="btn-login-submit">Weiter</button>
         </form>
       </div>
     </div>
 
-    <!-- Erstlogin: Passwort festlegen -->
+    <!-- Login-Gate: Schritt 2, Passwort für bestehenden Account -->
+    <div class="pin-gate" id="login-password-panel" style="display:none;">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Passwort für <strong id="login-password-username"></strong> eingeben.</p>
+        <form id="login-password-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </div>
+          <p class="muted" id="login-password-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-password-submit">Anmelden</button>
+          <button type="button" class="btn secondary" id="btn-login-back">Zurück</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Erstlogin: neuen Account anlegen und mit Passwort verknüpfen -->
     <div class="pin-gate" id="first-login-panel" style="display:none;">
       <div class="card">
-        <h2>Passwort festlegen</h2>
-        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> wurde noch kein Passwort gesetzt. Bitte jetzt eines wählen.</p>
+        <h2>Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit Nutzername und diesem Passwort anmelden.</p>
         <form id="first-login-form">
           <div class="form-field" style="margin-bottom:14px;">
             <label>Neues Passwort</label>
@@ -83,7 +96,8 @@
             <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
           </div>
           <p class="muted" id="first-login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
-          <button type="submit" class="btn" id="btn-first-login-submit">Passwort festlegen</button>
+          <button type="submit" class="btn" id="btn-first-login-submit">Konto anlegen &amp; Passwort verknüpfen</button>
+          <button type="button" class="btn secondary" id="btn-first-login-back">Zurück</button>
         </form>
       </div>
     </div>
@@ -165,7 +179,7 @@
     <!-- Sichtbarkeits-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-visibility-panel" style="display:none;">
       <summary>Sichtbarkeit der Tools</summary>
-      <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht. Gruppen schränken "nur eingeloggt" weiter ein — leer gelassen sehen alle eingeloggten Nutzer das Tool.</p>
+      <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht. Pro Tool wählbar: versteckt, öffentlich (auch ohne Login), für alle eingeloggten Nutzer, oder nur für bestimmte Gruppen.</p>
       <div id="visibility-list"></div>
       <p class="muted" id="admin-save-error" style="display:none; color:#c0392b; margin:10px 0;"></p>
       <p class="muted" id="admin-save-success" style="display:none; color:#2d8c4e; margin:10px 0;">Gespeichert.</p>

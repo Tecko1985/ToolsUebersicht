@@ -772,7 +772,7 @@ async function getSession(request, env) {
 // ---------- sonstige Helfer ----------
 
 function normalizeUsername(raw) {
-  return String(raw || "").trim().toLowerCase();
+  return String(raw || "").trim().toLowerCase().replace(/\s+/g, ".");
 }
 
 function bytesToBase64(bytes) {

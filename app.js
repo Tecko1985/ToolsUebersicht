@@ -7,6 +7,7 @@ let bootstrapAvailable = false;
 let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds } oder null
 let pendingFirstLoginUsername = null;
+let pendingLoginUsername = null;
 let groupsState = [];
 let usersState = [];
 
@@ -104,6 +105,8 @@ async function bootstrapAdmin(username, password) {
 function logout() {
   currentToken = null;
   currentUser = null;
+  pendingFirstLoginUsername = null;
+  pendingLoginUsername = null;
   storeToken(null);
   renderAdminPanels();
   renderToolGrid();
@@ -526,13 +529,20 @@ function renderToolGrid() {
   }
 }
 
+// Leitet aus visible/loginRequired/groupIds den anzuzeigenden Sichtbarkeits-Modus ab.
+function visibilityMode(entry) {
+  if (entry.visible === false) return "hidden";
+  if (!entry.loginRequired) return "public";
+  if ((entry.groupIds || []).length === 0) return "loggedin";
+  return "groups";
+}
+
 function renderVisibilityList() {
   const container = document.getElementById("visibility-list");
   container.innerHTML = "";
   TOOLS.forEach((t) => {
     const entry = visibilityState[t.id] || {};
-    const visible = entry.visible !== false;
-    const loginRequired = !!entry.loginRequired;
+    const mode = visibilityMode(entry);
     const groupIds = entry.groupIds || [];
     const row = document.createElement("div");
     row.className = "visibility-row";
@@ -541,13 +551,21 @@ function renderVisibilityList() {
       <span class="tool-icon">${t.icon || "🔗"}</span>
       <span class="vr-name">${escapeHtml(t.name)}</span>
       <span class="vr-category">${escapeHtml(t.category)}</span>
-      <label class="checkbox-label" style="margin-right:6px;"><input type="checkbox" data-field="visible" ${visible ? "checked" : ""} /> sichtbar</label>
-      <label class="checkbox-label"><input type="checkbox" data-field="loginRequired" ${loginRequired ? "checked" : ""} /> nur eingeloggt</label>
-      <div class="group-picker" data-field="groupIds"></div>
+      <select data-field="mode" class="form-select">
+        <option value="hidden" ${mode === "hidden" ? "selected" : ""}>Versteckt</option>
+        <option value="public" ${mode === "public" ? "selected" : ""}>Öffentlich</option>
+        <option value="loggedin" ${mode === "loggedin" ? "selected" : ""}>Alle eingeloggten Nutzer</option>
+        <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
+      </select>
+      <div class="group-picker" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};"></div>
     `;
     container.appendChild(row);
 
     renderGroupCheckboxes(row.querySelector('[data-field="groupIds"]'), groupIds);
+
+    row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
+      row.querySelector('[data-field="groupIds"]').style.display = e.target.value === "groups" ? "block" : "none";
+    });
   });
 }
 
@@ -585,6 +603,7 @@ function setupTabs() {
 function renderAdminPanels() {
   document.getElementById("admin-bootstrap-panel").style.display = "none";
   document.getElementById("admin-login-gate").style.display = "none";
+  document.getElementById("login-password-panel").style.display = "none";
   document.getElementById("first-login-panel").style.display = "none";
   document.getElementById("admin-logged-in-panel").style.display = "none";
   document.getElementById("admin-users-panel").style.display = "none";
@@ -606,6 +625,11 @@ function renderAdminPanels() {
   if (pendingFirstLoginUsername) {
     document.getElementById("first-login-username").textContent = pendingFirstLoginUsername;
     document.getElementById("first-login-panel").style.display = "block";
+    return;
+  }
+  if (pendingLoginUsername) {
+    document.getElementById("login-password-username").textContent = pendingLoginUsername;
+    document.getElementById("login-password-panel").style.display = "block";
     return;
   }
   if (bootstrapAvailable) {
@@ -661,11 +685,32 @@ function setupAuthForms() {
   document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const username = document.getElementById("login-username").value;
-    const password = document.getElementById("login-password").value;
     const errorEl = document.getElementById("login-error");
     errorEl.style.display = "none";
+    pendingFirstLoginUsername = null;
+    pendingLoginUsername = null;
     try {
-      const result = await login(username, password);
+      const result = await login(username, "");
+      if (result.needsPasswordSetup) {
+        renderAdminPanels();
+      } else {
+        await afterAuthChange();
+      }
+    } catch (err) {
+      // Konto existiert bereits und hat ein Passwort -> Passwort-Schritt zeigen statt Fehler.
+      pendingLoginUsername = username;
+      renderAdminPanels();
+    }
+  });
+
+  document.getElementById("login-password-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const password = document.getElementById("login-password").value;
+    const errorEl = document.getElementById("login-password-error");
+    errorEl.style.display = "none";
+    try {
+      const result = await login(pendingLoginUsername, password);
+      pendingLoginUsername = null;
       if (result.needsPasswordSetup) {
         renderAdminPanels();
       } else {
@@ -675,6 +720,20 @@ function setupAuthForms() {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
     }
+  });
+
+  document.getElementById("btn-login-back").addEventListener("click", () => {
+    pendingLoginUsername = null;
+    document.getElementById("login-password").value = "";
+    document.getElementById("login-username").value = "";
+    renderAdminPanels();
+  });
+
+  document.getElementById("btn-first-login-back").addEventListener("click", () => {
+    pendingFirstLoginUsername = null;
+    document.getElementById("first-login-password").value = "";
+    document.getElementById("login-username").value = "";
+    renderAdminPanels();
   });
 
   document.getElementById("first-login-form").addEventListener("submit", async (e) => {
@@ -782,9 +841,10 @@ function setupAuthForms() {
     const tools = {};
     document.querySelectorAll("#visibility-list .visibility-row").forEach((row) => {
       const id = row.dataset.toolId;
-      const visible = row.querySelector('[data-field="visible"]').checked;
-      const groupIds = getCheckedValues(row.querySelector('[data-field="groupIds"]'));
-      const loginRequired = row.querySelector('[data-field="loginRequired"]').checked || groupIds.length > 0;
+      const mode = row.querySelector('[data-field="mode"]').value;
+      const groupIds = mode === "groups" ? getCheckedValues(row.querySelector('[data-field="groupIds"]')) : [];
+      const visible = mode !== "hidden";
+      const loginRequired = mode === "loggedin" || mode === "groups";
       tools[id] = { visible, loginRequired, groupIds };
     });
     const errorEl = document.getElementById("admin-save-error");
