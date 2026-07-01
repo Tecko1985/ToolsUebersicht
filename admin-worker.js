@@ -138,7 +138,8 @@ async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
   const username = normalizeUsername(body.username);
   const password = String(body.password || "");
   if (!USERNAME_RE.test(username)) return json({ error: "Ungültiger Nutzername (3-32 Zeichen, a-z 0-9 . _ -)" }, 400, corsHeaders);
-  if (password.length < 8) return json({ error: "Passwort muss mindestens 8 Zeichen haben" }, 400, corsHeaders);
+  const pwError = validatePasswordStrength(password);
+  if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   if (Object.keys(usersDoc.users).length > 0) {
@@ -184,7 +185,8 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
 async function handleSetPassword(body, env, authHeader, corsHeaders) {
   const username = normalizeUsername(body.username);
   const password = String(body.password || "");
-  if (password.length < 8) return json({ error: "Passwort muss mindestens 8 Zeichen haben" }, 400, corsHeaders);
+  const pwError = validatePasswordStrength(password);
+  if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = usersDoc.users[username];
@@ -594,6 +596,19 @@ function uniqueGroupId(baseId, existingIds) {
     candidate = `${baseId}-${suffix}`;
   }
   return candidate;
+}
+
+// ---------- Passwort-Regeln ----------
+
+// Identisch im Frontend (app.js) dupliziert, da der Worker separat deployed wird.
+// min. 12 Zeichen, Groß- und Kleinbuchstabe, dazu eine Zahl ODER ein Sonderzeichen.
+function validatePasswordStrength(password) {
+  const pw = String(password == null ? "" : password);
+  if (pw.length < 12) return "Passwort muss mindestens 12 Zeichen lang sein.";
+  if (!/[A-ZÄÖÜ]/.test(pw)) return "Passwort braucht mindestens einen Großbuchstaben.";
+  if (!/[a-zäöüß]/.test(pw)) return "Passwort braucht mindestens einen Kleinbuchstaben.";
+  if (!/[0-9]/.test(pw) && !/[^A-Za-z0-9ÄÖÜäöüß]/.test(pw)) return "Passwort braucht mindestens eine Zahl oder ein Sonderzeichen.";
+  return null;
 }
 
 // ---------- Passwort-Hashing (PBKDF2, Web Crypto, keine Abhängigkeiten) ----------

@@ -310,6 +310,36 @@ function getCheckedValues(container) {
   return Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map((cb) => cb.value);
 }
 
+// Berechnet den neuen Sichtbarkeits-Zustand aller Tools, nachdem im "Apps"-Bereich
+// einer Gruppe die Tool-Auswahl geändert wurde. Zentrale Regel: Verliert ein Tool
+// durch diese Änderung seine letzte Gruppe, wird es wieder versteckt (visible:false),
+// statt für alle eingeloggten Nutzer sichtbar zu werden. Tools, die dieser Gruppe nie
+// zugeordnet waren (öffentlich oder bewusst "alle Eingeloggten"), bleiben unverändert.
+function computeGroupToolVisibility(groupId, selectedToolIds) {
+  const updated = {};
+  TOOLS.forEach((t) => {
+    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [] };
+    const wasInGroup = (entry.groupIds || []).includes(groupId);
+    const groupIds = new Set(entry.groupIds || []);
+    const shouldHaveAccess = selectedToolIds.includes(t.id);
+    if (shouldHaveAccess) groupIds.add(groupId); else groupIds.delete(groupId);
+    const remaining = Array.from(groupIds);
+
+    let visible = entry.visible !== false;
+    let loginRequired = !!entry.loginRequired;
+    if (shouldHaveAccess) {
+      // Zugriff für diese Gruppe: Tool ist sichtbar und nur für Eingeloggte.
+      visible = true;
+      loginRequired = true;
+    } else if (wasInGroup && remaining.length === 0) {
+      // Diese Gruppe war die letzte mit Zugriff — Tool wieder verstecken.
+      visible = false;
+    }
+    updated[t.id] = { visible, loginRequired, groupIds: remaining };
+  });
+  return updated;
+}
+
 function renderGroupsList() {
   const container = document.getElementById("groups-list");
   container.innerHTML = "";
@@ -363,18 +393,7 @@ function renderGroupsList() {
         const errorEl = document.getElementById("groups-error");
         errorEl.style.display = "none";
         try {
-          const updatedTools = {};
-          TOOLS.forEach((t) => {
-            const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [] };
-            const groupIds = new Set(entry.groupIds || []);
-            const shouldHaveAccess = selectedToolIds.includes(t.id);
-            if (shouldHaveAccess) groupIds.add(groupId); else groupIds.delete(groupId);
-            updatedTools[t.id] = {
-              visible: entry.visible !== false,
-              loginRequired: shouldHaveAccess ? true : !!entry.loginRequired,
-              groupIds: Array.from(groupIds)
-            };
-          });
+          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds);
           await callWorker("save-visibility", { tools: updatedTools });
           visibilityState = updatedTools;
           renderToolGrid();
@@ -540,14 +559,18 @@ function renderChangelog() {
   `).join("");
 }
 
+function activateTab(name) {
+  document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".tab-section").forEach((s) => s.classList.remove("active"));
+  const btn = document.querySelector('nav button[data-tab="' + name + '"]');
+  if (btn) btn.classList.add("active");
+  const section = document.getElementById("tab-" + name);
+  if (section) section.classList.add("active");
+}
+
 function setupTabs() {
   document.querySelectorAll("nav button[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".tab-section").forEach((s) => s.classList.remove("active"));
-      btn.classList.add("active");
-      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    });
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 }
 
@@ -594,6 +617,17 @@ async function afterAuthChange() {
   }
 }
 
+// Passwort-Regeln (identisch im admin-worker.js dupliziert, da separates Deployment):
+// min. 12 Zeichen, Groß- und Kleinbuchstabe, dazu eine Zahl ODER ein Sonderzeichen.
+function validatePasswordStrength(password) {
+  const pw = String(password == null ? "" : password);
+  if (pw.length < 12) return "Passwort muss mindestens 12 Zeichen lang sein.";
+  if (!/[A-ZÄÖÜ]/.test(pw)) return "Passwort braucht mindestens einen Großbuchstaben.";
+  if (!/[a-zäöüß]/.test(pw)) return "Passwort braucht mindestens einen Kleinbuchstaben.";
+  if (!/[0-9]/.test(pw) && !/[^A-Za-z0-9ÄÖÜäöüß]/.test(pw)) return "Passwort braucht mindestens eine Zahl oder ein Sonderzeichen.";
+  return null;
+}
+
 function setupAuthForms() {
   document.getElementById("bootstrap-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -601,6 +635,12 @@ function setupAuthForms() {
     const password = document.getElementById("bootstrap-password").value;
     const errorEl = document.getElementById("bootstrap-error");
     errorEl.style.display = "none";
+    const pwError = validatePasswordStrength(password);
+    if (pwError) {
+      errorEl.textContent = pwError;
+      errorEl.style.display = "block";
+      return;
+    }
     try {
       await bootstrapAdmin(username, password);
       await afterAuthChange();
@@ -634,6 +674,12 @@ function setupAuthForms() {
     const password = document.getElementById("first-login-password").value;
     const errorEl = document.getElementById("first-login-error");
     errorEl.style.display = "none";
+    const pwError = validatePasswordStrength(password);
+    if (pwError) {
+      errorEl.textContent = pwError;
+      errorEl.style.display = "block";
+      return;
+    }
     try {
       await setFirstPassword(pendingFirstLoginUsername, password);
       await afterAuthChange();
@@ -681,6 +727,7 @@ function setupAuthForms() {
       await callWorker("create-group", { name });
       document.getElementById("new-group-name").value = "";
       await loadAndRenderGroups();
+      renderVisibilityList();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
@@ -749,9 +796,12 @@ function setupAuthForms() {
 }
 
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function init() {
@@ -773,6 +823,12 @@ async function init() {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
+  }
+
+  // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den
+  // Admin-Tab springen, wo das "Admin-Konto einrichten"-Formular wartet.
+  if (bootstrapAvailable && !currentUser) {
+    activateTab("admin");
   }
 }
 

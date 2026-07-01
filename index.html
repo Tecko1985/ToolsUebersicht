@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=2.5" />
+<link rel="stylesheet" href="style.css?v=2.6" />
 </head>
 <body>
 
@@ -38,8 +38,9 @@
             <input type="text" id="bootstrap-username" autocomplete="username" required />
           </div>
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Passwort (mind. 8 Zeichen)</label>
-            <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="8" />
+            <label>Passwort</label>
+            <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
           </div>
           <p class="muted" id="bootstrap-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
           <button type="submit" class="btn" id="btn-bootstrap-submit">Admin-Konto anlegen</button>
@@ -74,8 +75,9 @@
         <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> wurde noch kein Passwort gesetzt. Bitte jetzt eines wählen.</p>
         <form id="first-login-form">
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Neues Passwort (mind. 8 Zeichen)</label>
-            <input type="password" id="first-login-password" autocomplete="new-password" required minlength="8" />
+            <label>Neues Passwort</label>
+            <input type="password" id="first-login-password" autocomplete="new-password" required minlength="12" />
+            <small class="muted" style="display:block; margin-top:6px;">Mind. 12 Zeichen, Groß- und Kleinbuchstabe sowie eine Zahl oder ein Sonderzeichen.</small>
           </div>
           <p class="muted" id="first-login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
           <button type="submit" class="btn" id="btn-first-login-submit">Passwort festlegen</button>
@@ -178,7 +180,7 @@
 
 </main>
 
-<script src="config.js?v=2.5"></script>
-<script src="app.js?v=2.5"></script>
+<script src="config.js?v=2.6"></script>
+<script src="app.js?v=2.6"></script>
 </body>
 </html>

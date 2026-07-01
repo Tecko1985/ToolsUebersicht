@@ -1,4 +1,4 @@
-const APP_VERSION = "2.5";
+const APP_VERSION = "2.6";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,36 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.6",
+    groups: [
+      {
+        title: "Sichere Passwörter",
+        items: [
+          "Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- und Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten (gilt für Admin-Anlage und Erstlogin)."
+        ]
+      },
+      {
+        title: "Einfacherer Erststart",
+        items: [
+          "Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) öffnet sich direkt das Formular zum Anlegen des Admin-Kontos."
+        ]
+      },
+      {
+        title: "Gruppen-Sichtbarkeit",
+        items: [
+          "Entfernt man im \"Apps\"-Bereich einer Gruppe das letzte Häkchen eines Tools, wird das Tool wieder versteckt, statt für alle eingeloggten Nutzer sichtbar zu werden.",
+          "Eine neu angelegte Gruppe erscheint sofort in der Sichtbarkeits-Verwaltung."
+        ]
+      },
+      {
+        title: "Sicherheit",
+        items: [
+          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in den Bearbeiten-Formularen korrekt maskiert."
+        ]
+      }
+    ]
+  },
   {
     version: "2.5",
     groups: [
