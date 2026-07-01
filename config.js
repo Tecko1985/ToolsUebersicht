@@ -33,7 +33,7 @@ const TOOLS = [
     id: "sc1911-anmeldung",
     name: "Trainerversammlung-Anmeldung",
     description: "Digitales Anmeldesystem für Trainerversammlungen beim 1. SC 1911 Heiligenstadt.",
-    url: "https://tecko1985.github.io/sc1911-anmeldung/",
+    url: "https://tecko1985.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
     category: "Verein"
   },
