@@ -42,11 +42,27 @@
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
 //   POST { action: "save-visibility", tools } (admin)            -> ersetzt sichtbarkeit.json, tools[id] = {visible, loginRequired, groupIds}
+//   POST { action: "dav-load", app } + Authorization: Bearer       -> { data } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden)
+//   POST { action: "dav-save", app, data } + Authorization: Bearer -> { ok:true } (schreibt die App-Datendatei)
+//     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
 
 const ALLOWED_ORIGINS = [
-  "http://localhost:8770",
+  "http://localhost:8767", // Materialliste (Dev-Server)
+  "http://localhost:8768", // TrainerCheckliste (Dev-Server)
+  "http://localhost:8770", // ToolsUebersicht (Dev-Server)
+  "http://localhost:8771", // Spielertool (Dev-Server)
   "https://tecko1985.github.io"
 ];
+
+// Apps, die ihre Daten über das Gateway (Action dav-load/dav-save) in Nextcloud
+// speichern. Key = Tool-id (wie in config.js/sichtbarkeit.json), Wert = volle
+// WebDAV-URL der Datendatei. Pfade sind nicht geheim (stehen bereits in den
+// öffentlichen App-Repos); geheim sind nur Konto + Passwort (Worker-Secrets).
+const DAV_APPS = {
+  "materialliste":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/06_Zeugwart/Materiallisten/materialdaten.json",
+  "trainercheckliste": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerCheckin/trainercheckin.json",
+  "spielertool-test":  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spieler_Bewertung/spielerdaten.json"
+};
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
 const SALT_BYTES = 16;
@@ -126,6 +142,10 @@ export default {
         return handleDeleteGroup(request, body, env, authHeader, corsHeaders);
       case "save-visibility":
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
+      case "dav-load":
+        return handleDavLoad(request, body, env, authHeader, corsHeaders);
+      case "dav-save":
+        return handleDavSave(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -501,6 +521,64 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
   }
 
   return json({ tools: newConfig.tools }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: WebDAV-Gateway für die Apps ----------
+
+// Eine App darf ihre Daten lesen/schreiben, wenn der eingeloggte Nutzer das
+// zugehörige Tool in der Übersicht sehen darf. Repliziert die Client-Logik
+// isVisibleToUser (app.js) serverseitig — der Client ist umgehbar.
+async function userMayAccessTool(app, session, env, authHeader) {
+  if (session.isAdmin) return true; // Admin darf immer (spart Nextcloud-Reads)
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = (config.tools || {})[app];
+  if (!entry || entry.visible === false) return false; // versteckt/unkonfiguriert -> nur Admin
+  if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
+  const gids = Array.isArray(entry.groupIds) ? entry.groupIds : [];
+  if (gids.length === 0) return true;                  // "alle eingeloggten Nutzer"
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const userGroupIds = getUserGroupIds(usersDoc, session.username);
+  return gids.some((g) => userGroupIds.includes(g));
+}
+
+async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const app = String(body.app || "");
+  const url = DAV_APPS[app];
+  if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const data = await readJson(url, authHeader, null);
+  return json({ data }, 200, corsHeaders);
+}
+
+async function handleDavSave(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const app = String(body.app || "");
+  const url = DAV_APPS[app];
+  if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+
+  if (body.data == null || typeof body.data !== "object") {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  try {
+    await writeJson(url, authHeader, body.data);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
