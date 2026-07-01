@@ -62,8 +62,10 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    if (!env.NEXTCLOUD_URL || !env.NEXTCLOUD_USERNAME || !env.NEXTCLOUD_PASSWORD || !env.NEXTCLOUD_NUTZER_URL || !env.SESSION_SECRET) {
-      return json({ error: "Worker-Secrets nicht konfiguriert" }, 500, corsHeaders);
+    const requiredSecrets = ["NEXTCLOUD_URL", "NEXTCLOUD_USERNAME", "NEXTCLOUD_PASSWORD", "NEXTCLOUD_NUTZER_URL", "SESSION_SECRET"];
+    const missingSecrets = requiredSecrets.filter((name) => !env[name]);
+    if (missingSecrets.length > 0) {
+      return json({ error: "Worker-Secrets nicht konfiguriert: " + missingSecrets.join(", ") }, 500, corsHeaders);
     }
 
     const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
