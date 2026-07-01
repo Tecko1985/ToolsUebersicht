@@ -1,33 +1,50 @@
-// Cloudflare Worker: liefert/speichert die Sichtbarkeits-Konfiguration der
-// Tools-Übersicht in Nextcloud. Nicht Teil des Pages-Deployments — separat
-// bei Cloudflare deployen.
-// Deployment: dash.cloudflare.com -> Workers & Pages -> Create Worker ->
-// diesen Code einfügen -> Deploy.
-// Worker-Name z.B. "toolsuebersicht" (URL: toolsuebersicht.<subdomain>.workers.dev)
-// -> die tatsächliche URL danach in app.js als WORKER_URL eintragen.
+// Cloudflare Worker: Login/Session + Sichtbarkeits-Konfiguration der
+// Tools-Übersicht, beide gegen Nextcloud gespiegelt. Nicht Teil des
+// Pages-Deployments — separat bei Cloudflare deployen.
+// Deployment: dash.cloudflare.com -> Workers & Pages -> Worker "landingpage"
+// -> diesen Code einfügen -> Deploy (URL bleibt https://landingpage.<subdomain>.workers.dev,
+// bereits als WORKER_URL in app.js eingetragen).
 //
 // NACH dem Deploy folgende Worker-Secrets setzen
-// (Workers -> toolsuebersicht -> Settings -> Variables -> Add secret):
-//   NEXTCLOUD_URL       = https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/sichtbarkeit.json
-//   NEXTCLOUD_USERNAME  = admin
-//   NEXTCLOUD_PASSWORD  = <App-Passwort aus Nextcloud>
-//   ADMIN_PIN           = <frei wählbare PIN für den Admin-Tab>
+// (Workers -> landingpage -> Settings -> Variables -> Add secret):
+//   NEXTCLOUD_URL         = https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/sichtbarkeit.json
+//   NEXTCLOUD_NUTZER_URL  = https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/nutzer.json
+//   NEXTCLOUD_USERNAME    = admin
+//   NEXTCLOUD_PASSWORD    = <App-Passwort aus Nextcloud>
+//   SESSION_SECRET         = <zufällige lange Zeichenkette, einmalig generiert>
+// Das alte Secret ADMIN_PIN wird nicht mehr benötigt und kann gelöscht werden.
 //
-// Der Worker schreibt keine Zugangsdaten/PIN in den Code — alles kommt
-// ausschließlich aus den Worker-Secrets (verschlüsselt, nicht im Repo sichtbar).
+// BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
+// Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
+// Admin-Tab automatisch ein "Admin-Konto einrichten"-Formular. Dort einmal
+// Nutzername + Passwort wählen — danach ist dieser Weg dauerhaft gesperrt
+// (die Aktion "bootstrap-admin" antwortet ab dann mit 403).
 //
-// API:
-//   GET               -> { tools: {...} } ohne Auth (unkritische Daten, nur welche
-//                         Links sichtbar sind). Fehlt die Datei noch, wird sie mit
-//                         "alle sichtbar" initialisiert.
-//   POST { pin }              -> prüft nur die PIN, gibt bei Erfolg { tools } zurück
-//   POST { pin, tools }       -> prüft die PIN, schreibt tools nach Nextcloud,
-//                                 gibt bei Erfolg { tools } zurück, sonst 401
+// Passwörter werden mit PBKDF2-HMAC-SHA256 gehasht (Web-Crypto, keine
+// Abhängigkeiten), Sessions sind zustandslose HMAC-signierte Bearer-Token
+// (30 Tage gültig) — kein KV/D1 nötig.
+//
+// API (POST-Body: { action, ... } außer beim einfachen GET):
+//   GET                                   -> { tools, bootstrapAvailable } ohne Auth
+//   POST { action: "bootstrap-admin", username, password }   -> nur wenn noch keine Nutzer existieren
+//   POST { action: "login", username, password }             -> { token, username, isAdmin } | { needsPasswordSetup: true } | 401
+//   POST { action: "set-password", username, password }      -> nur falls mustSetPassword=true beim Nutzer
+//   POST { action: "me" } + Authorization: Bearer <token>     -> { username, isAdmin }
+//   POST { action: "create-user", username, isAdmin } (admin) -> legt Nutzer mit mustSetPassword=true an
+//   POST { action: "list-users" } (admin)                      -> Liste ohne Passwort-Hashes
+//   POST { action: "reset-password", username } (admin)        -> löscht Hash, mustSetPassword=true
+//   POST { action: "save-visibility", tools } (admin)          -> ersetzt sichtbarkeit.json
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8770",
   "https://tecko1985.github.io"
 ];
+
+const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
+const SALT_BYTES = 16;
+const HASH_BITS = 256;
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 Tage
+const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 
 export default {
   async fetch(request, env) {
@@ -37,7 +54,7 @@ export default {
     const corsHeaders = {
       "Access-Control-Allow-Origin": allowOrigin,
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Access-Control-Max-Age": "86400"
     };
 
@@ -45,15 +62,16 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    if (!env.NEXTCLOUD_URL || !env.NEXTCLOUD_USERNAME || !env.NEXTCLOUD_PASSWORD || !env.ADMIN_PIN) {
+    if (!env.NEXTCLOUD_URL || !env.NEXTCLOUD_USERNAME || !env.NEXTCLOUD_PASSWORD || !env.NEXTCLOUD_NUTZER_URL || !env.SESSION_SECRET) {
       return json({ error: "Worker-Secrets nicht konfiguriert" }, 500, corsHeaders);
     }
 
     const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
 
     if (request.method === "GET") {
-      const data = await readConfig(env.NEXTCLOUD_URL, authHeader);
-      return json({ tools: data.tools }, 200, corsHeaders);
+      const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+      const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+      return json({ tools: config.tools, bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
     }
 
     if (request.method !== "POST") {
@@ -67,44 +85,324 @@ export default {
       return json({ error: "Ungültiges JSON" }, 400, corsHeaders);
     }
 
-    if (body.pin !== env.ADMIN_PIN) {
-      return json({ error: "Falsche PIN" }, 401, corsHeaders);
+    switch (body.action) {
+      case "bootstrap-admin":
+        return handleBootstrapAdmin(body, env, authHeader, corsHeaders);
+      case "login":
+        return handleLogin(body, env, authHeader, corsHeaders);
+      case "set-password":
+        return handleSetPassword(body, env, authHeader, corsHeaders);
+      case "me":
+        return handleMe(request, env, corsHeaders);
+      case "create-user":
+        return handleCreateUser(request, body, env, authHeader, corsHeaders);
+      case "list-users":
+        return handleListUsers(request, env, authHeader, corsHeaders);
+      case "reset-password":
+        return handleResetPassword(request, body, env, authHeader, corsHeaders);
+      case "save-visibility":
+        return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
+      default:
+        return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
-
-    // Nur PIN-Verifikation, kein Schreiben
-    if (!body.tools || typeof body.tools !== "object") {
-      const data = await readConfig(env.NEXTCLOUD_URL, authHeader);
-      return json({ tools: data.tools }, 200, corsHeaders);
-    }
-
-    const newConfig = { version: 1, tools: body.tools };
-    try {
-      const putResp = await fetch(env.NEXTCLOUD_URL, {
-        method: "PUT",
-        headers: { Authorization: authHeader, "Content-Type": "application/json" },
-        body: JSON.stringify(newConfig, null, 2)
-      });
-      if (!putResp.ok) throw new Error(`Nextcloud PUT ${putResp.status}`);
-    } catch (e) {
-      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
-    }
-
-    return json({ tools: newConfig.tools }, 200, corsHeaders);
   }
 };
 
-async function readConfig(nextcloudUrl, authHeader) {
+// ---------- Aktionen ----------
+
+async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
+  const username = normalizeUsername(body.username);
+  const password = String(body.password || "");
+  if (!USERNAME_RE.test(username)) return json({ error: "Ungültiger Nutzername (3-32 Zeichen, a-z 0-9 . _ -)" }, 400, corsHeaders);
+  if (password.length < 8) return json({ error: "Passwort muss mindestens 8 Zeichen haben" }, 400, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  if (Object.keys(usersDoc.users).length > 0) {
+    return json({ error: "Bootstrap bereits abgeschlossen" }, 403, corsHeaders);
+  }
+
+  const { hash, salt, iterations } = await hashNewPassword(password);
+  const now = new Date().toISOString();
+  usersDoc.users[username] = {
+    username, passwordHash: hash, salt, iterations,
+    isAdmin: true, mustSetPassword: false,
+    createdAt: now, passwordSetAt: now
+  };
+
   try {
-    const resp = await fetch(nextcloudUrl, { method: "GET", headers: { Authorization: authHeader } });
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  const token = await signToken(makeSessionPayload(username, true), env.SESSION_SECRET);
+  return json({ token, username, isAdmin: true }, 200, corsHeaders);
+}
+
+async function handleLogin(body, env, authHeader, corsHeaders) {
+  const username = normalizeUsername(body.username);
+  const password = String(body.password || "");
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  const user = usersDoc.users[username];
+
+  if (!user) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
+  if (user.mustSetPassword || !user.passwordHash) {
+    return json({ needsPasswordSetup: true }, 200, corsHeaders);
+  }
+
+  const ok = await verifyPassword(password, user.salt, user.iterations, user.passwordHash);
+  if (!ok) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
+
+  const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
+  return json({ token, username: user.username, isAdmin: !!user.isAdmin }, 200, corsHeaders);
+}
+
+async function handleSetPassword(body, env, authHeader, corsHeaders) {
+  const username = normalizeUsername(body.username);
+  const password = String(body.password || "");
+  if (password.length < 8) return json({ error: "Passwort muss mindestens 8 Zeichen haben" }, 400, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  const user = usersDoc.users[username];
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+  if (!user.mustSetPassword) return json({ error: "Passwort wurde bereits gesetzt" }, 409, corsHeaders);
+
+  const { hash, salt, iterations } = await hashNewPassword(password);
+  user.passwordHash = hash;
+  user.salt = salt;
+  user.iterations = iterations;
+  user.mustSetPassword = false;
+  user.passwordSetAt = new Date().toISOString();
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
+  return json({ token, username: user.username, isAdmin: !!user.isAdmin }, 200, corsHeaders);
+}
+
+async function handleMe(request, env, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  return json({ username: session.username, isAdmin: !!session.isAdmin }, 200, corsHeaders);
+}
+
+async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  if (!USERNAME_RE.test(username)) return json({ error: "Ungültiger Nutzername (3-32 Zeichen, a-z 0-9 . _ -)" }, 400, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  if (usersDoc.users[username]) return json({ error: "Nutzername bereits vergeben" }, 409, corsHeaders);
+
+  usersDoc.users[username] = {
+    username, passwordHash: null, salt: null, iterations: null,
+    isAdmin: !!body.isAdmin, mustSetPassword: true,
+    createdAt: new Date().toISOString(), passwordSetAt: null
+  };
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ username, mustSetPassword: true }, 201, corsHeaders);
+}
+
+async function handleListUsers(request, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  const users = Object.values(usersDoc.users).map((u) => ({
+    username: u.username,
+    isAdmin: !!u.isAdmin,
+    mustSetPassword: !!u.mustSetPassword,
+    createdAt: u.createdAt
+  }));
+  return json({ users }, 200, corsHeaders);
+}
+
+async function handleResetPassword(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, { version: 1, users: {} });
+  const user = usersDoc.users[username];
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  user.passwordHash = null;
+  user.salt = null;
+  user.iterations = null;
+  user.mustSetPassword = true;
+  user.passwordSetAt = null;
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ username, mustSetPassword: true }, 200, corsHeaders);
+}
+
+async function handleSaveVisibility(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  if (!body.tools || typeof body.tools !== "object") {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  const newConfig = { version: 1, tools: body.tools };
+  try {
+    await writeJson(env.NEXTCLOUD_URL, authHeader, newConfig);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ tools: newConfig.tools }, 200, corsHeaders);
+}
+
+// ---------- Nextcloud-JSON-Helfer ----------
+
+async function readJson(url, authHeader, fallback) {
+  try {
+    const resp = await fetch(url, { method: "GET", headers: { Authorization: authHeader } });
     if (resp.ok) {
       const text = await resp.text();
       if (text.trim()) {
         const parsed = JSON.parse(text);
-        if (parsed && typeof parsed.tools === "object") return parsed;
+        if (parsed && typeof parsed === "object") return parsed;
       }
     }
   } catch (_) { /* Datei existiert noch nicht */ }
-  return { version: 1, tools: {} };
+  return fallback;
+}
+
+async function writeJson(url, authHeader, data) {
+  const resp = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: authHeader, "Content-Type": "application/json" },
+    body: JSON.stringify(data, null, 2)
+  });
+  if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
+}
+
+// ---------- Passwort-Hashing (PBKDF2, Web Crypto, keine Abhängigkeiten) ----------
+
+async function deriveHashBits(password, saltBytes, iterations) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: saltBytes, iterations, hash: "SHA-256" },
+    keyMaterial,
+    HASH_BITS
+  );
+  return new Uint8Array(bits);
+}
+
+async function hashNewPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  const hashBytes = await deriveHashBits(password, salt, PBKDF2_ITERATIONS);
+  return { hash: bytesToBase64(hashBytes), salt: bytesToBase64(salt), iterations: PBKDF2_ITERATIONS };
+}
+
+async function verifyPassword(password, saltB64, iterations, expectedHashB64) {
+  const salt = base64ToBytes(saltB64);
+  const hashBytes = await deriveHashBits(password, salt, iterations);
+  return timingSafeEqual(bytesToBase64(hashBytes), expectedHashB64);
+}
+
+function timingSafeEqual(aB64, bB64) {
+  const a = base64ToBytes(aB64);
+  const b = base64ToBytes(bB64);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+// ---------- Session-Token (HMAC-signiert, zustandslos) ----------
+
+function makeSessionPayload(username, isAdmin) {
+  const iat = Math.floor(Date.now() / 1000);
+  return { username, isAdmin: !!isAdmin, iat, exp: iat + SESSION_TTL_SECONDS };
+}
+
+async function signToken(payload, secret) {
+  const enc = new TextEncoder();
+  const payloadB64 = bytesToBase64Url(enc.encode(JSON.stringify(payload)));
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(payloadB64));
+  return payloadB64 + "." + bytesToBase64Url(new Uint8Array(sig));
+}
+
+async function verifyToken(token, secret) {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [payloadB64, sigB64] = parts;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
+  let valid;
+  try {
+    valid = await crypto.subtle.verify("HMAC", key, base64UrlToBytes(sigB64), enc.encode(payloadB64));
+  } catch (_) {
+    return null;
+  }
+  if (!valid) return null;
+  let payload;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payloadB64)));
+  } catch (_) {
+    return null;
+  }
+  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
+  return payload;
+}
+
+async function getSession(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  return await verifyToken(match[1], env.SESSION_SECRET);
+}
+
+// ---------- sonstige Helfer ----------
+
+function normalizeUsername(raw) {
+  return String(raw || "").trim().toLowerCase();
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  bytes.forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary);
+}
+
+function base64ToBytes(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function bytesToBase64Url(bytes) {
+  return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlToBytes(b64url) {
+  let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  return base64ToBytes(b64);
 }
 
 function json(obj, status, corsHeaders) {

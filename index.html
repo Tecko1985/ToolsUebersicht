@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.0" />
+<link rel="stylesheet" href="style.css?v=2.0" />
 </head>
 <body>
 
@@ -27,23 +27,90 @@
 
   <section class="tab-section" id="tab-admin">
 
-    <!-- PIN-Gate -->
-    <div class="pin-gate" id="admin-pin-gate">
+    <!-- Bootstrap: nur sichtbar, solange noch kein Nutzer existiert -->
+    <div class="pin-gate" id="admin-bootstrap-panel" style="display:none;">
       <div class="card">
-        <h2>Admin-Bereich</h2>
-        <p class="muted" style="margin-bottom:14px;">PIN eingeben, um festzulegen, welche Links auf der Übersicht sichtbar sind.</p>
-        <form id="pin-form">
-          <div class="form-field" style="margin-bottom:14px;">
-            <label>PIN</label>
-            <input type="password" id="admin-pin-input" autocomplete="off" required />
+        <h2>Admin-Konto einrichten</h2>
+        <p class="muted" style="margin-bottom:14px;">Es existiert noch kein Nutzerkonto. Hier einmalig das erste Admin-Konto anlegen.</p>
+        <form id="bootstrap-form">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label>Nutzername</label>
+            <input type="text" id="bootstrap-username" autocomplete="username" required />
           </div>
-          <p class="muted" id="pin-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
-          <button type="submit" class="btn" id="btn-pin-submit">Entsperren</button>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort (mind. 8 Zeichen)</label>
+            <input type="password" id="bootstrap-password" autocomplete="new-password" required minlength="8" />
+          </div>
+          <p class="muted" id="bootstrap-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-bootstrap-submit">Admin-Konto anlegen</button>
         </form>
       </div>
     </div>
 
-    <!-- Sichtbarkeits-Verwaltung (erst nach korrekter PIN sichtbar) -->
+    <!-- Login-Gate -->
+    <div class="pin-gate" id="admin-login-gate">
+      <div class="card">
+        <h2>Anmelden</h2>
+        <p class="muted" style="margin-bottom:14px;">Mit Nutzername anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
+        <form id="login-form">
+          <div class="form-field" style="margin-bottom:10px;">
+            <label>Nutzername</label>
+            <input type="text" id="login-username" autocomplete="username" required />
+          </div>
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Passwort</label>
+            <input type="password" id="login-password" autocomplete="current-password" required />
+          </div>
+          <p class="muted" id="login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-login-submit">Anmelden</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Erstlogin: Passwort festlegen -->
+    <div class="pin-gate" id="first-login-panel" style="display:none;">
+      <div class="card">
+        <h2>Passwort festlegen</h2>
+        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> wurde noch kein Passwort gesetzt. Bitte jetzt eines wählen.</p>
+        <form id="first-login-form">
+          <div class="form-field" style="margin-bottom:14px;">
+            <label>Neues Passwort (mind. 8 Zeichen)</label>
+            <input type="password" id="first-login-password" autocomplete="new-password" required minlength="8" />
+          </div>
+          <p class="muted" id="first-login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
+          <button type="submit" class="btn" id="btn-first-login-submit">Passwort festlegen</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Eingeloggt (jeder Nutzer) -->
+    <div class="card" id="admin-logged-in-panel" style="display:none;">
+      <div class="detail-header">
+        <h2 style="margin-bottom:0;">Eingeloggt als <span id="logged-in-username"></span></h2>
+        <button type="button" class="btn secondary small" id="btn-logout">Abmelden</button>
+      </div>
+    </div>
+
+    <!-- Nutzerverwaltung (nur Admin) -->
+    <div class="card" id="admin-users-panel" style="display:none;">
+      <h2>Nutzer</h2>
+      <div id="users-list"></div>
+      <form id="create-user-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
+        <div class="form-field">
+          <label>Neuer Nutzername</label>
+          <input type="text" id="new-user-username" required />
+        </div>
+        <div class="form-field">
+          <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" id="new-user-is-admin" /> Admin-Rechte</label>
+        </div>
+        <div class="form-field">
+          <button type="submit" class="btn small">Anlegen</button>
+        </div>
+      </form>
+      <p class="muted" id="users-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    </div>
+
+    <!-- Sichtbarkeits-Verwaltung (nur Admin) -->
     <div class="card" id="admin-visibility-panel" style="display:none;">
       <h2>Sichtbarkeit der Tools</h2>
       <p class="muted" style="margin-bottom:14px;">Änderungen gelten sofort für alle Besucher der Übersicht.</p>
@@ -64,7 +131,7 @@
 
 </main>
 
-<script src="config.js?v=1.0"></script>
-<script src="app.js?v=1.0.1"></script>
+<script src="config.js?v=2.0"></script>
+<script src="app.js?v=2.0"></script>
 </body>
 </html>

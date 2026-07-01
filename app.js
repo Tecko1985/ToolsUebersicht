@@ -1,12 +1,16 @@
 // Worker-URL des admin-worker.js (siehe README für Deploy-Anleitung).
 const WORKER_URL = "https://landingpage.michel-brunner.workers.dev";
+const TOKEN_STORAGE_KEY = "tu_session_token";
 
 let visibilityState = {};
-let currentPin = null;
+let bootstrapAvailable = false;
+let currentToken = null;
+let currentUser = null; // { username, isAdmin } oder null
+let pendingFirstLoginUsername = null;
 
 function defaultVisibility() {
   const map = {};
-  TOOLS.forEach((t) => { map[t.id] = { visible: true }; });
+  TOOLS.forEach((t) => { map[t.id] = { visible: true, loginRequired: false }; });
   return map;
 }
 
@@ -14,34 +18,142 @@ async function fetchVisibility() {
   try {
     const resp = await fetch(WORKER_URL, { method: "GET" });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
-    if (data && data.tools) return data.tools;
+    return await resp.json();
   } catch (e) {
     console.warn("Sichtbarkeits-Konfiguration nicht erreichbar, zeige alle Tools als sichtbar:", e);
+    return null;
   }
-  return null;
 }
 
-// action "verify" prüft nur die PIN (tools bleibt weg), action "save" schreibt tools.
-async function callAdminWorker(pin, tools) {
+async function callWorker(action, payload) {
   let resp;
   try {
+    const headers = { "Content-Type": "application/json" };
+    if (currentToken) headers["Authorization"] = "Bearer " + currentToken;
     resp = await fetch(WORKER_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tools ? { pin, tools } : { pin })
+      headers,
+      body: JSON.stringify({ action, ...payload })
     });
   } catch (e) {
     throw new Error("Worker nicht erreichbar (noch nicht deployed?). Siehe README.");
   }
-  if (resp.status === 401) throw new Error("Falsche PIN.");
-  if (!resp.ok) throw new Error("Worker-Fehler (HTTP " + resp.status + ")");
-  return resp.json();
+  let data = null;
+  try { data = await resp.json(); } catch (_) { /* kein JSON-Body */ }
+  if (!resp.ok) {
+    throw new Error((data && data.error) || ("Worker-Fehler (HTTP " + resp.status + ")"));
+  }
+  return data;
 }
 
-function isVisible(toolId) {
+function loadStoredToken() {
+  try { return localStorage.getItem(TOKEN_STORAGE_KEY); } catch (_) { return null; }
+}
+
+function storeToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch (_) { /* localStorage nicht verfügbar */ }
+}
+
+async function checkSession() {
+  const token = loadStoredToken();
+  if (!token) return;
+  currentToken = token;
+  try {
+    const data = await callWorker("me", {});
+    currentUser = { username: data.username, isAdmin: !!data.isAdmin };
+  } catch (e) {
+    currentToken = null;
+    currentUser = null;
+    storeToken(null);
+  }
+}
+
+async function login(username, password) {
+  const data = await callWorker("login", { username, password });
+  if (data.needsPasswordSetup) {
+    pendingFirstLoginUsername = username;
+    return { needsPasswordSetup: true };
+  }
+  currentToken = data.token;
+  currentUser = { username: data.username, isAdmin: !!data.isAdmin };
+  storeToken(currentToken);
+  return { success: true };
+}
+
+async function setFirstPassword(username, password) {
+  const data = await callWorker("set-password", { username, password });
+  currentToken = data.token;
+  currentUser = { username: data.username, isAdmin: !!data.isAdmin };
+  storeToken(currentToken);
+  pendingFirstLoginUsername = null;
+}
+
+async function bootstrapAdmin(username, password) {
+  const data = await callWorker("bootstrap-admin", { username, password });
+  currentToken = data.token;
+  currentUser = { username: data.username, isAdmin: !!data.isAdmin };
+  storeToken(currentToken);
+  bootstrapAvailable = false;
+}
+
+function logout() {
+  currentToken = null;
+  currentUser = null;
+  storeToken(null);
+  renderAdminPanels();
+  renderToolGrid();
+}
+
+async function loadAndRenderUsers() {
+  const errorEl = document.getElementById("users-error");
+  errorEl.style.display = "none";
+  try {
+    const data = await callWorker("list-users", {});
+    renderUsersList(data.users);
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderUsersList(users) {
+  const container = document.getElementById("users-list");
+  container.innerHTML = "";
+  users.forEach((u) => {
+    const row = document.createElement("div");
+    row.className = "user-row";
+    row.innerHTML = `
+      <span class="ur-name">${escapeHtml(u.username)}</span>
+      ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
+      ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
+      <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll("[data-reset-user]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const errorEl = document.getElementById("users-error");
+      errorEl.style.display = "none";
+      try {
+        await callWorker("reset-password", { username: btn.dataset.resetUser });
+        await loadAndRenderUsers();
+      } catch (e) {
+        errorEl.textContent = e.message;
+        errorEl.style.display = "block";
+      }
+    });
+  });
+}
+
+function isVisibleToUser(toolId, isLoggedIn) {
   const entry = visibilityState[toolId];
-  return !entry || entry.visible !== false;
+  const visible = !entry || entry.visible !== false;
+  if (!visible) return false;
+  if (entry && entry.loginRequired) return isLoggedIn;
+  return true;
 }
 
 function renderToolGrid() {
@@ -52,7 +164,7 @@ function renderToolGrid() {
   let anyVisible = false;
 
   categories.forEach((category) => {
-    const toolsInCategory = TOOLS.filter((t) => t.category === category && isVisible(t.id));
+    const toolsInCategory = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, !!currentUser));
     if (toolsInCategory.length === 0) return;
     anyVisible = true;
 
@@ -87,13 +199,18 @@ function renderVisibilityList() {
   const container = document.getElementById("visibility-list");
   container.innerHTML = "";
   TOOLS.forEach((t) => {
-    const row = document.createElement("label");
+    const entry = visibilityState[t.id] || {};
+    const visible = entry.visible !== false;
+    const loginRequired = !!entry.loginRequired;
+    const row = document.createElement("div");
     row.className = "visibility-row";
+    row.dataset.toolId = t.id;
     row.innerHTML = `
       <span class="tool-icon">${t.icon || "🔗"}</span>
       <span class="vr-name">${escapeHtml(t.name)}</span>
       <span class="vr-category">${escapeHtml(t.category)}</span>
-      <input type="checkbox" data-tool-id="${t.id}" ${isVisible(t.id) ? "checked" : ""} />
+      <label class="checkbox-label" style="margin-right:6px;"><input type="checkbox" data-field="visible" ${visible ? "checked" : ""} /> sichtbar</label>
+      <label class="checkbox-label"><input type="checkbox" data-field="loginRequired" ${loginRequired ? "checked" : ""} /> nur eingeloggt</label>
     `;
     container.appendChild(row);
   });
@@ -125,19 +242,108 @@ function setupTabs() {
   });
 }
 
-function setupPinForm() {
-  document.getElementById("pin-form").addEventListener("submit", async (e) => {
+function renderAdminPanels() {
+  document.getElementById("admin-bootstrap-panel").style.display = "none";
+  document.getElementById("admin-login-gate").style.display = "none";
+  document.getElementById("first-login-panel").style.display = "none";
+  document.getElementById("admin-logged-in-panel").style.display = "none";
+  document.getElementById("admin-users-panel").style.display = "none";
+  document.getElementById("admin-visibility-panel").style.display = "none";
+
+  if (currentUser) {
+    document.getElementById("logged-in-username").textContent = currentUser.username;
+    document.getElementById("admin-logged-in-panel").style.display = "block";
+    if (currentUser.isAdmin) {
+      document.getElementById("admin-users-panel").style.display = "block";
+      document.getElementById("admin-visibility-panel").style.display = "block";
+    }
+    return;
+  }
+  if (pendingFirstLoginUsername) {
+    document.getElementById("first-login-username").textContent = pendingFirstLoginUsername;
+    document.getElementById("first-login-panel").style.display = "block";
+    return;
+  }
+  if (bootstrapAvailable) {
+    document.getElementById("admin-bootstrap-panel").style.display = "block";
+    return;
+  }
+  document.getElementById("admin-login-gate").style.display = "block";
+}
+
+async function afterAuthChange() {
+  renderAdminPanels();
+  renderToolGrid();
+  if (currentUser && currentUser.isAdmin) {
+    await loadAndRenderUsers();
+    renderVisibilityList();
+  }
+}
+
+function setupAuthForms() {
+  document.getElementById("bootstrap-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const pin = document.getElementById("admin-pin-input").value;
-    const errorEl = document.getElementById("pin-error");
+    const username = document.getElementById("bootstrap-username").value;
+    const password = document.getElementById("bootstrap-password").value;
+    const errorEl = document.getElementById("bootstrap-error");
     errorEl.style.display = "none";
     try {
-      const result = await callAdminWorker(pin);
-      currentPin = pin;
-      if (result && result.tools) visibilityState = result.tools;
-      document.getElementById("admin-pin-gate").style.display = "none";
-      document.getElementById("admin-visibility-panel").style.display = "block";
-      renderVisibilityList();
+      await bootstrapAdmin(username, password);
+      await afterAuthChange();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
+
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("login-username").value;
+    const password = document.getElementById("login-password").value;
+    const errorEl = document.getElementById("login-error");
+    errorEl.style.display = "none";
+    try {
+      const result = await login(username, password);
+      if (result.needsPasswordSetup) {
+        renderAdminPanels();
+      } else {
+        await afterAuthChange();
+      }
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
+
+  document.getElementById("first-login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const password = document.getElementById("first-login-password").value;
+    const errorEl = document.getElementById("first-login-error");
+    errorEl.style.display = "none";
+    try {
+      await setFirstPassword(pendingFirstLoginUsername, password);
+      await afterAuthChange();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
+
+  document.getElementById("btn-logout").addEventListener("click", () => {
+    logout();
+  });
+
+  document.getElementById("create-user-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("new-user-username").value;
+    const isAdmin = document.getElementById("new-user-is-admin").checked;
+    const errorEl = document.getElementById("users-error");
+    errorEl.style.display = "none";
+    try {
+      await callWorker("create-user", { username, isAdmin });
+      document.getElementById("new-user-username").value = "";
+      document.getElementById("new-user-is-admin").checked = false;
+      await loadAndRenderUsers();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
@@ -146,26 +352,24 @@ function setupPinForm() {
 
   document.getElementById("btn-save-visibility").addEventListener("click", async () => {
     const tools = {};
-    document.querySelectorAll("#visibility-list input[type=checkbox]").forEach((cb) => {
-      tools[cb.dataset.toolId] = { visible: cb.checked };
+    document.querySelectorAll("#visibility-list .visibility-row").forEach((row) => {
+      const id = row.dataset.toolId;
+      const visible = row.querySelector('[data-field="visible"]').checked;
+      const loginRequired = row.querySelector('[data-field="loginRequired"]').checked;
+      tools[id] = { visible, loginRequired };
     });
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");
     errorEl.style.display = "none";
     successEl.style.display = "none";
     try {
-      await callAdminWorker(currentPin, tools);
+      await callWorker("save-visibility", { tools });
       visibilityState = tools;
       renderToolGrid();
       successEl.style.display = "block";
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
-      if (err.message === "Falsche PIN.") {
-        currentPin = null;
-        document.getElementById("admin-visibility-panel").style.display = "none";
-        document.getElementById("admin-pin-gate").style.display = "block";
-      }
     }
   });
 }
@@ -181,11 +385,20 @@ async function init() {
   document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
   setupTabs();
-  setupPinForm();
+  setupAuthForms();
 
-  const remote = await fetchVisibility();
-  visibilityState = remote || defaultVisibility();
+  const data = await fetchVisibility();
+  visibilityState = (data && data.tools) || defaultVisibility();
+  bootstrapAvailable = !!(data && data.bootstrapAvailable);
+
+  await checkSession();
+
+  renderAdminPanels();
   renderToolGrid();
+  if (currentUser && currentUser.isAdmin) {
+    await loadAndRenderUsers();
+    renderVisibilityList();
+  }
 }
 
 init();

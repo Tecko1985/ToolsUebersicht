@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "2.0";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -88,6 +88,21 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.0",
+    groups: [
+      {
+        title: "Echtes Nutzer-Login",
+        items: [
+          "Der geteilte Admin-PIN entfällt komplett — stattdessen echte Nutzerkonten mit Nutzername/Passwort.",
+          "Admin legt Nutzernamen an, jeder Nutzer vergibt sich beim ersten Login selbst ein Passwort.",
+          "Pro Tool zusätzlich einstellbar: 'nur für eingeloggte Nutzer' sichtbar (statt nur öffentlich/versteckt).",
+          "Admin-Bereich: Nutzerverwaltung (anlegen, Passwort zurücksetzen) direkt im Admin-Tab.",
+          "Anmeldung bleibt bis zu 30 Tage im Browser gespeichert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [
