@@ -142,6 +142,7 @@ function renderUsersList(users) {
         ${groupNames.map((n) => `<span class="group-chip">${escapeHtml(n)}</span>`).join("")}
         <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
+        <button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">Löschen</button>
       </div>
       <div class="ur-groups" data-user-groups-for="${escapeHtml(u.username)}" style="display:none;"></div>
     `;
@@ -186,6 +187,23 @@ function renderUsersList(users) {
       errorEl.style.display = "none";
       try {
         await callWorker("reset-password", { username: btn.dataset.resetUser });
+        await loadAndRenderUsers();
+      } catch (e) {
+        errorEl.textContent = e.message;
+        errorEl.style.display = "block";
+      }
+    });
+  });
+
+  container.querySelectorAll("[data-delete-user]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const username = btn.dataset.deleteUser;
+      if (!confirm(`Nutzer "${username}" wirklich löschen?`)) return;
+      const errorEl = document.getElementById("users-error");
+      errorEl.style.display = "none";
+      try {
+        await callWorker("delete-user", { username });
+        await loadAndRenderGroups();
         await loadAndRenderUsers();
       } catch (e) {
         errorEl.textContent = e.message;

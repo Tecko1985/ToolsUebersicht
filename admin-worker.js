@@ -35,6 +35,7 @@
 //   POST { action: "bulk-create-users", entries: [{vorname,nachname}], isAdmin, groupIds } (admin) -> { created, skipped }
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
+//   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
@@ -110,6 +111,8 @@ export default {
         return handleListUsers(request, env, authHeader, corsHeaders);
       case "reset-password":
         return handleResetPassword(request, body, env, authHeader, corsHeaders);
+      case "delete-user":
+        return handleDeleteUser(request, body, env, authHeader, corsHeaders);
       case "create-group":
         return handleCreateGroup(request, body, env, authHeader, corsHeaders);
       case "list-groups":
@@ -327,6 +330,34 @@ async function handleResetPassword(request, body, env, authHeader, corsHeaders) 
   }
 
   return json({ username, mustSetPassword: true }, 200, corsHeaders);
+}
+
+async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = usersDoc.users[username];
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  if (user.isAdmin) {
+    const adminCount = Object.values(usersDoc.users).filter((u) => u.isAdmin).length;
+    if (adminCount <= 1) return json({ error: "Letzter Admin kann nicht gelöscht werden" }, 400, corsHeaders);
+  }
+
+  delete usersDoc.users[username];
+  Object.values(usersDoc.groups || {}).forEach((g) => {
+    g.memberUsernames = (g.memberUsernames || []).filter((m) => m !== username);
+  });
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ deleted: username }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Gruppen ----------
