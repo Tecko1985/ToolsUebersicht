@@ -54,6 +54,14 @@ const TOOLS = [
     category: "Verein"
   },
   {
+    id: "geschaeftsstelle",
+    name: "Geschäftsstelle",
+    description: "Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung.",
+    url: "https://tecko1985.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
+    icon: "📋",
+    category: "Verein"
+  },
+  {
     id: "spielertool-test",
     name: "Spielertool",
     description: "Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb.",
