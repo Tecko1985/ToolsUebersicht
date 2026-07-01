@@ -450,17 +450,11 @@ function renderVisibilityList() {
       <span class="vr-category">${escapeHtml(t.category)}</span>
       <label class="checkbox-label" style="margin-right:6px;"><input type="checkbox" data-field="visible" ${visible ? "checked" : ""} /> sichtbar</label>
       <label class="checkbox-label"><input type="checkbox" data-field="loginRequired" ${loginRequired ? "checked" : ""} /> nur eingeloggt</label>
-      <div class="group-picker" data-field="groupIds" style="display:${loginRequired ? "flex" : "none"};"></div>
+      <div class="group-picker" data-field="groupIds"></div>
     `;
     container.appendChild(row);
 
-    const groupPicker = row.querySelector('[data-field="groupIds"]');
-    renderGroupCheckboxes(groupPicker, groupIds);
-
-    const loginCheckbox = row.querySelector('[data-field="loginRequired"]');
-    loginCheckbox.addEventListener("change", () => {
-      groupPicker.style.display = loginCheckbox.checked ? "flex" : "none";
-    });
+    renderGroupCheckboxes(row.querySelector('[data-field="groupIds"]'), groupIds);
   });
 }
 
@@ -667,8 +661,8 @@ function setupAuthForms() {
     document.querySelectorAll("#visibility-list .visibility-row").forEach((row) => {
       const id = row.dataset.toolId;
       const visible = row.querySelector('[data-field="visible"]').checked;
-      const loginRequired = row.querySelector('[data-field="loginRequired"]').checked;
       const groupIds = getCheckedValues(row.querySelector('[data-field="groupIds"]'));
+      const loginRequired = row.querySelector('[data-field="loginRequired"]').checked || groupIds.length > 0;
       tools[id] = { visible, loginRequired, groupIds };
     });
     const errorEl = document.getElementById("admin-save-error");
