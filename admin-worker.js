@@ -35,6 +35,7 @@
 //   POST { action: "bulk-create-users", entries: [{vorname,nachname}], isAdmin, groupIds } (admin) -> { created, skipped }
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
+//   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden)
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
@@ -111,6 +112,8 @@ export default {
         return handleListUsers(request, env, authHeader, corsHeaders);
       case "reset-password":
         return handleResetPassword(request, body, env, authHeader, corsHeaders);
+      case "update-user":
+        return handleUpdateUser(request, body, env, authHeader, corsHeaders);
       case "delete-user":
         return handleDeleteUser(request, body, env, authHeader, corsHeaders);
       case "create-group":
@@ -330,6 +333,38 @@ async function handleResetPassword(request, body, env, authHeader, corsHeaders) 
   }
 
   return json({ username, mustSetPassword: true }, 200, corsHeaders);
+}
+
+async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
+  const session = await getSession(request, env);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = usersDoc.users[username];
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  const vorname = String(body.vorname || "").trim();
+  const nachname = String(body.nachname || "").trim();
+  if (!vorname || !nachname) return json({ error: "Vorname und Nachname erforderlich" }, 400, corsHeaders);
+
+  const isAdmin = !!body.isAdmin;
+  if (user.isAdmin && !isAdmin) {
+    const adminCount = Object.values(usersDoc.users).filter((u) => u.isAdmin).length;
+    if (adminCount <= 1) return json({ error: "Letztem Admin kann der Admin-Status nicht entzogen werden" }, 400, corsHeaders);
+  }
+
+  user.vorname = vorname;
+  user.nachname = nachname;
+  user.isAdmin = isAdmin;
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ username, vorname, nachname, isAdmin }, 200, corsHeaders);
 }
 
 async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {

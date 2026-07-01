@@ -141,10 +141,12 @@ function renderUsersList(users) {
         ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
         ${groupNames.map((n) => `<span class="group-chip">${escapeHtml(n)}</span>`).join("")}
         <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
+        <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
         <button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">Löschen</button>
       </div>
       <div class="ur-groups" data-user-groups-for="${escapeHtml(u.username)}" style="display:none;"></div>
+      <div class="ur-groups" data-edit-user-for="${escapeHtml(u.username)}" style="display:none;"></div>
     `;
     container.appendChild(row);
   });
@@ -172,6 +174,52 @@ function renderUsersList(users) {
         try {
           await applyUserGroupMembership(username, desiredGroupIds);
           await loadAndRenderGroups();
+          await loadAndRenderUsers();
+        } catch (e) {
+          errorEl.textContent = e.message;
+          errorEl.style.display = "block";
+        }
+      });
+    });
+  });
+
+  container.querySelectorAll("[data-toggle-edit-user]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const username = btn.dataset.toggleEditUser;
+      const panel = btn.closest(".user-row").querySelector("[data-edit-user-for]");
+      const isOpen = panel.style.display !== "none";
+      if (isOpen) {
+        panel.style.display = "none";
+        return;
+      }
+      const user = usersState.find((u) => u.username === username);
+      panel.innerHTML = `
+        <div class="form-grid" style="align-items:flex-end;">
+          <div class="form-field">
+            <label>Vorname</label>
+            <input type="text" data-edit-user-vorname value="${escapeHtml(user.vorname || "")}" />
+          </div>
+          <div class="form-field">
+            <label>Nachname</label>
+            <input type="text" data-edit-user-nachname value="${escapeHtml(user.nachname || "")}" />
+          </div>
+          <div class="form-field">
+            <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-is-admin ${user.isAdmin ? "checked" : ""} /> Admin-Rechte</label>
+          </div>
+          <div class="form-field">
+            <button type="button" class="btn small" data-save-edit-user="${escapeHtml(username)}">Speichern</button>
+          </div>
+        </div>
+      `;
+      panel.style.display = "block";
+      panel.querySelector("[data-save-edit-user]").addEventListener("click", async () => {
+        const vorname = panel.querySelector("[data-edit-user-vorname]").value.trim();
+        const nachname = panel.querySelector("[data-edit-user-nachname]").value.trim();
+        const isAdmin = panel.querySelector("[data-edit-user-is-admin]").checked;
+        const errorEl = document.getElementById("users-error");
+        errorEl.style.display = "none";
+        try {
+          await callWorker("update-user", { username, vorname, nachname, isAdmin });
           await loadAndRenderUsers();
         } catch (e) {
           errorEl.textContent = e.message;

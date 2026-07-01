@@ -1,4 +1,4 @@
-const APP_VERSION = "2.4";
+const APP_VERSION = "2.5";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "2.5",
+    groups: [
+      {
+        title: "Nutzer bearbeiten",
+        items: [
+          "Nutzerliste: neuer 'Bearbeiten'-Button je Nutzer zum Ändern von Vorname, Nachname und Admin-Status. Dem letzten Admin-Account kann der Admin-Status nicht entzogen werden."
+        ]
+      }
+    ]
+  },
   {
     version: "2.4",
     groups: [
