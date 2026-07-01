@@ -94,7 +94,10 @@
     <!-- Nutzerverwaltung (nur Admin) -->
     <div class="card" id="admin-users-panel" style="display:none;">
       <h2>Nutzer</h2>
-      <div id="users-list"></div>
+      <details class="collapsible" id="users-list-details">
+        <summary>Nutzerliste (<span id="users-count">0</span>)</summary>
+        <div id="users-list"></div>
+      </details>
       <form id="create-user-form" class="form-grid" style="margin-top:14px; align-items:flex-end;">
         <div class="form-field">
           <label>Vorname</label>

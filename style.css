@@ -178,6 +178,20 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 .pin-gate { max-width: 420px; margin: 40px auto; text-align: center; }
 .pin-gate .card { text-align: left; }
 
+/* ---------- Aufklappbare Bereiche ---------- */
+
+.collapsible summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--blue);
+  padding: 6px 0;
+  list-style: none;
+}
+.collapsible summary::-webkit-details-marker { display: none; }
+.collapsible summary::before { content: "▸ "; }
+.collapsible[open] summary::before { content: "▾ "; }
+.collapsible[open] summary { margin-bottom: 8px; }
+
 /* ---------- Nutzerverwaltung ---------- */
 
 .user-row {

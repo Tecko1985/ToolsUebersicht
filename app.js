@@ -116,6 +116,7 @@ async function loadAndRenderUsers() {
     const data = await callWorker("list-users", {});
     usersState = data.users;
     renderUsersList(usersState);
+    document.getElementById("users-count").textContent = usersState.length;
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = "block";
