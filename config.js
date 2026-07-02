@@ -1,4 +1,4 @@
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -154,6 +154,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Trainerkodex zeigte durch Browser-Caching der vorherigen Version noch die alte Versionsnummer an — jetzt korrekt aktuell."
+        ]
+      }
+    ]
+  },
   {
     version: "1.6",
     groups: [
