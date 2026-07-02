@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.2",
+    groups: [
+      {
+        title: "Sicherheit (Worker-Update + neue Secrets nötig)",
+        items: [
+          "Zentrale Passwortprüfung für geschützte Aktionen der Tool-Apps (TrainerCheckliste entsperren, Teilnehmer-Tab der Anmeldung, Vereinsbudget \"Saison leeren\"): Die Passwörter stehen jetzt als Worker-Secrets auf dem Server statt für jeden lesbar im Quellcode der Apps."
+        ]
+      }
+    ]
+  },
   {
     version: "1.1",
     groups: [

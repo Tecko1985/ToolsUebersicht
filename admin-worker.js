@@ -13,6 +13,14 @@
 //   NEXTCLOUD_PASSWORD    = <App-Passwort aus Nextcloud>
 //   SESSION_SECRET         = <zufällige lange Zeichenkette, einmalig generiert>
 //
+// Optionale Secrets für die zentrale Aktions-Passwortprüfung (verify-action-password).
+// Fehlt eines, meldet nur die jeweilige Aktion einen Konfigurationsfehler — der Rest
+// des Workers läuft normal. Werte frei wählbar (die alten Client-Passwörter stehen
+// in der öffentlichen Git-Historie, daher am besten NEUE Passwörter vergeben):
+//   PW_CHECKLISTE_SPERRE    = TrainerCheckliste: Checkliste entsperren / Eintrag mit gesperrter Checkliste löschen
+//   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung-Anmeldung: Teilnehmer-Tab in verwaltung.html öffnen
+//   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
+//
 // BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
 // Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
 // Admin-Tab automatisch ein "Admin-Konto einrichten"-Formular. Dort einmal
@@ -46,12 +54,16 @@
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
 //     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
+//   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
+//     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
   "http://localhost:8768", // TrainerCheckliste (Dev-Server)
   "http://localhost:8770", // ToolsUebersicht (Dev-Server)
   "http://localhost:8771", // Spielertool (Dev-Server)
+  "http://localhost:8772", // Vereinsbudget (Dev-Server)
+  "http://localhost:8774", // Trainerversammlung-Anmeldung (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -149,6 +161,8 @@ export default {
         return handleDeleteGroup(request, body, env, authHeader, corsHeaders);
       case "save-visibility":
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
+      case "verify-action-password":
+        return handleVerifyActionPassword(body, env, corsHeaders);
       case "dav-load":
         return handleDavLoad(request, body, env, authHeader, corsHeaders);
       case "dav-save":
@@ -535,6 +549,45 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
   }
 
   return json({ tools: newConfig.tools }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------
+
+// Serverseitige Prüfung der früher im Client hartkodierten Aktions-Passwörter
+// (dort konnte sie jeder im Quellcode nachlesen). Scope -> Worker-Secret mit dem
+// Klartext-Passwort. Bewusst ohne Login nutzbar: verwaltung.html (Anmeldung) und
+// das Vereinsbudget haben kein Gateway-Login.
+const ACTION_PASSWORD_SECRETS = {
+  "checkliste-sperre": "PW_CHECKLISTE_SPERRE",       // TrainerCheckliste: Entsperren/Löschen gesperrter Checklisten
+  "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
+  "budget-saison-leeren": "PW_BUDGET_LEEREN"         // Vereinsbudget: "Saison leeren"
+};
+
+async function handleVerifyActionPassword(body, env, corsHeaders) {
+  const scope = String(body.scope || "");
+  const secretName = ACTION_PASSWORD_SECRETS[scope];
+  if (!secretName) return json({ error: "Unbekannter Passwort-Scope" }, 400, corsHeaders);
+  if (!env[secretName]) {
+    return json({ error: "Worker-Secret " + secretName + " ist nicht konfiguriert" }, 500, corsHeaders);
+  }
+  const ok = await staticPasswordEquals(String(body.password || ""), env[secretName]);
+  if (!ok) {
+    // Bremse gegen Durchprobieren — die Aktion ist ohne Login erreichbar.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return json({ error: "Falsches Passwort" }, 403, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// Vergleich über SHA-256-Digests: konstante Länge, damit timingSafeEqual nicht
+// über seinen Längen-Check die Passwortlänge verrät.
+async function staticPasswordEquals(given, expected) {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(given)),
+    crypto.subtle.digest("SHA-256", enc.encode(expected))
+  ]);
+  return timingSafeEqual(bytesToBase64(new Uint8Array(a)), bytesToBase64(new Uint8Array(b)));
 }
 
 // ---------- Aktionen: WebDAV-Gateway für die Apps ----------
