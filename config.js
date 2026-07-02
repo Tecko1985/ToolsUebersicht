@@ -1,9 +1,10 @@
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
 // (siehe admin-worker.js) — nur die Existenz eines Tools + seine Metadaten
-// ändern sich hier, das braucht einen Code-Push.
+// (inkl. version) ändern sich hier, das braucht einen Code-Push und muss von
+// Hand mit der jeweiligen Version des verlinkten Tools synchron gehalten werden.
 const TOOLS = [
   {
     id: "trainervertrag",
@@ -11,7 +12,8 @@ const TOOLS = [
     description: "Trainer-Stammdaten erfassen und Trainerverträge automatisch als Word-Dokument erzeugen.",
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
-    category: "Verein"
+    category: "Verein",
+    version: "1.1"
   },
   {
     id: "trainercheckliste",
@@ -19,7 +21,8 @@ const TOOLS = [
     description: "Digitale Checkliste für Trainerzu- und -abgang im Nachwuchsbereich.",
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
-    category: "Verein"
+    category: "Verein",
+    version: "1.2"
   },
   {
     id: "materialliste",
@@ -27,7 +30,8 @@ const TOOLS = [
     description: "Vereinsmaterial (Trikots, Bälle, Leibchen) pro Mannschaft verwalten.",
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
-    category: "Verein"
+    category: "Verein",
+    version: "1.1"
   },
   {
     id: "sc1911-anmeldung",
@@ -43,7 +47,8 @@ const TOOLS = [
     description: "Budgetübersicht, Einnahmen/Ausgaben und Belegverwaltung für den Kassierer.",
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
-    category: "Verein"
+    category: "Verein",
+    version: "1.2"
   },
   {
     id: "beleg-eingang",
@@ -51,7 +56,8 @@ const TOOLS = [
     description: "Mobiles Formular für Helfer zum Einreichen von Belegen.",
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
-    category: "Verein"
+    category: "Verein",
+    version: "1.2"
   },
   {
     id: "geschaeftsstelle",
@@ -59,7 +65,8 @@ const TOOLS = [
     description: "Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung.",
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
-    category: "Verein"
+    category: "Verein",
+    version: "1.2"
   },
   {
     id: "spielertool-test",
@@ -67,7 +74,8 @@ const TOOLS = [
     description: "Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb.",
     url: "https://tecko1985.github.io/spielertool-test/",
     icon: "⚽",
-    category: "Verein"
+    category: "Verein",
+    version: "1.1"
   },
   {
     id: "kassenbuch",
@@ -75,7 +83,8 @@ const TOOLS = [
     description: "Persönliches Kassenbuch als PWA fürs iPad.",
     url: "https://tecko1985.github.io/kassenbuch/",
     icon: "💰",
-    category: "Privat"
+    category: "Privat",
+    version: "1.0"
   },
   {
     id: "familien-quartett",
@@ -83,7 +92,8 @@ const TOOLS = [
     description: "Digitales Kartenspiel nach dem Quartett-Prinzip mit Familienkarten.",
     url: "https://tecko1985.github.io/familien-quartett/",
     icon: "🃏",
-    category: "Privat"
+    category: "Privat",
+    version: "1.0"
   },
   {
     id: "beleg-scanner",
@@ -91,7 +101,8 @@ const TOOLS = [
     description: "Foto vom Beleg per KI analysieren, als durchsuchbares PDF ablegen.",
     url: "https://tecko1985.github.io/beleg-scanner/",
     icon: "📷",
-    category: "Privat"
+    category: "Privat",
+    version: "1.0"
   },
   {
     id: "vereinskalender",
@@ -127,6 +138,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
+    version: "1.3",
     wip: true
   },
   {
@@ -141,6 +153,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.4",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Jede Tool-Karte zeigt oben rechts die Version des verlinkten Tools an (sofern bekannt).",
+          "Nach dem Anmelden ist der eigene Nutzername (inkl. Admin-Kennzeichnung) direkt im Header sichtbar, nicht mehr nur im Einstellungen-Tab."
+        ]
+      }
+    ]
+  },
   {
     version: "1.3",
     groups: [

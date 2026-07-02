@@ -508,6 +508,7 @@ function renderToolGrid() {
       card.target = "_blank";
       card.rel = "noopener";
       card.innerHTML = `
+        ${t.version ? `<span class="tool-version">v${escapeHtml(t.version)}</span>` : ""}
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         <h3>${escapeHtml(t.name)}</h3>
@@ -601,7 +602,19 @@ function setupTabs() {
   document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
 }
 
+function renderHeaderUser() {
+  const el = document.getElementById("header-user");
+  if (!currentUser) {
+    el.style.display = "none";
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `👤 ${escapeHtml(currentUser.username)}${currentUser.isAdmin ? '<span class="version-badge">Admin</span>' : ""}`;
+  el.style.display = "flex";
+}
+
 function renderAdminPanels() {
+  renderHeaderUser();
   document.getElementById("admin-bootstrap-panel").style.display = "none";
   document.getElementById("admin-login-gate").style.display = "none";
   document.getElementById("login-password-panel").style.display = "none";

@@ -34,6 +34,18 @@ header {
   flex-wrap: wrap;
 }
 header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
 
 nav {
   display: flex;
@@ -142,6 +154,7 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   gap: 16px;
 }
 .tool-card {
+  position: relative;
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -155,6 +168,18 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
 }
 .tool-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); }
 .tool-card .tool-icon { font-size: 28px; }
+.tool-version {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--gray);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
 .tool-card h3 { font-size: 16px; color: var(--blue); }
 .tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .tool-card.wip { opacity: 0.82; }
