@@ -20,6 +20,14 @@
 //   PW_CHECKLISTE_SPERRE    = TrainerCheckliste: Checkliste entsperren / Eintrag mit gesperrter Checkliste löschen
 //   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung-Anmeldung: Teilnehmer-Tab in verwaltung.html öffnen
 //   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
+//   PW_TRAINERKODEX_LOESCHEN = Trainerkodex: Bestätigungen löschen (einzeln/alle)
+//   PW_BELEGSCANNER_SUCHE   = Beleg-Scanner-Worker (eigenes Cloudflare-Deploy!): GET /search
+//   PW_BELEGSCANNER_UPLOAD  = Beleg-Scanner-Worker (eigenes Cloudflare-Deploy!): POST / (Upload)
+//   PW_BUDGET_EINGANG_ZUGANG = sc-heiligenstadt-beleg-upload-Worker (eigenes Cloudflare-Deploy!): Zugriffscode in beleg-eingang.html
+//
+// Die letzten drei werden nicht vom Browser-Client, sondern von den jeweils
+// EIGENEN Cloudflare Workern serverseitig abgefragt (Worker-zu-Worker-Fetch) -
+// diese Worker brauchen dafür kein eigenes Passwort-Secret mehr.
 //
 // BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
 // Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
@@ -563,11 +571,17 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
 // (dort konnte sie jeder im Quellcode nachlesen). Scope -> Worker-Secret mit dem
 // Klartext-Passwort. Bewusst ohne Login nutzbar: verwaltung.html (Anmeldung) und
 // das Vereinsbudget haben kein Gateway-Login.
+// Scopes ab hier werden nicht vom Client, sondern SERVERSEITIG von anderen
+// Cloudflare Workern aufgerufen (Worker-zu-Worker-Fetch, kein Origin-Header) -
+// ersetzt dort ein bisher lokal im jeweiligen Worker geprüftes Secret 1:1.
 const ACTION_PASSWORD_SECRETS = {
   "checkliste-sperre": "PW_CHECKLISTE_SPERRE",       // TrainerCheckliste: Entsperren/Löschen gesperrter Checklisten
   "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
-  "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN" // Trainerkodex: Bestätigungen löschen (einzeln/alle)
+  "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN", // Trainerkodex: Bestätigungen löschen (einzeln/alle)
+  "belegscanner-suche": "PW_BELEGSCANNER_SUCHE",     // Beleg-Scanner-Worker: GET /search (serverseitig delegiert)
+  "belegscanner-upload": "PW_BELEGSCANNER_UPLOAD",   // Beleg-Scanner-Worker: POST / Upload (serverseitig delegiert)
+  "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG" // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
 };
 
 async function handleVerifyActionPassword(body, env, corsHeaders) {
