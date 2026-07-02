@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -13,7 +13,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
     category: "Verein",
-    version: "1.1"
+    version: "1.2"
   },
   {
     id: "trainercheckliste",
@@ -22,7 +22,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.2"
+    version: "1.3"
   },
   {
     id: "materialliste",
@@ -31,7 +31,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.1"
+    version: "1.2"
   },
   {
     id: "sc1911-anmeldung",
@@ -40,7 +40,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
     category: "Verein",
-    version: "1.0"
+    version: "1.1"
   },
   {
     id: "vereinsbudget",
@@ -49,7 +49,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
     category: "Verein",
-    version: "1.2"
+    version: "1.3"
   },
   {
     id: "beleg-eingang",
@@ -58,7 +58,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
     category: "Verein",
-    version: "1.2"
+    version: "1.3"
   },
   {
     id: "geschaeftsstelle",
@@ -67,7 +67,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
     category: "Verein",
-    version: "1.2"
+    version: "1.3"
   },
   {
     id: "spielertool-test",
@@ -76,7 +76,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielertool-test/",
     icon: "⚽",
     category: "Verein",
-    version: "1.1"
+    version: "1.2"
   },
   {
     id: "kassenbuch",
@@ -85,7 +85,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kassenbuch/",
     icon: "💰",
     category: "Privat",
-    version: "1.0"
+    version: "1.1"
   },
   {
     id: "familien-quartett",
@@ -103,7 +103,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/beleg-scanner/",
     icon: "📷",
     category: "Privat",
-    version: "1.0"
+    version: "1.1"
   },
   {
     id: "vereinskalender",
@@ -139,8 +139,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.5",
-    wip: true
+    version: "1.0"
   },
   {
     id: "spielerplus-klon",
@@ -154,6 +153,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.8",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Vereinswappen ist jetzt auch in jeder einzelnen verlinkten App zu sehen, nicht mehr nur hier.",
+          "Versionsangaben aller Tool-Karten mit dem aktuellen Stand der jeweiligen App synchronisiert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.7",
     groups: [
