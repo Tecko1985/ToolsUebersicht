@@ -649,8 +649,12 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
 
   // Optionaler Konfliktschutz: schickt der Client das rev (ETag) seines letzten
   // dav-load mit, wird nur geschrieben, wenn die Datei serverseitig unverändert
-  // ist. Alte Clients ohne rev schreiben unconditional wie bisher.
-  const rev = typeof body.rev === "string" && body.rev ? body.rev : null;
+  // ist. Alte Clients ohne rev schreiben unconditional wie bisher. normalizeETag()
+  // faengt Clients ab, die noch ein rev mit W/-Praefix im Speicher haben (z.B. aus
+  // einer laenger offenen Seite von vor diesem Fix) — sonst waere der Konfliktschutz
+  // erst nach einem Reload JEDER offenen Seite wieder benutzbar, nicht sofort nach
+  // dem Worker-Deploy.
+  const rev = normalizeETag(typeof body.rev === "string" && body.rev ? body.rev : null);
   let newRev;
   try {
     newRev = await writeJson(url, authHeader, body.data, rev);
