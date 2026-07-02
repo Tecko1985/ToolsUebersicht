@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -143,7 +143,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    wip: true,
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -169,6 +169,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.10",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Spielersichtung ist jetzt eine vollständige App (kein Platzhalter mehr)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.9",
     groups: [
