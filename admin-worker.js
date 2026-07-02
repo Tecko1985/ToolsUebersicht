@@ -681,6 +681,16 @@ async function readJson(url, authHeader, fallback) {
   return (await readJsonWithRev(url, authHeader, fallback)).data;
 }
 
+// Nextcloud liefert ETags als "weak" (Praefix W/). HTTP verlangt fuer If-Match
+// zwingend einen "strong comparison" und lehnt JEDEN weak-getaggten Wert schon
+// dem Namen nach ab (RFC 7232 3.1) — ohne dieses Strippen bekommt jede
+// If-Match-PUT ein 412, IMMER, unabhaengig davon ob die Datei sich wirklich
+// geaendert hat (per Live-Test bestaetigt: identischer rev vor/nach Neuladen,
+// trotzdem 412). Praefix vor jeder Weiterverwendung als If-Match entfernen.
+function normalizeETag(etag) {
+  return etag && etag.startsWith("W/") ? etag.slice(2) : etag;
+}
+
 async function readJsonWithRev(url, authHeader, fallback) {
   let resp;
   try {
@@ -690,7 +700,7 @@ async function readJsonWithRev(url, authHeader, fallback) {
   }
   if (resp.status === 404) return { data: fallback, rev: null };
   if (!resp.ok) throw new NextcloudError(`Nextcloud GET ${resp.status}`);
-  const rev = resp.headers.get("ETag");
+  const rev = normalizeETag(resp.headers.get("ETag"));
   const text = await resp.text();
   if (!text.trim()) return { data: fallback, rev };
   let parsed;
@@ -715,7 +725,7 @@ async function writeJson(url, authHeader, data, ifMatch) {
   });
   if (resp.status === 412) throw new ConflictError("Datei wurde zwischenzeitlich geändert");
   if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
-  return resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null;
+  return normalizeETag(resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null);
 }
 
 // ---------- Gruppen-Helfer ----------
