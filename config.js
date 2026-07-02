@@ -1,4 +1,4 @@
-const APP_VERSION = "1.10";
+const APP_VERSION = "1.11";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -133,7 +133,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    wip: true,
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -169,6 +169,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.11",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Platzbelegung ist jetzt eine vollständige App (kein Platzhalter mehr): Wochenplan der Trainingsplätze als Gitter und als filterbare Liste, Bearbeiten für Administratoren."
+        ]
+      }
+    ]
+  },
   {
     version: "1.10",
     groups: [
