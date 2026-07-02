@@ -139,7 +139,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.3",
+    version: "1.5",
     wip: true
   },
   {
