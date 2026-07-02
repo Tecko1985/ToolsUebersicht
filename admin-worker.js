@@ -566,7 +566,8 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
 const ACTION_PASSWORD_SECRETS = {
   "checkliste-sperre": "PW_CHECKLISTE_SPERRE",       // TrainerCheckliste: Entsperren/Löschen gesperrter Checklisten
   "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
-  "budget-saison-leeren": "PW_BUDGET_LEEREN"         // Vereinsbudget: "Saison leeren"
+  "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
+  "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN" // Trainerkodex: Bestätigungen löschen (einzeln/alle)
 };
 
 async function handleVerifyActionPassword(body, env, corsHeaders) {
