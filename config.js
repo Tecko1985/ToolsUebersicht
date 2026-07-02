@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.6";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -39,7 +39,8 @@ const TOOLS = [
     description: "Digitales Anmeldesystem für Trainerversammlungen beim 1. SC 1911 Heiligenstadt.",
     url: "https://tecko1985.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
-    category: "Verein"
+    category: "Verein",
+    version: "1.0"
   },
   {
     id: "vereinsbudget",
@@ -153,6 +154,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.6",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Vereinswappen oben rechts im Header ergänzt.",
+          "Trainerversammlung-Anmeldung zeigt jetzt ebenfalls eine Version (1.0) auf ihrer Karte."
+        ]
+      }
+    ]
+  },
   {
     version: "1.5",
     groups: [
