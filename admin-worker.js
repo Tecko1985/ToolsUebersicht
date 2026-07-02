@@ -197,7 +197,9 @@ export default {
 async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
   const username = normalizeUsername(body.username);
   const password = String(body.password || "");
-  if (!USERNAME_RE.test(username)) return json({ error: "Ungültiger Nutzername (3-32 Zeichen, a-z 0-9 . _ -)" }, 400, corsHeaders);
+  // "__proto__" besteht den Regex-Test, würde als Objekt-Key aber das Prototyp-
+  // Objekt statt eines eigenen Eintrags setzen — explizit ablehnen.
+  if (!USERNAME_RE.test(username) || username === "__proto__") return json({ error: "Ungültiger Nutzername (3-32 Zeichen, a-z 0-9 . _ -)" }, 400, corsHeaders);
   const pwError = validatePasswordStrength(password);
   if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
@@ -228,7 +230,7 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
   const username = normalizeUsername(body.username);
   const password = String(body.password || "");
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = usersDoc.users[username];
+  const user = getOwn(usersDoc.users, username);
 
   if (!user) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
   if (user.mustSetPassword || !user.passwordHash) {
@@ -236,7 +238,14 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
   }
 
   const ok = await verifyPassword(password, user.salt, user.iterations, user.passwordHash);
-  if (!ok) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
+  if (!ok) {
+    // Bremse gegen Durchprobieren (wie bei verify-action-password). Trifft im
+    // zweistufigen Login-Flow auch den Nutzername-Schritt (login mit leerem
+    // Passwort bei bestehendem Konto) — 0,8s einmal pro Anmeldung ist bewusst
+    // in Kauf genommen.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
+  }
 
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
   return json({ token, username: user.username, isAdmin: !!user.isAdmin, groupIds: getUserGroupIds(usersDoc, user.username) }, 200, corsHeaders);
@@ -249,7 +258,7 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = usersDoc.users[username];
+  const user = getOwn(usersDoc.users, username);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
   if (!user.mustSetPassword) return json({ error: "Passwort wurde bereits gesetzt" }, 409, corsHeaders);
 
@@ -271,11 +280,11 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
 }
 
 async function handleMe(request, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   const groupIds = session.isAdmin ? [] : getUserGroupIds(usersDoc, session.username);
-  const user = usersDoc.users[session.username];
+  const user = getOwn(usersDoc.users, session.username);
   return json({
     username: session.username,
     isAdmin: !!session.isAdmin,
@@ -288,14 +297,14 @@ async function handleMe(request, env, authHeader, corsHeaders) {
 // ---------- Aktionen: Nutzerverwaltung ----------
 
 async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const vorname = String(body.vorname || "").trim();
   const nachname = String(body.nachname || "").trim();
   if (!vorname || !nachname) return json({ error: "Vorname und Nachname erforderlich" }, 400, corsHeaders);
 
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
 
   const username = generateUsername(vorname, nachname, new Set(Object.keys(usersDoc.users)));
@@ -317,13 +326,13 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
 }
 
 async function handleBulkCreateUsers(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const entries = Array.isArray(body.entries) ? body.entries : [];
   const isAdmin = !!body.isAdmin;
 
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
 
   const existingUsernames = new Set(Object.keys(usersDoc.users));
@@ -360,10 +369,10 @@ async function handleBulkCreateUsers(request, body, env, authHeader, corsHeaders
 }
 
 async function handleListUsers(request, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   const users = Object.values(usersDoc.users).map((u) => ({
     username: u.username,
     vorname: u.vorname || null,
@@ -378,12 +387,12 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
 }
 
 async function handleResetPassword(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const username = normalizeUsername(body.username);
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = usersDoc.users[username];
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, username);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
 
   user.passwordHash = null;
@@ -402,12 +411,12 @@ async function handleResetPassword(request, body, env, authHeader, corsHeaders) 
 }
 
 async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const username = normalizeUsername(body.username);
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = usersDoc.users[username];
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, username);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
 
   const vorname = String(body.vorname || "").trim();
@@ -434,12 +443,12 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
 }
 
 async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const username = normalizeUsername(body.username);
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = usersDoc.users[username];
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, username);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
 
   if (user.isAdmin) {
@@ -464,13 +473,13 @@ async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
 // ---------- Aktionen: Gruppen ----------
 
 async function handleCreateGroup(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const name = String(body.name || "").trim();
   if (!name) return json({ error: "Gruppenname erforderlich" }, 400, corsHeaders);
 
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
 
   const baseId = slugifyGroupName(name);
@@ -487,24 +496,24 @@ async function handleCreateGroup(request, body, env, authHeader, corsHeaders) {
 }
 
 async function handleListGroups(request, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const usersDoc = session.usersDoc;
   return json({ groups: Object.values(usersDoc.groups || {}) }, 200, corsHeaders);
 }
 
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const groupId = String(body.groupId || "");
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const group = usersDoc.groups && usersDoc.groups[groupId];
+  const usersDoc = session.usersDoc;
+  const group = getOwn(usersDoc.groups || {}, groupId);
   if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
 
   const requested = Array.isArray(body.memberUsernames) ? body.memberUsernames.map(normalizeUsername) : [];
-  group.memberUsernames = requested.filter((u) => usersDoc.users[u]);
+  group.memberUsernames = requested.filter((u) => getOwn(usersDoc.users, u));
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
@@ -516,12 +525,12 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
 }
 
 async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const groupId = String(body.groupId || "");
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  if (!usersDoc.groups || !usersDoc.groups[groupId]) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+  const usersDoc = session.usersDoc;
+  if (!getOwn(usersDoc.groups || {}, groupId)) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
   delete usersDoc.groups[groupId];
 
   try {
@@ -550,7 +559,7 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
 // ---------- Aktionen: Sichtbarkeit ----------
 
 async function handleSaveVisibility(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   if (!body.tools || typeof body.tools !== "object") {
@@ -588,7 +597,7 @@ const ACTION_PASSWORD_SECRETS = {
 
 async function handleVerifyActionPassword(body, env, corsHeaders) {
   const scope = String(body.scope || "");
-  const secretName = ACTION_PASSWORD_SECRETS[scope];
+  const secretName = getOwn(ACTION_PASSWORD_SECRETS, scope);
   if (!secretName) return json({ error: "Unbekannter Passwort-Scope" }, 400, corsHeaders);
   if (!env[secretName]) {
     return json({ error: "Worker-Secret " + secretName + " ist nicht konfiguriert" }, 500, corsHeaders);
@@ -621,22 +630,21 @@ async function staticPasswordEquals(given, expected) {
 async function userMayAccessTool(app, session, env, authHeader) {
   if (session.isAdmin) return true; // Admin darf immer (spart Nextcloud-Reads)
   const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-  const entry = (config.tools || {})[app];
+  const entry = getOwn(config.tools || {}, app);
   if (!entry || entry.visible === false) return false; // versteckt/unkonfiguriert -> nur Admin
   if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
   const gids = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   if (gids.length === 0) return true;                  // "alle eingeloggten Nutzer"
-  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const userGroupIds = getUserGroupIds(usersDoc, session.username);
+  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
   return gids.some((g) => userGroupIds.includes(g));
 }
 
 async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const app = String(body.app || "");
-  const url = DAV_APPS[app];
+  const url = getOwn(DAV_APPS, app);
   if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
 
   if (!(await userMayAccessTool(app, session, env, authHeader))) {
@@ -648,11 +656,11 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
 }
 
 async function handleDavSave(request, body, env, authHeader, corsHeaders) {
-  const session = await getSession(request, env);
+  const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const app = String(body.app || "");
-  const url = DAV_APPS[app];
+  const url = getOwn(DAV_APPS, app);
   if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
 
   if (body.data == null || typeof body.data !== "object") {
@@ -779,7 +787,7 @@ async function ensureCollection(collUrl, authHeader, depth) {
 function addUserToGroups(usersDoc, username, groupIds) {
   if (!Array.isArray(groupIds)) return;
   groupIds.forEach((gid) => {
-    const group = usersDoc.groups[gid];
+    const group = getOwn(usersDoc.groups, String(gid));
     if (group && !group.memberUsernames.includes(username)) group.memberUsernames.push(username);
   });
 }
@@ -933,10 +941,42 @@ async function getSession(request, env) {
   return await verifyToken(match[1], env.SESSION_SECRET);
 }
 
+// Verifiziert das Token UND gleicht es mit dem aktuellen Nutzerbestand ab —
+// zustandslose Tokens allein überleben sonst Nutzer-Löschung, Passwort-Reset
+// und Admin-Entzug bis zu 30 Tage. Regeln: Nutzer muss noch existieren und ein
+// gesetztes Passwort haben; Tokens von VOR dem letzten Passwort-Setzen sind
+// ungültig (Reset durch Admin wirft damit alle alten Sitzungen raus); isAdmin
+// kommt aus dem aktuellen Datensatz, nicht aus dem Token. Gibt zusätzlich das
+// bereits gelesene usersDoc zurück, damit Handler es weiterverwenden können
+// (kein zweiter Nextcloud-Read pro Request).
+async function getVerifiedSession(request, env, authHeader) {
+  const payload = await getSession(request, env);
+  if (!payload) return null;
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = getOwn(usersDoc.users, String(payload.username || ""));
+  if (!user || user.mustSetPassword || !user.passwordHash) return null;
+  if (user.passwordSetAt) {
+    const setAt = Math.floor(Date.parse(user.passwordSetAt) / 1000);
+    if (Number.isFinite(setAt) && (Number(payload.iat) || 0) < setAt) return null;
+  }
+  return { username: user.username, isAdmin: !!user.isAdmin, usersDoc };
+}
+
 // ---------- sonstige Helfer ----------
 
 function normalizeUsername(raw) {
   return String(raw || "").trim().toLowerCase().replace(/\s+/g, ".");
+}
+
+// Dynamische Objekt-Lookups mit von außen bestimmten Keys: nur echte eigene
+// Properties zählen. Ohne diesen Check liefern geerbte Keys wie "__proto__"
+// oder "constructor" ein truthy Ergebnis (Object.prototype bzw. die
+// Konstruktor-Funktion) und fließen dann als vermeintlicher Treffer in die
+// weitere Logik ein.
+function getOwn(obj, key) {
+  return obj && typeof key === "string" && Object.prototype.hasOwnProperty.call(obj, key)
+    ? obj[key]
+    : undefined;
 }
 
 function bytesToBase64(bytes) {
