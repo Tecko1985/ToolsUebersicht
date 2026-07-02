@@ -42,8 +42,9 @@
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
 //   POST { action: "save-visibility", tools } (admin)            -> ersetzt sichtbarkeit.json, tools[id] = {visible, loginRequired, groupIds}
-//   POST { action: "dav-load", app } + Authorization: Bearer       -> { data } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden)
-//   POST { action: "dav-save", app, data } + Authorization: Bearer -> { ok:true } (schreibt die App-Datendatei)
+//   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
+//   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
+//     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
 //     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
 
 const ALLOWED_ORIGINS = [
@@ -93,6 +94,12 @@ export default {
     }
 
     const authHeader = "Basic " + btoa(env.NEXTCLOUD_USERNAME + ":" + env.NEXTCLOUD_PASSWORD);
+
+    // Alle Aktionen lesen zuerst aus Nextcloud. Schlägt so ein Read fehl, wirft
+    // readJson (statt still einen leeren Fallback zu liefern) und der Client
+    // bekommt 502 — sonst würde der nächste read-modify-write-Schreibzugriff
+    // den kompletten Bestand (nutzer.json bzw. App-Daten) mit dem Fallback überschreiben.
+    try {
 
     if (request.method === "GET") {
       const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
@@ -148,6 +155,13 @@ export default {
         return handleDavSave(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
+    }
+
+    } catch (e) {
+      if (e instanceof NextcloudError) {
+        return json({ error: e.message }, 502, corsHeaders);
+      }
+      return json({ error: "Interner Fehler: " + e.message }, 500, corsHeaders);
     }
   }
 };
@@ -553,8 +567,8 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
 
-  const data = await readJson(url, authHeader, null);
-  return json({ data }, 200, corsHeaders);
+  const { data, rev } = await readJsonWithRev(url, authHeader, null);
+  return json({ data, rev }, 200, corsHeaders);
 }
 
 async function handleDavSave(request, body, env, authHeader, corsHeaders) {
@@ -573,12 +587,20 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
 
+  // Optionaler Konfliktschutz: schickt der Client das rev (ETag) seines letzten
+  // dav-load mit, wird nur geschrieben, wenn die Datei serverseitig unverändert
+  // ist. Alte Clients ohne rev schreiben unconditional wie bisher.
+  const rev = typeof body.rev === "string" && body.rev ? body.rev : null;
+  let newRev;
   try {
-    await writeJson(url, authHeader, body.data);
+    newRev = await writeJson(url, authHeader, body.data, rev);
   } catch (e) {
+    if (e instanceof ConflictError) {
+      return json({ error: "Konflikt: Die Daten wurden zwischenzeitlich von einem anderen Gerät geändert", conflict: true }, 409, corsHeaders);
+    }
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
-  return json({ ok: true }, 200, corsHeaders);
+  return json({ ok: true, rev: newRev }, 200, corsHeaders);
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
@@ -587,27 +609,53 @@ function emptyUsersDoc() {
   return { version: 1, users: {}, groups: {} };
 }
 
+// NextcloudError -> 502 an den Client (zentral im fetch-Handler abgefangen),
+// ConflictError -> 409 (nur dav-save mit rev/If-Match).
+class NextcloudError extends Error {}
+class ConflictError extends Error {}
+
+// Liest eine JSON-Datei. NUR "Datei existiert nicht" (404) oder eine leere Datei
+// ergeben den Fallback. Jeder andere Fehler (Netz, 5xx, kaputtes JSON) wirft —
+// ein transienter Lesefehler darf nicht wie eine leere/neue Datei aussehen.
 async function readJson(url, authHeader, fallback) {
-  try {
-    const resp = await fetch(url, { method: "GET", headers: { Authorization: authHeader } });
-    if (resp.ok) {
-      const text = await resp.text();
-      if (text.trim()) {
-        const parsed = JSON.parse(text);
-        if (parsed && typeof parsed === "object") return parsed;
-      }
-    }
-  } catch (_) { /* Datei existiert noch nicht */ }
-  return fallback;
+  return (await readJsonWithRev(url, authHeader, fallback)).data;
 }
 
-async function writeJson(url, authHeader, data) {
+async function readJsonWithRev(url, authHeader, fallback) {
+  let resp;
+  try {
+    resp = await fetch(url, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (e) {
+    throw new NextcloudError("Nextcloud nicht erreichbar: " + e.message);
+  }
+  if (resp.status === 404) return { data: fallback, rev: null };
+  if (!resp.ok) throw new NextcloudError(`Nextcloud GET ${resp.status}`);
+  const rev = resp.headers.get("ETag");
+  const text = await resp.text();
+  if (!text.trim()) return { data: fallback, rev };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (_) {
+    throw new NextcloudError("Nextcloud-Datei enthält kein gültiges JSON — Zugriff abgebrochen, Datei bitte prüfen");
+  }
+  if (parsed && typeof parsed === "object") return { data: parsed, rev };
+  throw new NextcloudError("Nextcloud-Datei hat ein unerwartetes Format — Zugriff abgebrochen");
+}
+
+// Schreibt eine JSON-Datei; mit ifMatch nur, wenn die Datei serverseitig noch dem
+// bekannten Stand entspricht (412 -> ConflictError). Gibt das neue ETag zurück.
+async function writeJson(url, authHeader, data, ifMatch) {
+  const headers = { Authorization: authHeader, "Content-Type": "application/json" };
+  if (ifMatch) headers["If-Match"] = ifMatch;
   const resp = await fetch(url, {
     method: "PUT",
-    headers: { Authorization: authHeader, "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(data, null, 2)
   });
+  if (resp.status === 412) throw new ConflictError("Datei wurde zwischenzeitlich geändert");
   if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
+  return resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null;
 }
 
 // ---------- Gruppen-Helfer ----------

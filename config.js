@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -96,6 +96,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Stabilität & Datensicherheit (Worker-Update nötig)",
+        items: [
+          "Ist Nextcloud vorübergehend nicht erreichbar, antwortet der Worker jetzt mit einer klaren Fehlermeldung statt mit leeren Daten — vorher konnte ein einziger Lesefehler dazu führen, dass der nächste Speichervorgang alle Nutzerkonten bzw. die Daten einer App überschreibt.",
+          "WebDAV-Gateway mit Konfliktschutz: Speichern die Apps (Materialliste, TrainerCheckliste, Spielertool) von zwei Geräten gleichzeitig, wird der Konflikt erkannt und gemeldet, statt dass eine Änderung stillschweigend verloren geht."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [
