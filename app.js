@@ -503,12 +503,13 @@ function renderToolGrid() {
     grid.className = "tool-grid";
     toolsInCategory.forEach((t) => {
       const card = document.createElement("a");
-      card.className = "tool-card";
+      card.className = "tool-card" + (t.wip ? " wip" : "");
       card.href = t.url;
       card.target = "_blank";
       card.rel = "noopener";
       card.innerHTML = `
         <div class="tool-icon">${t.icon || "🔗"}</div>
+        ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
       `;

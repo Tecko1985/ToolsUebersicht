@@ -1,4 +1,4 @@
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -92,10 +92,66 @@ const TOOLS = [
     url: "https://tecko1985.github.io/beleg-scanner/",
     icon: "📷",
     category: "Privat"
+  },
+  {
+    id: "vereinskalender",
+    name: "Vereinskalender",
+    description: "Zentraler Vereinskalender für Termine, Trainingszeiten und Veranstaltungen.",
+    url: "https://tecko1985.github.io/vereinskalender/",
+    icon: "📅",
+    category: "Verein",
+    wip: true
+  },
+  {
+    id: "platzbelegung",
+    name: "Platzbelegung",
+    description: "Belegungsplan für Trainingsplätze und Halle — wer nutzt wann welchen Platz.",
+    url: "https://tecko1985.github.io/platzbelegung/",
+    icon: "🏟️",
+    category: "Verein",
+    wip: true
+  },
+  {
+    id: "spielersichtung",
+    name: "Spielersichtung",
+    description: "Sichtung und Bewertung von Nachwuchsspielern für Kader- und Förderentscheidungen.",
+    url: "https://tecko1985.github.io/spielersichtung/",
+    icon: "🔍",
+    category: "Verein",
+    wip: true
+  },
+  {
+    id: "trainerkodex",
+    name: "Trainerkodex",
+    description: "Verhaltenskodex für Trainer:innen — digital einsehbar und bestätigbar.",
+    url: "https://tecko1985.github.io/trainerkodex/",
+    icon: "📜",
+    category: "Verein",
+    wip: true
+  },
+  {
+    id: "spielerplus-klon",
+    name: "Spielerplus-Klon",
+    description: "Vereinsinterne Alternative zu SpielerPlus: Teamorganisation, An-/Abmeldungen, Kommunikation.",
+    url: "https://tecko1985.github.io/spielerplus-klon/",
+    icon: "⚽",
+    category: "Verein",
+    wip: true
   }
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.3",
+    groups: [
+      {
+        title: "Neue Tools (in Bearbeitung)",
+        items: [
+          "Fünf weitere Tools als Platzhalter angelegt und mit einem \"In Bearbeitung\"-Hinweis auf der Übersicht sichtbar: Vereinskalender, Platzbelegung, Spielersichtung, Trainerkodex und Spielerplus-Klon."
+        ]
+      }
+    ]
+  },
   {
     version: "1.2",
     groups: [
