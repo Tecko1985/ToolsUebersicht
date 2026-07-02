@@ -738,14 +738,40 @@ async function readJsonWithRev(url, authHeader, fallback) {
 async function writeJson(url, authHeader, data, ifMatch) {
   const headers = { Authorization: authHeader, "Content-Type": "application/json" };
   if (ifMatch) headers["If-Match"] = ifMatch;
-  const resp = await fetch(url, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify(data, null, 2)
-  });
+  const body = JSON.stringify(data, null, 2);
+  let resp = await fetch(url, { method: "PUT", headers, body });
+  // 409 beim PUT heißt in WebDAV: der Elternordner existiert noch nicht (passiert
+  // bei der allerersten Speicherung einer neu angebundenen App). Ordner anlegen und
+  // EINMAL wiederholen. Mit ifMatch kann ein 409 hier nicht aus einem fehlenden
+  // Ordner stammen (die Datei — und damit ihr Ordner — existierte ja schon), daher
+  // nur im unbedingten Fall automatisch anlegen.
+  if (resp.status === 409 && !ifMatch) {
+    await ensureParentCollection(url, authHeader);
+    resp = await fetch(url, { method: "PUT", headers, body });
+  }
   if (resp.status === 412) throw new ConflictError("Datei wurde zwischenzeitlich geändert");
   if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
   return normalizeETag(resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null);
+}
+
+// Legt den Elternordner der Datei-URL an — rekursiv, falls mehrere Ebenen fehlen.
+// WebDAV MKCOL: 201 = angelegt, 405 = existiert bereits (Basisfall der Rekursion,
+// bricht das Hochlaufen ab, sobald ein vorhandener Ordner erreicht ist),
+// 409 = der eigene Elternordner fehlt ebenfalls -> erst den anlegen, dann erneut.
+async function ensureParentCollection(fileUrl, authHeader) {
+  await ensureCollection(fileUrl.slice(0, fileUrl.lastIndexOf("/")), authHeader, 0);
+}
+
+async function ensureCollection(collUrl, authHeader, depth) {
+  if (depth > 15) throw new NextcloudError("Ordnerpfad zu tief zum automatischen Anlegen");
+  let resp = await fetch(collUrl, { method: "MKCOL", headers: { Authorization: authHeader } });
+  if (resp.status === 201 || resp.status === 405) return; // neu angelegt bzw. schon vorhanden
+  if (resp.status === 409) {
+    await ensureCollection(collUrl.slice(0, collUrl.lastIndexOf("/")), authHeader, depth + 1);
+    resp = await fetch(collUrl, { method: "MKCOL", headers: { Authorization: authHeader } });
+    if (resp.status === 201 || resp.status === 405) return;
+  }
+  throw new NextcloudError(`Ordner anlegen fehlgeschlagen (MKCOL ${resp.status})`);
 }
 
 // ---------- Gruppen-Helfer ----------
