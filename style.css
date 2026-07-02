@@ -167,11 +167,27 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .tool-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); }
+.tool-card.dragging { opacity: 0.5; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); transform: none; cursor: grabbing; }
 .tool-card .tool-icon { font-size: 28px; }
-.tool-version {
+.tool-card-badges {
   position: absolute;
   top: 14px;
   right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tool-drag-handle {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: grab;
+  padding: 2px 4px;
+  touch-action: none;
+  user-select: none;
+}
+.tool-drag-handle:active { cursor: grabbing; }
+.tool-version {
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);

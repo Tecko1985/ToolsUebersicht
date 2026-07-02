@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -153,6 +153,18 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.5",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Tool-Karten lassen sich per Greifpunkt oben rechts frei verschieben und innerhalb ihrer Kategorie neu anordnen — funktioniert per Maus und Touch.",
+          "Die eigene Reihenfolge wird direkt im Browser gemerkt (nicht geräteübergreifend synchronisiert) und bleibt auch nach einem Neuladen erhalten."
+        ]
+      }
+    ]
+  },
   {
     version: "1.4",
     groups: [

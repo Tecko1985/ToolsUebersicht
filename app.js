@@ -1,6 +1,7 @@
 // Worker-URL des admin-worker.js (siehe README für Deploy-Anleitung).
 const WORKER_URL = "https://landingpage.michel-brunner.workers.dev";
 const TOKEN_STORAGE_KEY = "tu_session_token";
+const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 
 let visibilityState = {};
 let bootstrapAvailable = false;
@@ -10,6 +11,7 @@ let pendingFirstLoginUsername = null;
 let pendingLoginUsername = null;
 let groupsState = [];
 let usersState = [];
+let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte, sonst null
 
 function defaultVisibility() {
   const map = {};
@@ -483,6 +485,85 @@ function isVisibleToUser(toolId, user) {
   return groupIds.some((gid) => (user.groupIds || []).includes(gid));
 }
 
+// Reihenfolge ist eine rein lokale Anzeige-Präferenz (pro Browser via localStorage,
+// kein Sync über den Worker) — jede Kategorie wird unabhängig gespeichert, da die
+// Karten pro Kategorie in einem eigenen Grid liegen.
+function loadToolOrder() {
+  try {
+    return JSON.parse(localStorage.getItem(TOOL_ORDER_STORAGE_KEY)) || {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveToolOrder(category, orderedIds) {
+  const all = loadToolOrder();
+  all[category] = orderedIds;
+  try { localStorage.setItem(TOOL_ORDER_STORAGE_KEY, JSON.stringify(all)); } catch (_) { /* localStorage nicht verfügbar */ }
+}
+
+// Wendet eine gespeicherte Reihenfolge an; neue/unbekannte Tools (kein Eintrag in der
+// gespeicherten Reihenfolge, z.B. weil gerade erst hinzugefügt) hängen unverändert hinten an.
+function applyCustomOrder(category, tools) {
+  const order = loadToolOrder()[category];
+  if (!order || !order.length) return tools;
+  const remaining = new Map(tools.map((t) => [t.id, t]));
+  const ordered = [];
+  order.forEach((id) => {
+    if (remaining.has(id)) { ordered.push(remaining.get(id)); remaining.delete(id); }
+  });
+  tools.forEach((t) => { if (remaining.has(t.id)) ordered.push(t); });
+  return ordered;
+}
+
+// Startet einen Verschiebe-Vorgang per Pointer Events (vereint Maus/Touch/Stift).
+// Reordering-Technik: beim Überqueren einer anderen Karte im selben Grid wird die
+// gezogene Karte per insertBefore direkt an deren Stelle im DOM verschoben — kein
+// Ghost-Element/Geometrie-Berechnung nötig, bewährtes einfaches Muster.
+function startCardDrag(e, card, grid, category) {
+  e.preventDefault();
+  const handle = e.currentTarget;
+  handle.setPointerCapture(e.pointerId);
+  dragState = { pointerId: e.pointerId, handle, card, grid, category, startX: e.clientX, startY: e.clientY, moved: false };
+
+  const onMove = (ev) => {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    if (!dragState.moved) {
+      if (Math.hypot(ev.clientX - dragState.startX, ev.clientY - dragState.startY) < 6) return;
+      dragState.moved = true;
+      dragState.card.classList.add("dragging");
+    }
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (!el) return;
+    const overCard = el.closest(".tool-card");
+    if (overCard && overCard !== dragState.card && overCard.parentElement === dragState.grid) {
+      dragState.grid.insertBefore(dragState.card, overCard);
+    } else if (!overCard && el.closest(".tool-grid") === dragState.grid) {
+      dragState.grid.appendChild(dragState.card);
+    }
+  };
+
+  const onUp = (ev) => {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    const { card: draggedCard, grid: draggedGrid, category: draggedCategory, moved, handle: draggedHandle } = dragState;
+    draggedCard.classList.remove("dragging");
+    try { draggedHandle.releasePointerCapture(ev.pointerId); } catch (_) { /* schon freigegeben */ }
+    if (moved) {
+      draggedCard.dataset.justDragged = "1";
+      setTimeout(() => { delete draggedCard.dataset.justDragged; }, 0);
+      saveToolOrder(draggedCategory, Array.from(draggedGrid.children).map((c) => c.dataset.toolId));
+    }
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    dragState = null;
+  };
+
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onUp);
+}
+
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   container.innerHTML = "";
@@ -491,9 +572,10 @@ function renderToolGrid() {
   let anyVisible = false;
 
   categories.forEach((category) => {
-    const toolsInCategory = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
-    if (toolsInCategory.length === 0) return;
+    const toolsUnordered = TOOLS.filter((t) => t.category === category && isVisibleToUser(t.id, currentUser));
+    if (toolsUnordered.length === 0) return;
     anyVisible = true;
+    const toolsInCategory = applyCustomOrder(category, toolsUnordered);
 
     const group = document.createElement("div");
     group.className = "category-group";
@@ -507,13 +589,19 @@ function renderToolGrid() {
       card.href = t.url;
       card.target = "_blank";
       card.rel = "noopener";
+      card.dataset.toolId = t.id;
       card.innerHTML = `
-        ${t.version ? `<span class="tool-version">v${escapeHtml(t.version)}</span>` : ""}
+        <div class="tool-card-badges">
+          <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
+          ${t.version ? `<span class="tool-version">v${escapeHtml(t.version)}</span>` : ""}
+        </div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
       `;
+      card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
+      card.addEventListener("click", (ev) => { if (card.dataset.justDragged === "1") ev.preventDefault(); });
       grid.appendChild(card);
     });
 
