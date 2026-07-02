@@ -13,7 +13,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
     category: "Verein",
-    version: "1.2",
+    version: "1.5",
     devices: ["mobile", "desktop"]
   },
   {
