@@ -198,6 +198,11 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   border-radius: 999px;
   padding: 2px 9px;
 }
+.tool-devices {
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 1px;
+}
 .tool-card h3 { font-size: 16px; color: var(--blue); }
 .tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .tool-card.wip { opacity: 0.82; }

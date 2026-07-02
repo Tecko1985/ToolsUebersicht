@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -13,7 +13,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
     category: "Verein",
-    version: "1.2"
+    version: "1.2",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "trainercheckliste",
@@ -22,7 +23,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.3"
+    version: "1.3",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "materialliste",
@@ -31,7 +33,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.2"
+    version: "1.2",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "sc1911-anmeldung",
@@ -40,7 +43,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
     category: "Verein",
-    version: "1.1"
+    version: "1.1",
+    devices: ["desktop"]
   },
   {
     id: "vereinsbudget",
@@ -49,7 +53,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
     category: "Verein",
-    version: "1.3"
+    version: "1.3",
+    devices: ["desktop"]
   },
   {
     id: "beleg-eingang",
@@ -58,7 +63,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
     category: "Verein",
-    version: "1.3"
+    version: "1.3",
+    devices: ["mobile"]
   },
   {
     id: "geschaeftsstelle",
@@ -67,7 +73,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
     category: "Verein",
-    version: "1.3"
+    version: "1.3",
+    devices: ["desktop"]
   },
   {
     id: "spielertool-test",
@@ -76,7 +83,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielertool-test/",
     icon: "⚽",
     category: "Verein",
-    version: "1.2"
+    version: "1.2",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "kassenbuch",
@@ -85,7 +93,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kassenbuch/",
     icon: "💰",
     category: "Privat",
-    version: "1.1"
+    version: "1.1",
+    devices: ["mobile"]
   },
   {
     id: "familien-quartett",
@@ -94,7 +103,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/familien-quartett/",
     icon: "🃏",
     category: "Privat",
-    version: "1.0"
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "beleg-scanner",
@@ -103,7 +113,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/beleg-scanner/",
     icon: "📷",
     category: "Privat",
-    version: "1.1"
+    version: "1.1",
+    devices: ["mobile"]
   },
   {
     id: "vereinskalender",
@@ -112,7 +123,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    wip: true
+    wip: true,
+    devices: ["mobile", "desktop"]
   },
   {
     id: "platzbelegung",
@@ -121,7 +133,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    wip: true
+    wip: true,
+    devices: ["mobile", "desktop"]
   },
   {
     id: "spielersichtung",
@@ -130,7 +143,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    wip: true
+    wip: true,
+    devices: ["mobile", "desktop"]
   },
   {
     id: "trainerkodex",
@@ -139,7 +153,8 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.0"
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   },
   {
     id: "spielerplus-klon",
@@ -148,11 +163,23 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielerplus-klon/",
     icon: "⚽",
     category: "Verein",
-    wip: true
+    wip: true,
+    devices: ["mobile", "desktop"]
   }
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.9",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Jede Tool-Karte zeigt jetzt zusätzlich an, für welches Endgerät sie gedacht ist (📱 Handy, 💻 Laptop, oder beides)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.8",
     groups: [

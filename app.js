@@ -564,6 +564,16 @@ function startCardDrag(e, card, grid, category) {
   document.addEventListener("pointercancel", onUp);
 }
 
+// Baut die Endgeräte-Icons (📱/💻) für eine Tool-Karte aus t.devices (["mobile","desktop"]).
+function deviceIcons(devices) {
+  if (!devices || !devices.length) return "";
+  const icons = { mobile: "📱", desktop: "💻" };
+  const labels = { mobile: "Handy", desktop: "Laptop" };
+  const symbols = devices.map((d) => icons[d] || "").join("");
+  const title = devices.map((d) => labels[d] || d).join(" & ");
+  return `<span class="tool-devices" title="Geeignet für: ${title}">${symbols}</span>`;
+}
+
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   container.innerHTML = "";
@@ -593,6 +603,7 @@ function renderToolGrid() {
       card.innerHTML = `
         <div class="tool-card-badges">
           <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
+          ${deviceIcons(t.devices)}
           ${t.version ? `<span class="tool-version">v${escapeHtml(t.version)}</span>` : ""}
         </div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
