@@ -263,12 +263,16 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
 async function handleMe(request, env, authHeader, corsHeaders) {
   const session = await getSession(request, env);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  let groupIds = [];
-  if (!session.isAdmin) {
-    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-    groupIds = getUserGroupIds(usersDoc, session.username);
-  }
-  return json({ username: session.username, isAdmin: !!session.isAdmin, groupIds }, 200, corsHeaders);
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const groupIds = session.isAdmin ? [] : getUserGroupIds(usersDoc, session.username);
+  const user = usersDoc.users[session.username];
+  return json({
+    username: session.username,
+    isAdmin: !!session.isAdmin,
+    groupIds,
+    vorname: (user && user.vorname) || null,
+    nachname: (user && user.nachname) || null
+  }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Nutzerverwaltung ----------
