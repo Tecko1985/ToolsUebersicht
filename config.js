@@ -1,4 +1,4 @@
-const APP_VERSION = "1.11";
+const APP_VERSION = "1.12";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -157,6 +157,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    id: "personalkosten",
+    name: "Personalkosten",
+    description: "Personalkosten / Aufwandsentschädigungen der Mannschaften planen und auswerten (nur für berechtigte Gruppe).",
+    url: "https://tecko1985.github.io/Personalkosten/",
+    icon: "💶",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "spielerplus-klon",
     name: "Spielerplus-Klon",
     description: "Vereinsinterne Alternative zu SpielerPlus: Teamorganisation, An-/Abmeldungen, Kommunikation.",
@@ -169,6 +179,17 @@ const TOOLS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.12",
+    groups: [
+      {
+        title: "Übersicht",
+        items: [
+          "Neues Tool „Personalkosten“: Planung der Aufwandsentschädigungen der Mannschaften (Trainer, Schwerpunkttrainer, Förderung) mit automatischer Berechnung und Kosten-Übersicht — sichtbar nur für die freigegebene Gruppe."
+        ]
+      }
+    ]
+  },
   {
     version: "1.11",
     groups: [
