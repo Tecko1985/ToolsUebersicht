@@ -1,4 +1,4 @@
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -216,6 +216,25 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.3",
+    groups: [
+      {
+        title: "Dashboard",
+        items: [
+          "Der Tab \"Übersicht\" heißt jetzt \"Dashboard\".",
+          "Links neben den Tool-Kacheln zeigt ein neues Widget die nächsten 3 anstehenden Vereinstermine (aus dem Vereinskalender) — sichtbar für alle, die auch die Vereinskalender-Kachel sehen dürfen.",
+          "Die Neuigkeiten zeigen jetzt standardmäßig nur die letzten 2 Meldungen; 'Mehr anzeigen' klappt bis zu 3 weitere auf (insgesamt max. 5)."
+        ]
+      },
+      {
+        title: "Einstellungen-Tab",
+        items: [
+          "Der Neuigkeiten-Bereich steht jetzt direkt unter 'Eingeloggt als ...', statt weiter unten zwischen den anderen Admin-Bereichen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.2",
     groups: [

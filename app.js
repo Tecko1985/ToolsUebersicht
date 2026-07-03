@@ -113,6 +113,7 @@ function logout() {
   storeToken(null);
   renderAdminPanels();
   renderToolGrid();
+  loadCalendarWidget();
 }
 
 async function loadAndRenderUsers() {
@@ -687,7 +688,8 @@ function renderChangelog() {
 }
 
 const NEWS_TYPE_LABELS = { neu: "Neu", update: "Update", fix: "Fix", hinweis: "Hinweis" };
-const NEWS_VISIBLE_COUNT = 3;
+const NEWS_VISIBLE_COUNT = 2;
+const NEWS_MAX_TOTAL = 5; // insgesamt max. angezeigte Meldungen (Standard + aufgeklappt)
 
 function toolById(id) {
   return TOOLS.find((t) => t.id === id) || null;
@@ -702,7 +704,8 @@ function renderNews() {
   const banner = document.getElementById("news-banner");
   if (!banner) return;
   const items = newsState.slice()
-    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+    .slice(0, NEWS_MAX_TOTAL);
   if (items.length === 0) {
     banner.style.display = "none";
     return;
@@ -748,6 +751,78 @@ function renderNews() {
       btn.textContent = expanded ? "Weniger anzeigen" : `Mehr anzeigen (${extra})`;
     });
   }
+}
+
+// ---- Vereinskalender-Widget: nächste Termine links neben den Kacheln ----
+// Nutzt dieselbe Sichtbarkeitsregel wie die Tool-Karte (isVisibleToUser) und
+// dieselbe Gateway-Aktion (dav-load) wie die Vereinskalender-App selbst — rein
+// lesend, kein eigener Worker-Code nötig. Ohne Login/Zugriff wird das Widget
+// einfach ausgeblendet statt einen Fehler zu zeigen.
+const CALENDAR_WIDGET_APP_ID = "vereinskalender";
+const CALENDAR_WIDGET_COUNT = 3;
+
+function calendarTerminEndIso(t) {
+  return t.endDatum && /^\d{4}-\d{2}-\d{2}$/.test(t.endDatum) && t.endDatum >= t.datum ? t.endDatum : t.datum;
+}
+
+function calendarSortKey(t) {
+  return `${t.datum}T${(t.ganztags ? "" : t.startZeit) || "00:00"}`;
+}
+
+function formatCalendarDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? `${m[3]}.${m[2]}.` : "";
+}
+
+async function loadCalendarWidget() {
+  const widget = document.getElementById("calendar-widget");
+  if (!widget) return;
+  if (!currentUser || !isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser)) {
+    widget.style.display = "none";
+    widget.innerHTML = "";
+    return;
+  }
+  try {
+    const res = await callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID });
+    const data = res && res.data && typeof res.data === "object" ? res.data : {};
+    const termine = Array.isArray(data.termine) ? data.termine : [];
+    const kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
+    const today = new Date().toISOString().slice(0, 10);
+    const upcoming = termine
+      .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.datum || "") && calendarTerminEndIso(t) >= today)
+      .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)))
+      .slice(0, CALENDAR_WIDGET_COUNT);
+    renderCalendarWidget(widget, upcoming, kategorien);
+  } catch (e) {
+    console.warn("Vereinskalender-Widget nicht ladbar:", e);
+    widget.style.display = "none";
+    widget.innerHTML = "";
+  }
+}
+
+function renderCalendarWidget(widget, termine, kategorien) {
+  const tool = toolById(CALENDAR_WIDGET_APP_ID);
+  const url = tool ? tool.url : "#";
+  const katFarbe = (id) => {
+    const k = kategorien.find((k2) => k2.id === id);
+    return k ? k.farbe : "#6b7280";
+  };
+  const rows = termine.length
+    ? termine.map((t) => `
+        <a class="calendar-widget-item" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+          <span class="cw-date">${escapeHtml(formatCalendarDate(t.datum))}</span>
+          <span class="cw-dot" style="background:${escapeHtml(katFarbe(t.kategorie))}"></span>
+          <span class="cw-title">${escapeHtml(t.titel || "")}</span>
+        </a>
+      `).join("")
+    : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
+  widget.innerHTML = `
+    <div class="card">
+      <h2>📅 Nächste Termine</h2>
+      <div class="calendar-widget-list">${rows}</div>
+    </div>
+  `;
+  widget.style.display = "block";
 }
 
 // ---- Admin: Neuigkeiten verwalten (Einstellungen-Tab) ----
@@ -926,6 +1001,7 @@ function renderAdminPanels() {
 async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
+  await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
@@ -1207,6 +1283,7 @@ async function init() {
 
   renderAdminPanels();
   renderToolGrid();
+  await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();

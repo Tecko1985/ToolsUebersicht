@@ -191,6 +191,45 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
 #news-form textarea { width: 100%; }
 
+/* ---------- Dashboard-Layout (Kalender-Widget + Kacheln) ---------- */
+
+.uebersicht-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.uebersicht-main { flex: 1; min-width: 0; }
+.calendar-widget { flex: 0 0 260px; }
+.calendar-widget .card { margin-bottom: 0; }
+.calendar-widget-list { display: flex; flex-direction: column; }
+.calendar-widget-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  border-radius: 6px;
+}
+.calendar-widget-item:first-child { border-top: none; }
+.calendar-widget-item:hover { background: var(--blue-light); }
+.calendar-widget-item .cw-date { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 40px; }
+.calendar-widget-item .cw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.calendar-widget-item .cw-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .uebersicht-layout { flex-direction: column; }
+  .calendar-widget { flex-basis: auto; width: 100%; }
+}
+
 /* ---------- Kategorie-Gruppen ---------- */
 
 .category-group { margin-bottom: 26px; }
