@@ -68,6 +68,7 @@
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
   "http://localhost:8768", // TrainerCheckliste (Dev-Server)
+  "http://localhost:8769", // TrainerVertrag (Dev-Server)
   "http://localhost:8770", // ToolsUebersicht (Dev-Server)
   "http://localhost:8771", // Spielertool (Dev-Server)
   "http://localhost:8772", // Vereinsbudget (Dev-Server)
