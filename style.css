@@ -192,14 +192,17 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 #news-form textarea { width: 100%; }
 
 /* ---------- Dashboard-Layout (Kalender-Widget + Kacheln) ---------- */
+/* .page-body bricht bewusst aus dem zentrierten max-width:1100px von <main>
+   aus, damit das Kalender-Widget ganz links am Fensterrand steht statt nur
+   am linken Rand des zentrierten Inhaltsbereichs; <main> bleibt als eigenes
+   Flex-Kind weiterhin über seine eigene max-width/margin:auto zentriert. */
 
-.uebersicht-layout {
+.page-body {
   display: flex;
   align-items: flex-start;
-  gap: 20px;
 }
-.uebersicht-main { flex: 1; min-width: 0; }
-.calendar-widget { flex: 0 0 260px; }
+main { flex: 1; min-width: 0; }
+.calendar-widget { flex: 0 0 260px; padding: 24px 0 0 16px; }
 .calendar-widget .card { margin-bottom: 0; }
 .calendar-widget-list { display: flex; flex-direction: column; }
 .calendar-widget-item {
@@ -226,8 +229,8 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 }
 
 @media (max-width: 860px) {
-  .uebersicht-layout { flex-direction: column; }
-  .calendar-widget { flex-basis: auto; width: 100%; }
+  .page-body { flex-direction: column; }
+  .calendar-widget { flex-basis: auto; width: 100%; padding: 24px 16px 0; }
 }
 
 /* ---------- Kategorie-Gruppen ---------- */

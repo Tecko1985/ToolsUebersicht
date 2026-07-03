@@ -22,19 +22,17 @@
   <button data-tab="admin" style="margin-left:auto;">Einstellungen</button>
 </nav>
 
-<main>
+<div class="page-body">
+  <aside id="calendar-widget" class="calendar-widget" style="display:none;"></aside>
+
+  <main>
 
   <section class="tab-section active" id="tab-uebersicht">
     <div id="news-banner" class="news-banner" style="display:none;"></div>
-    <div class="uebersicht-layout">
-      <aside id="calendar-widget" class="calendar-widget" style="display:none;"></aside>
-      <div class="uebersicht-main">
-        <div id="tool-groups"></div>
-        <div class="empty-state" id="uebersicht-empty" style="display:none;">
-          <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
-          <button type="button" class="btn" id="btn-empty-login" style="display:none; margin-top:14px;">Jetzt anmelden</button>
-        </div>
-      </div>
+    <div id="tool-groups"></div>
+    <div class="empty-state" id="uebersicht-empty" style="display:none;">
+      <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
+      <button type="button" class="btn" id="btn-empty-login" style="display:none; margin-top:14px;">Jetzt anmelden</button>
     </div>
   </section>
 
@@ -246,7 +244,8 @@
 
   </section>
 
-</main>
+  </main>
+</div>
 
 <script src="config.js?v=1.3"></script>
 <script src="app.js?v=1.3"></script>

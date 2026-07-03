@@ -774,10 +774,23 @@ function formatCalendarDate(iso) {
   return m ? `${m[3]}.${m[2]}.` : "";
 }
 
+// Das Widget hängt jetzt außerhalb von #tab-uebersicht (siehe index.html:
+// .page-body bricht bewusst aus main heraus, damit es ganz links am
+// Fensterrand steht statt nur am linken Rand des zentrierten Inhalts) und
+// wird deshalb nicht mehr automatisch über die tab-section mitversteckt.
+// dataset.hasContent hält fest, ob überhaupt Inhalt da ist; die tatsächliche
+// Sichtbarkeit ergibt sich erst in Kombination mit dem aktiven Tab (siehe
+// activateTab) — sonst würde es auch im Einstellungen-Tab durchscheinen.
+function isUebersichtTabActive() {
+  const section = document.getElementById("tab-uebersicht");
+  return !!(section && section.classList.contains("active"));
+}
+
 async function loadCalendarWidget() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
   if (!currentUser || !isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser)) {
+    widget.dataset.hasContent = "0";
     widget.style.display = "none";
     widget.innerHTML = "";
     return;
@@ -795,6 +808,7 @@ async function loadCalendarWidget() {
     renderCalendarWidget(widget, upcoming, kategorien);
   } catch (e) {
     console.warn("Vereinskalender-Widget nicht ladbar:", e);
+    widget.dataset.hasContent = "0";
     widget.style.display = "none";
     widget.innerHTML = "";
   }
@@ -822,7 +836,8 @@ function renderCalendarWidget(widget, termine, kategorien) {
       <div class="calendar-widget-list">${rows}</div>
     </div>
   `;
-  widget.style.display = "block";
+  widget.dataset.hasContent = "1";
+  widget.style.display = isUebersichtTabActive() ? "block" : "none";
 }
 
 // ---- Admin: Neuigkeiten verwalten (Einstellungen-Tab) ----
@@ -936,6 +951,10 @@ function activateTab(name) {
   if (btn) btn.classList.add("active");
   const section = document.getElementById("tab-" + name);
   if (section) section.classList.add("active");
+  // Kalender-Widget hängt außerhalb von #tab-uebersicht (siehe loadCalendarWidget) —
+  // beim Tab-Wechsel Sichtbarkeit anhand des geladenen Inhalts neu bewerten.
+  const widget = document.getElementById("calendar-widget");
+  if (widget) widget.style.display = (name === "uebersicht" && widget.dataset.hasContent === "1") ? "block" : "none";
 }
 
 function setupTabs() {
