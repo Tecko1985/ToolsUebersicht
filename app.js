@@ -688,8 +688,11 @@ function renderChangelog() {
 }
 
 const NEWS_TYPE_LABELS = { neu: "Neu", update: "Update", fix: "Fix", hinweis: "Hinweis" };
-const NEWS_VISIBLE_COUNT = 2;
-const NEWS_MAX_TOTAL = 5; // insgesamt max. angezeigte Meldungen (Standard + aufgeklappt)
+const NEWS_MAX_TOTAL = 5; // insgesamt max. per Pfeil erreichbare Meldungen
+
+// Index der aktuell im Karussell sichtbaren Meldung (0 = neueste). Rechter Pfeil
+// erhöht ihn (→ ältere Meldung), linker Pfeil verringert ihn (→ neuere Meldung).
+let newsCarouselIndex = 0;
 
 function toolById(id) {
   return TOOLS.find((t) => t.id === id) || null;
@@ -711,46 +714,43 @@ function renderNews() {
     return;
   }
   banner.style.display = "block";
-  banner.classList.remove("news-expanded");
+  if (newsCarouselIndex < 0 || newsCarouselIndex >= items.length) newsCarouselIndex = 0;
 
-  const rows = items.map((n, i) => {
-    const tool = n.toolId ? toolById(n.toolId) : null;
-    const type = String(n.type || "");
-    const badge = type
-      ? `<span class="news-badge news-badge-${escapeHtml(type)}">${escapeHtml(NEWS_TYPE_LABELS[type] || type)}</span>`
-      : "";
-    const date = n.date ? `<span class="news-date">${escapeHtml(formatNewsDate(n.date))}</span>` : "";
-    const link = tool ? `<span class="news-item-link">${escapeHtml(tool.name)} öffnen →</span>` : "";
-    const inner = `
-      <div class="news-item-head">${badge}${date}</div>
-      <div class="news-item-title">${escapeHtml(n.title || "")}</div>
-      ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
-      ${link}
-    `;
-    const cls = "news-item" + (i >= NEWS_VISIBLE_COUNT ? " news-item-extra" : "");
-    return tool
-      ? `<a class="${cls}" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener">${inner}</a>`
-      : `<div class="${cls}">${inner}</div>`;
-  }).join("");
-
-  const extra = items.length - NEWS_VISIBLE_COUNT;
-  const moreBtn = extra > 0
-    ? `<button type="button" class="btn secondary small news-more-btn">Mehr anzeigen (${extra})</button>`
+  const n = items[newsCarouselIndex];
+  const tool = n.toolId ? toolById(n.toolId) : null;
+  const type = String(n.type || "");
+  const badge = type
+    ? `<span class="news-badge news-badge-${escapeHtml(type)}">${escapeHtml(NEWS_TYPE_LABELS[type] || type)}</span>`
     : "";
+  const date = n.date ? `<span class="news-date">${escapeHtml(formatNewsDate(n.date))}</span>` : "";
+  const link = tool ? `<span class="news-item-link">${escapeHtml(tool.name)} öffnen →</span>` : "";
+  const inner = `
+    <div class="news-item-head">${badge}${date}</div>
+    <div class="news-item-title">${escapeHtml(n.title || "")}</div>
+    ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
+    ${link}
+  `;
+  const itemHtml = tool
+    ? `<a class="news-item" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener">${inner}</a>`
+    : `<div class="news-item">${inner}</div>`;
+
+  const atNewest = newsCarouselIndex === 0;
+  const atOldest = newsCarouselIndex === items.length - 1;
 
   banner.innerHTML = `
     <div class="news-head"><h2>📣 Neuigkeiten</h2></div>
-    <div class="news-list">${rows}</div>
-    ${moreBtn}
+    <div class="news-carousel">
+      <button type="button" class="news-nav-btn news-nav-prev" ${atNewest ? "disabled" : ""} title="Neuere Meldung" aria-label="Neuere Meldung">‹</button>
+      <div class="news-carousel-item">${itemHtml}</div>
+      <button type="button" class="news-nav-btn news-nav-next" ${atOldest ? "disabled" : ""} title="Ältere Meldung" aria-label="Ältere Meldung">›</button>
+    </div>
+    ${items.length > 1 ? `<div class="news-dots">${newsCarouselIndex + 1} / ${items.length}</div>` : ""}
   `;
 
-  const btn = banner.querySelector(".news-more-btn");
-  if (btn) {
-    btn.addEventListener("click", () => {
-      const expanded = banner.classList.toggle("news-expanded");
-      btn.textContent = expanded ? "Weniger anzeigen" : `Mehr anzeigen (${extra})`;
-    });
-  }
+  const prevBtn = banner.querySelector(".news-nav-prev");
+  const nextBtn = banner.querySelector(".news-nav-next");
+  if (prevBtn) prevBtn.addEventListener("click", () => { newsCarouselIndex = Math.max(0, newsCarouselIndex - 1); renderNews(); });
+  if (nextBtn) nextBtn.addEventListener("click", () => { newsCarouselIndex = Math.min(items.length - 1, newsCarouselIndex + 1); renderNews(); });
 }
 
 // ---- Vereinskalender-Widget: nächste Termine links neben den Kacheln ----
@@ -897,6 +897,7 @@ async function persistNews(prevOnError) {
   try {
     const res = await callWorker("save-news", { news: newsState });
     if (res && Array.isArray(res.news)) newsState = res.news;
+    newsCarouselIndex = 0;
     renderNews();
     renderNewsAdmin();
     successEl.style.display = "block";

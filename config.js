@@ -1,4 +1,4 @@
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -216,6 +216,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.4",
+    groups: [
+      {
+        title: "Neuigkeiten als Karussell",
+        items: [
+          "Der Neuigkeiten-Bereich zeigt jetzt immer nur eine Meldung, umschaltbar über zwei Pfeile: der rechte Pfeil blättert zur nächstälteren Meldung, der linke zurück zur neueren.",
+          "Eine kleine Anzeige (z. B. '2 / 5') zeigt, an welcher Stelle man sich befindet; nicht mehr erreichbare Pfeile sind sichtbar deaktiviert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.3",
     groups: [

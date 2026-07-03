@@ -154,15 +154,28 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   margin-bottom: 26px;
 }
 .news-head h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
-.news-list { display: flex; flex-direction: column; }
-.news-item {
-  display: block;
-  text-decoration: none;
-  color: var(--text);
-  padding: 12px 10px;
-  border-top: 1px solid var(--border);
+.news-carousel { display: flex; align-items: center; gap: 10px; }
+.news-carousel-item { flex: 1; min-width: 0; }
+.news-nav-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--gray);
+  color: var(--blue);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.news-item:first-child { border-top: none; }
+.news-nav-btn:hover:not(:disabled) { background: var(--blue-light); }
+.news-nav-btn:disabled { opacity: 0.35; cursor: default; }
+.news-dots { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; font-weight: 600; }
+.news-item { display: block; text-decoration: none; color: var(--text); padding: 4px 6px; }
 a.news-item { border-radius: 8px; transition: background 0.12s ease; }
 a.news-item:hover { background: var(--blue-light); }
 a.news-item:hover .news-item-title { text-decoration: underline; }
@@ -183,9 +196,6 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-badge-update  { color: var(--blue);  background: var(--blue-light); }
 .news-badge-fix     { color: var(--gold);  background: var(--gold-light); }
 .news-badge-hinweis { color: var(--muted); background: var(--gray); }
-.news-more-btn { margin-top: 12px; }
-.news-item-extra { display: none; }
-.news-expanded .news-item-extra { display: block; }
 .news-admin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
 .news-admin-row:first-child { border-top: none; }
 .news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
