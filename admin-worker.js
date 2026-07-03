@@ -62,6 +62,10 @@
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
 //     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
+//   POST { action: "dav-file-put", app, id, name, contentType, dataBase64 } + Authorization: Bearer -> { ok:true }
+//     (lädt eine Binärdatei in den Unterordner dateien/ der App; id = UUID, Größe <= 10 MB; Sichtbarkeits-Check wie dav-load)
+//   POST { action: "dav-file-get", app, id } + Authorization: Bearer    -> rohe Datei-Bytes (Content-Type von Nextcloud) | 404
+//   POST { action: "dav-file-delete", app, id } + Authorization: Bearer -> { ok:true } (204/404 = Erfolg beim Aufräumen)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -75,6 +79,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8774", // Trainerversammlung-Anmeldung (Dev-Server)
   "http://localhost:8775", // Trainerkodex (Dev-Server)
   "http://localhost:8779", // Spielersichtung (Dev-Server)
+  "http://localhost:8777", // Vereinskalender (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -89,7 +94,8 @@ const DAV_APPS = {
   "trainerkodex":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Trainerkodex/trainerkodex.json",
   "spielersichtung":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielersichtung/spielersichtung.json",
   "platzbelegung":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Platzbelegung/platzbelegung.json",
-  "personalkosten":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalkosten/personalkosten.json"
+  "personalkosten":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalkosten/personalkosten.json",
+  "vereinskalender":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinskalender/vereinskalender.json"
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -182,6 +188,12 @@ export default {
         return handleDavLoad(request, body, env, authHeader, corsHeaders);
       case "dav-save":
         return handleDavSave(request, body, env, authHeader, corsHeaders);
+      case "dav-file-put":
+        return handleDavFilePut(request, body, env, authHeader, corsHeaders);
+      case "dav-file-get":
+        return handleDavFileGet(request, body, env, authHeader, corsHeaders);
+      case "dav-file-delete":
+        return handleDavFileDelete(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -692,6 +704,99 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
   return json({ ok: true, rev: newRev }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Datei-Anhänge (Binär-Upload für Gateway-Apps) ----------
+
+const FILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB (muss zum Client-Cap in config.js passen)
+
+// Verzeichnis-URL (ohne Slash am Ende) für die Datei-Anhänge einer App: der
+// Unterordner "dateien" neben der JSON-Datendatei. Die einzelne Datei liegt unter
+// <dir>/<id> — der Original-Dateiname fließt NIE in den Pfad ein (Path-Traversal-
+// Schutz), er steht nur als Metadatum in der JSON der App.
+function davFileDir(app) {
+  const jsonUrl = getOwn(DAV_APPS, app);
+  if (!jsonUrl) return null;
+  return jsonUrl.slice(0, jsonUrl.lastIndexOf("/")) + "/dateien";
+}
+
+// Gemeinsame Vorprüfung aller Datei-Aktionen: Login, bekannte App, gültige
+// Datei-Id (UUID) und Tool-Sichtbarkeit (wie dav-load/dav-save). Liefert
+// { dir, fileUrl } oder { error: <fertige Response> }.
+async function prepareFileAction(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { error: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  const app = String(body.app || "");
+  const dir = davFileDir(app);
+  if (!dir) return { error: json({ error: "Unbekannte App" }, 400, corsHeaders) };
+  const id = String(body.id || "");
+  if (!FILE_ID_RE.test(id)) return { error: json({ error: "Ungültige Datei-Id" }, 400, corsHeaders) };
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return { error: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  return { dir, fileUrl: dir + "/" + id };
+}
+
+async function handleDavFilePut(request, body, env, authHeader, corsHeaders) {
+  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders);
+  if (p.error) return p.error;
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  // Content-Type nur als schlichter ASCII-String übernehmen (kein CR/LF -> keine
+  // Header-Injektion), sonst Fallback.
+  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(p.fileUrl, { method: "PUT", headers, body: bytes });
+  // 409 beim PUT = der Unterordner "dateien" existiert noch nicht -> anlegen und
+  // EINMAL wiederholen (MKCOL-Autofix, wie bei der ersten JSON-Speicherung).
+  if (resp.status === 409) {
+    await ensureCollection(p.dir, authHeader, 0);
+    resp = await fetch(p.fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+async function handleDavFileGet(request, body, env, authHeader, corsHeaders) {
+  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders);
+  if (p.error) return p.error;
+
+  let resp;
+  try {
+    resp = await fetch(p.fileUrl, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+  const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
+  // Rohe Bytes als Stream durchreichen, mit CORS-Headern; der Client baut daraus
+  // per Blob einen Download-/Vorschau-Link.
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+  });
+}
+
+async function handleDavFileDelete(request, body, env, authHeader, corsHeaders) {
+  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders);
+  if (p.error) return p.error;
+
+  const resp = await fetch(p.fileUrl, { method: "DELETE", headers: { Authorization: authHeader } });
+  // 204/200 = gelöscht, 404 = war schon weg — beides ist Erfolg fürs Aufräumen.
+  if (resp.ok || resp.status === 404) return json({ ok: true }, 200, corsHeaders);
+  return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
