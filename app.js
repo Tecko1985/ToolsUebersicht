@@ -685,6 +685,70 @@ function renderChangelog() {
   `).join("");
 }
 
+const NEWS_TYPE_LABELS = { neu: "Neu", update: "Update", fix: "Fix", hinweis: "Hinweis" };
+const NEWS_VISIBLE_COUNT = 3;
+
+function toolById(id) {
+  return TOOLS.find((t) => t.id === id) || null;
+}
+
+function formatNewsDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso || "");
+}
+
+function renderNews() {
+  const banner = document.getElementById("news-banner");
+  if (!banner) return;
+  const items = (typeof NEWS !== "undefined" ? NEWS.slice() : [])
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  if (items.length === 0) {
+    banner.style.display = "none";
+    return;
+  }
+  banner.style.display = "block";
+  banner.classList.remove("news-expanded");
+
+  const rows = items.map((n, i) => {
+    const tool = n.toolId ? toolById(n.toolId) : null;
+    const type = String(n.type || "");
+    const badge = type
+      ? `<span class="news-badge news-badge-${escapeHtml(type)}">${escapeHtml(NEWS_TYPE_LABELS[type] || type)}</span>`
+      : "";
+    const date = n.date ? `<span class="news-date">${escapeHtml(formatNewsDate(n.date))}</span>` : "";
+    const link = tool ? `<span class="news-item-link">${escapeHtml(tool.name)} öffnen →</span>` : "";
+    const inner = `
+      <div class="news-item-head">${badge}${date}</div>
+      <div class="news-item-title">${escapeHtml(n.title || "")}</div>
+      ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
+      ${link}
+    `;
+    const cls = "news-item" + (i >= NEWS_VISIBLE_COUNT ? " news-item-extra" : "");
+    return tool
+      ? `<a class="${cls}" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener">${inner}</a>`
+      : `<div class="${cls}">${inner}</div>`;
+  }).join("");
+
+  const extra = items.length - NEWS_VISIBLE_COUNT;
+  const moreBtn = extra > 0
+    ? `<button type="button" class="btn secondary small news-more-btn">Mehr anzeigen (${extra})</button>`
+    : "";
+
+  banner.innerHTML = `
+    <div class="news-head"><h2>📣 Neuigkeiten</h2></div>
+    <div class="news-list">${rows}</div>
+    ${moreBtn}
+  `;
+
+  const btn = banner.querySelector(".news-more-btn");
+  if (btn) {
+    btn.addEventListener("click", () => {
+      const expanded = banner.classList.toggle("news-expanded");
+      btn.textContent = expanded ? "Weniger anzeigen" : `Mehr anzeigen (${extra})`;
+    });
+  }
+}
+
 function activateTab(name) {
   document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".tab-section").forEach((s) => s.classList.remove("active"));
@@ -989,6 +1053,7 @@ async function init() {
   document.getElementById("version-badge").textContent = "v" + APP_VERSION;
   document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
+  renderNews();
   setupTabs();
   setupAuthForms();
 

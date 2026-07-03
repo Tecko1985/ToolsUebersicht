@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -119,11 +119,11 @@ const TOOLS = [
   {
     id: "vereinskalender",
     name: "Vereinskalender",
-    description: "Zentraler Vereinskalender für Termine, Trainingszeiten und Veranstaltungen.",
+    description: "Kommende Vereinstermine im Überblick (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) — Pflege durch die Geschäftsstelle.",
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    wip: true,
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -178,7 +178,54 @@ const TOOLS = [
   }
 ];
 
+// Neuigkeiten, die über den Kacheln angezeigt werden. Von Hand gepflegt und per
+// Git-Push aktualisiert (wie die Versions-/Changelog-Daten). Sortierung erfolgt
+// beim Rendern automatisch nach date (neueste zuerst) — Reihenfolge hier egal.
+// Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
+//         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
+const NEWS = [
+  {
+    date: "2026-07-03",
+    type: "neu",
+    title: "Vereinskalender ist online",
+    text: "Die als Nächstes anstehenden Vereinstermine (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) jetzt auf einen Blick — Pflege durch die Geschäftsstelle.",
+    toolId: "vereinskalender",
+  },
+  {
+    date: "2026-07-03",
+    type: "neu",
+    title: "Neuigkeiten-Bereich",
+    text: "Diese Übersicht hat jetzt oben einen Bereich für Neuigkeiten rund um die Vereins-Tools.",
+  },
+  {
+    date: "2026-07-03",
+    type: "neu",
+    title: "Personalkosten-Tool ist online",
+    text: "Aufwandsentschädigungen der Mannschaften lassen sich jetzt planen und auswerten.",
+    toolId: "personalkosten",
+  },
+  {
+    date: "2026-07-03",
+    type: "update",
+    title: "Platzbelegung: Hallenbelegung ergänzt",
+    text: "Neben den Trainingsplätzen kann jetzt auch die Hallenbelegung geplant werden.",
+    toolId: "platzbelegung",
+  },
+];
+
 const APP_CHANGELOG = [
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Tools-Übersicht",
+        items: [
+          "Neuer Neuigkeiten-Bereich über den Kacheln: kurze Meldungen zu den Vereins-Tools (z. B. neues Tool oder neue Funktion), mit Datum, farbigem Typ-Kennzeichen (Neu/Update/Fix/Hinweis) und optionaler Verknüpfung, die direkt das betroffene Tool öffnet.",
+          "Standardmäßig werden die neuesten Meldungen gezeigt; ältere lassen sich über 'Mehr anzeigen' aufklappen. Der Bereich ist für alle Besucher sichtbar (auch ohne Login)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [
