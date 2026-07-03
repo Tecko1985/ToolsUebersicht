@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -178,9 +178,11 @@ const TOOLS = [
   }
 ];
 
-// Neuigkeiten, die über den Kacheln angezeigt werden. Von Hand gepflegt und per
-// Git-Push aktualisiert (wie die Versions-/Changelog-Daten). Sortierung erfolgt
-// beim Rendern automatisch nach date (neueste zuerst) — Reihenfolge hier egal.
+// Neuigkeiten über den Kacheln. SEIT v1.2 werden diese normalerweise vom Admin im
+// Einstellungen-Tab gepflegt und serverseitig in Nextcloud (news-Key der Config)
+// gespeichert — dieses Array ist nur noch der Erst-Seed (solange der Admin noch nie
+// gespeichert hat) und der Fallback, falls der Worker nicht erreichbar ist. Sortierung
+// erfolgt beim Rendern nach date (neueste zuerst) — Reihenfolge hier egal.
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
@@ -214,6 +216,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.2",
+    groups: [
+      {
+        title: "Neuigkeiten verwalten",
+        items: [
+          "Admins können die Neuigkeiten jetzt direkt im Einstellungen-Tab pflegen (anlegen, bearbeiten, löschen) — mit Typ (Neu/Update/Fix/Hinweis), Datum, Titel, Text und optionaler Tool-Verknüpfung.",
+          "Die Meldungen werden zentral in Nextcloud gespeichert und gelten sofort für alle Besucher — kein Code-Update mehr nötig, um eine Neuigkeit zu veröffentlichen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.1",
     groups: [

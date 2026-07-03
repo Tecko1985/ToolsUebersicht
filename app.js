@@ -4,6 +4,7 @@ const TOKEN_STORAGE_KEY = "tu_session_token";
 const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 
 let visibilityState = {};
+let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
 let bootstrapAvailable = false;
 let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds } oder null
@@ -700,7 +701,7 @@ function formatNewsDate(iso) {
 function renderNews() {
   const banner = document.getElementById("news-banner");
   if (!banner) return;
-  const items = (typeof NEWS !== "undefined" ? NEWS.slice() : [])
+  const items = newsState.slice()
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   if (items.length === 0) {
     banner.style.display = "none";
@@ -749,6 +750,110 @@ function renderNews() {
   }
 }
 
+// ---- Admin: Neuigkeiten verwalten (Einstellungen-Tab) ----
+
+function newsToolOptionsOnce() {
+  const sel = document.getElementById("news-tool");
+  if (!sel || sel.dataset.filled === "1") return;
+  TOOLS.forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t.id;
+    o.textContent = t.name;
+    sel.appendChild(o);
+  });
+  sel.dataset.filled = "1";
+}
+
+function newsFormReset() {
+  const f = document.getElementById("news-form");
+  if (!f) return;
+  document.getElementById("news-edit-id").value = "";
+  document.getElementById("news-type").value = "neu";
+  document.getElementById("news-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("news-tool").value = "";
+  document.getElementById("news-title").value = "";
+  document.getElementById("news-text").value = "";
+  document.getElementById("btn-news-submit").textContent = "Hinzufügen";
+  document.getElementById("btn-news-cancel").style.display = "none";
+}
+
+function startEditNews(id) {
+  const n = newsState.find((x) => x.id === id);
+  if (!n) return;
+  document.getElementById("news-edit-id").value = n.id;
+  document.getElementById("news-type").value = n.type || "neu";
+  document.getElementById("news-date").value = /^\d{4}-\d{2}-\d{2}$/.test(n.date || "") ? n.date : new Date().toISOString().slice(0, 10);
+  document.getElementById("news-tool").value = n.toolId || "";
+  document.getElementById("news-title").value = n.title || "";
+  document.getElementById("news-text").value = n.text || "";
+  document.getElementById("btn-news-submit").textContent = "Änderung speichern";
+  document.getElementById("btn-news-cancel").style.display = "inline-block";
+  document.getElementById("admin-news-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function deleteNews(id) {
+  if (!confirm("Diese Meldung wirklich löschen?")) return;
+  const prev = newsState.slice();
+  newsState = newsState.filter((x) => x.id !== id);
+  await persistNews(prev);
+}
+
+// Speichert newsState serverseitig; bei Fehler Rollback auf den vorherigen Stand.
+async function persistNews(prevOnError) {
+  const errorEl = document.getElementById("news-error");
+  const successEl = document.getElementById("news-success");
+  errorEl.style.display = "none";
+  successEl.style.display = "none";
+  try {
+    const res = await callWorker("save-news", { news: newsState });
+    if (res && Array.isArray(res.news)) newsState = res.news;
+    renderNews();
+    renderNewsAdmin();
+    successEl.style.display = "block";
+  } catch (err) {
+    if (prevOnError) newsState = prevOnError;
+    renderNewsAdmin();
+    errorEl.textContent = err.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderNewsAdmin() {
+  const list = document.getElementById("news-admin-list");
+  if (!list) return;
+  newsToolOptionsOnce();
+  const sorted = newsState.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  if (sorted.length === 0) {
+    list.innerHTML = '<p class="muted">Noch keine Meldungen.</p>';
+    return;
+  }
+  list.innerHTML = sorted.map((n) => {
+    const tool = n.toolId ? toolById(n.toolId) : null;
+    const type = String(n.type || "hinweis");
+    return `
+      <div class="news-admin-row" data-id="${escapeHtml(n.id || "")}">
+        <div class="news-admin-main">
+          <div class="news-item-head">
+            <span class="news-badge news-badge-${escapeHtml(type)}">${escapeHtml(NEWS_TYPE_LABELS[type] || type)}</span>
+            <span class="news-date">${escapeHtml(formatNewsDate(n.date))}</span>
+          </div>
+          <div class="news-item-title">${escapeHtml(n.title || "")}</div>
+          ${n.text ? `<div class="news-item-text">${escapeHtml(n.text)}</div>` : ""}
+          ${tool ? `<div class="muted" style="font-size:12px; margin-top:2px;">→ ${escapeHtml(tool.name)}</div>` : ""}
+        </div>
+        <div class="news-admin-actions">
+          <button type="button" class="btn secondary small news-edit-btn">Bearbeiten</button>
+          <button type="button" class="btn danger small news-del-btn">Löschen</button>
+        </div>
+      </div>`;
+  }).join("");
+  list.querySelectorAll(".news-admin-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector(".news-edit-btn").addEventListener("click", () => startEditNews(id));
+    row.querySelector(".news-del-btn").addEventListener("click", () => deleteNews(id));
+  });
+}
+
 function activateTab(name) {
   document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".tab-section").forEach((s) => s.classList.remove("active"));
@@ -787,6 +892,7 @@ function renderAdminPanels() {
   document.getElementById("admin-bulk-import-panel").style.display = "none";
   document.getElementById("admin-groups-panel").style.display = "none";
   document.getElementById("admin-visibility-panel").style.display = "none";
+  document.getElementById("admin-news-panel").style.display = "none";
 
   if (currentUser) {
     document.getElementById("logged-in-username").textContent = currentUser.username;
@@ -796,6 +902,7 @@ function renderAdminPanels() {
       document.getElementById("admin-bulk-import-panel").style.display = "block";
       document.getElementById("admin-groups-panel").style.display = "block";
       document.getElementById("admin-visibility-panel").style.display = "block";
+      document.getElementById("admin-news-panel").style.display = "block";
     }
     return;
   }
@@ -823,6 +930,7 @@ async function afterAuthChange() {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
+    renderNewsAdmin();
   }
 }
 
@@ -1038,6 +1146,38 @@ function setupAuthForms() {
       errorEl.style.display = "block";
     }
   });
+
+  const newsForm = document.getElementById("news-form");
+  if (newsForm) {
+    newsForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = document.getElementById("news-title").value.trim();
+      const errorEl = document.getElementById("news-error");
+      document.getElementById("news-success").style.display = "none";
+      errorEl.style.display = "none";
+      if (!title) {
+        errorEl.textContent = "Titel ist ein Pflichtfeld.";
+        errorEl.style.display = "block";
+        return;
+      }
+      const editId = document.getElementById("news-edit-id").value;
+      const item = {
+        id: editId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+        type: document.getElementById("news-type").value,
+        date: document.getElementById("news-date").value || new Date().toISOString().slice(0, 10),
+        title,
+        text: document.getElementById("news-text").value.trim()
+      };
+      const toolId = document.getElementById("news-tool").value;
+      if (toolId) item.toolId = toolId;
+      const prev = newsState.slice();
+      newsState = editId ? newsState.map((x) => (x.id === editId ? item : x)) : [item, ...newsState];
+      newsFormReset();
+      await persistNews(prev);
+    });
+    document.getElementById("btn-news-cancel").addEventListener("click", () => newsFormReset());
+    newsFormReset();
+  }
 }
 
 function escapeHtml(str) {
@@ -1059,7 +1199,9 @@ async function init() {
 
   const data = await fetchVisibility();
   visibilityState = (data && data.tools) || defaultVisibility();
+  newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
+  renderNews();
 
   await checkSession();
 
@@ -1069,6 +1211,7 @@ async function init() {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
+    renderNewsAdmin();
   }
 
   // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den

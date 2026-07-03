@@ -186,6 +186,10 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-more-btn { margin-top: 12px; }
 .news-item-extra { display: none; }
 .news-expanded .news-item-extra { display: block; }
+.news-admin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.news-admin-row:first-child { border-top: none; }
+.news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
+#news-form textarea { width: 100%; }
 
 /* ---------- Kategorie-Gruppen ---------- */
 

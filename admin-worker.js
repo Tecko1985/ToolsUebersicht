@@ -57,7 +57,8 @@
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
-//   POST { action: "save-visibility", tools } (admin)            -> ersetzt sichtbarkeit.json, tools[id] = {visible, loginRequired, groupIds}
+//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds}
+//   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
@@ -137,7 +138,7 @@ export default {
     if (request.method === "GET") {
       const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
       const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-      return json({ tools: config.tools, bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
+      return json({ tools: config.tools, news: Array.isArray(config.news) ? config.news : null, bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
     }
 
     if (request.method !== "POST") {
@@ -182,6 +183,8 @@ export default {
         return handleDeleteGroup(request, body, env, authHeader, corsHeaders);
       case "save-visibility":
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
+      case "save-news":
+        return handleSaveNews(request, body, env, authHeader, corsHeaders);
       case "verify-action-password":
         return handleVerifyActionPassword(body, env, corsHeaders);
       case "dav-load":
@@ -581,14 +584,63 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
     return json({ error: "Ungültige Daten" }, 400, corsHeaders);
   }
 
-  const newConfig = { version: 1, tools: body.tools };
+  // Read-modify-write: bestehende Config lesen und nur tools ersetzen, damit
+  // andere Schlüssel (z.B. news) durch ein Sichtbarkeits-Speichern nicht verloren gehen.
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  config.version = 1;
+  config.tools = body.tools;
   try {
-    await writeJson(env.NEXTCLOUD_URL, authHeader, newConfig);
+    await writeJson(env.NEXTCLOUD_URL, authHeader, config);
   } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ tools: newConfig.tools }, 200, corsHeaders);
+  return json({ tools: config.tools }, 200, corsHeaders);
+}
+
+const NEWS_VALID_TYPES = ["neu", "update", "fix", "hinweis"];
+
+// Speichert die Neuigkeiten (Array) im news-Key von sichtbarkeit.json. Admin-only,
+// read-modify-write (erhält tools). Jede Meldung wird serverseitig validiert/normiert:
+// Titel Pflicht, Typ auf erlaubte Werte, Datum auf YYYY-MM-DD (sonst heute), Längen
+// gekappt, id vergeben falls fehlend. So kann ein manipulierter Client keine kaputten
+// Daten ablegen. Der öffentliche GET liest news 1:1 wieder aus (alle Besucher).
+async function handleSaveNews(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  if (!Array.isArray(body.news)) {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const clean = [];
+  for (const n of body.news.slice(0, 100)) {
+    if (!n || typeof n !== "object") continue;
+    const title = String(n.title || "").trim().slice(0, 200);
+    if (!title) continue; // Titel ist Pflicht
+    const item = {
+      id: /^[a-z0-9-]{1,40}$/i.test(String(n.id || "")) ? String(n.id) : (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(n.date || "")) ? String(n.date) : today,
+      type: NEWS_VALID_TYPES.includes(String(n.type)) ? String(n.type) : "hinweis",
+      title,
+      text: String(n.text || "").trim().slice(0, 1000)
+    };
+    const toolId = String(n.toolId || "").trim().slice(0, 60);
+    if (toolId) item.toolId = toolId;
+    clean.push(item);
+  }
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  config.version = config.version || 1;
+  config.news = clean;
+  try {
+    await writeJson(env.NEXTCLOUD_URL, authHeader, config);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ news: config.news }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------
