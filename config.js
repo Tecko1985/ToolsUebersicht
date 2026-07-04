@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -216,6 +216,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.5",
+    groups: [
+      {
+        title: "Tools öffnen im gleichen Fenster",
+        items: [
+          "Tool-Kacheln, Neuigkeiten-Verlinkungen und das Termine-Widget öffnen das jeweilige Tool jetzt im selben Browser-Tab statt in einem neuen Fenster.",
+          "Jedes verlinkte Tool hat dafür oben einen 'Zurück zum Dashboard'-Link bekommen, um wieder hierher zurückzukommen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.4",
     groups: [

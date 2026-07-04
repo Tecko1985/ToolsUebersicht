@@ -599,8 +599,6 @@ function renderToolGrid() {
       const card = document.createElement("a");
       card.className = "tool-card" + (t.wip ? " wip" : "");
       card.href = t.url;
-      card.target = "_blank";
-      card.rel = "noopener";
       card.dataset.toolId = t.id;
       card.innerHTML = `
         <div class="tool-card-badges">
@@ -731,7 +729,7 @@ function renderNews() {
     ${link}
   `;
   const itemHtml = tool
-    ? `<a class="news-item" href="${escapeHtml(tool.url)}" target="_blank" rel="noopener">${inner}</a>`
+    ? `<a class="news-item" href="${escapeHtml(tool.url)}">${inner}</a>`
     : `<div class="news-item">${inner}</div>`;
 
   const atNewest = newsCarouselIndex === 0;
@@ -823,7 +821,7 @@ function renderCalendarWidget(widget, termine, kategorien) {
   };
   const rows = termine.length
     ? termine.map((t) => `
-        <a class="calendar-widget-item" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+        <a class="calendar-widget-item" href="${escapeHtml(url)}">
           <span class="cw-date">${escapeHtml(formatCalendarDate(t.datum))}</span>
           <span class="cw-dot" style="background:${escapeHtml(katFarbe(t.kategorie))}"></span>
           <span class="cw-title">${escapeHtml(t.titel || "")}</span>
