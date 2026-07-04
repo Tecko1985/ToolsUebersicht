@@ -13,7 +13,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -23,7 +23,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -33,7 +33,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -53,7 +53,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["desktop"]
   },
   {
@@ -63,7 +63,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile"]
   },
   {
@@ -73,7 +73,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["desktop"]
   },
   {
@@ -123,7 +123,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -133,7 +133,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -143,7 +143,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -153,7 +153,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -163,7 +163,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Personalkosten/",
     icon: "💶",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
