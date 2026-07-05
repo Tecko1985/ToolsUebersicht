@@ -136,10 +136,6 @@ function renderUsersList(users) {
   const container = document.getElementById("users-list");
   container.innerHTML = "";
   users.forEach((u) => {
-    const groupNames = (u.groupIds || []).map((gid) => {
-      const g = groupsState.find((gr) => gr.id === gid);
-      return g ? g.name : gid;
-    });
     const row = document.createElement("div");
     row.className = "user-row";
     row.innerHTML = `
@@ -148,7 +144,6 @@ function renderUsersList(users) {
         <span class="muted">(${escapeHtml(u.username)})</span>
         ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
         ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
-        ${groupNames.map((n) => `<span class="group-chip">${escapeHtml(n)}</span>`).join("")}
         <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
         <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
