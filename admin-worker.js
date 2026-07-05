@@ -81,6 +81,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8775", // Trainerkodex (Dev-Server)
   "http://localhost:8779", // Spielersichtung (Dev-Server)
   "http://localhost:8777", // Vereinskalender (Dev-Server)
+  "http://localhost:8792", // Busplan (Dev-Server)
   "https://tecko1985.github.io"
 ];
 

@@ -175,6 +175,16 @@ const TOOLS = [
     category: "Verein",
     wip: true,
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "busplan",
+    name: "Busplan",
+    description: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften (nur für berechtigte Gruppe).",
+    url: "https://tecko1985.github.io/busplan/",
+    icon: "🚌",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -186,6 +196,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-05",
+    type: "neu",
+    title: "Busplan-Tool ist online",
+    text: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften löst die bisherige Excel-Liste ab.",
+    toolId: "busplan",
+  },
   {
     date: "2026-07-03",
     type: "neu",
