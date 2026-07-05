@@ -81,6 +81,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8779", // Spielersichtung (Dev-Server)
   "http://localhost:8777", // Vereinskalender (Dev-Server)
   "http://localhost:8792", // Busplan (Dev-Server)
+  "http://localhost:8780", // Spielerplus-Klon (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -97,7 +98,8 @@ const DAV_APPS = {
   "platzbelegung":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Platzbelegung/platzbelegung.json",
   "personalkosten":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalkosten/personalkosten.json",
   "vereinskalender":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinskalender/vereinskalender.json",
-  "busplan":           "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Busplan/busplan.json"
+  "busplan":           "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Busplan/busplan.json",
+  "spielerplus-klon":  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json"
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben

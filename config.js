@@ -139,11 +139,11 @@ const TOOLS = [
   {
     id: "spielerplus-klon",
     name: "Spielerplus-Klon",
-    description: "Vereinsinterne Alternative zu SpielerPlus: Teamorganisation, An-/Abmeldungen, Kommunikation.",
+    description: "Vereinsinterne Alternative zu SpielerPlus: mehrere Mannschaften, Termine mit An-/Abmeldung, Anwesenheit, Umfragen und Mannschaftskasse.",
     url: "https://tecko1985.github.io/spielerplus-klon/",
     icon: "⚽",
     category: "Verein",
-    wip: true,
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
