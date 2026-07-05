@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -93,7 +93,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    version: "1.1",
+    version: "1.5",
     devices: ["mobile", "desktop"]
   },
   {
@@ -103,7 +103,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    version: "1.1",
+    version: "1.5",
     devices: ["mobile", "desktop"]
   },
   {
@@ -143,7 +143,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielerplus-klon/",
     icon: "⚽",
     category: "Verein",
-    version: "1.0",
+    version: "1.3",
     devices: ["mobile", "desktop"]
   },
   {
@@ -153,7 +153,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/busplan/",
     icon: "🚌",
     category: "Verein",
-    version: "1.3",
+    version: "1.7",
     devices: ["mobile", "desktop"]
   }
 ];
@@ -203,6 +203,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.8",
+    groups: [
+      {
+        title: "Gruppenverwaltung",
+        items: [
+          "Im Gruppen-Bereich lässt sich pro App jetzt neben „Sehen“ auch „Bearbeiten“ separat vergeben, statt für jede App eine eigene Bearbeiter-Gruppe anzulegen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.7",
     groups: [

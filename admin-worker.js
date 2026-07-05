@@ -46,7 +46,7 @@
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
 //   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true } | 401
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
-//   POST { action: "me" } + Authorization: Bearer <token>       -> { username, isAdmin, groupIds }
+//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds } (+ canEdit, wenn app übergeben und bekannt)
 //   POST { action: "create-user", vorname, nachname, isAdmin, groupIds } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
@@ -56,7 +56,9 @@
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
-//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds}
+//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds}
+//     (groupIds steuert die Sichtbarkeit im Modus "Nur bestimmte Gruppen"; editGroupIds ist unabhängig davon
+//     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
@@ -165,7 +167,7 @@ export default {
       case "set-password":
         return handleSetPassword(body, env, authHeader, corsHeaders);
       case "me":
-        return handleMe(request, env, authHeader, corsHeaders);
+        return handleMe(request, body, env, authHeader, corsHeaders);
       case "create-user":
         return handleCreateUser(request, body, env, authHeader, corsHeaders);
       case "list-users":
@@ -300,19 +302,23 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   return json({ token, username: user.username, isAdmin: !!user.isAdmin, groupIds: getUserGroupIds(usersDoc, user.username) }, 200, corsHeaders);
 }
 
-async function handleMe(request, env, authHeader, corsHeaders) {
+async function handleMe(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const usersDoc = session.usersDoc;
   const groupIds = session.isAdmin ? [] : getUserGroupIds(usersDoc, session.username);
   const user = getOwn(usersDoc.users, session.username);
-  return json({
+  const result = {
     username: session.username,
     isAdmin: !!session.isAdmin,
     groupIds,
     vorname: (user && user.vorname) || null,
     nachname: (user && user.nachname) || null
-  }, 200, corsHeaders);
+  };
+  if (body && body.app) {
+    result.canEdit = await resolveEditPermission(String(body.app), session, env, authHeader);
+  }
+  return json(result, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Nutzerverwaltung ----------
@@ -527,6 +533,10 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
         entry.groupIds = entry.groupIds.filter((id) => id !== groupId);
         changed = true;
       }
+      if (Array.isArray(entry.editGroupIds) && entry.editGroupIds.includes(groupId)) {
+        entry.editGroupIds = entry.editGroupIds.filter((id) => id !== groupId);
+        changed = true;
+      }
     });
     if (changed) await writeJson(env.NEXTCLOUD_URL, authHeader, config);
   } catch (_) { /* Aufräumen ist best-effort */ }
@@ -662,6 +672,22 @@ async function userMayAccessTool(app, session, env, authHeader) {
   if (gids.length === 0) return true;                  // "alle eingeloggten Nutzer"
   const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
   return gids.some((g) => userGroupIds.includes(g));
+}
+
+// Bearbeiten-Recht für ein Tool: unabhängig von der Sichtbarkeits-Gruppierung
+// (tools[id].groupIds), damit das Gewähren eines Bearbeiten-Rechts die
+// Sichtbarkeit eines breiter freigegebenen Tools (z.B. "Alle eingeloggten
+// Nutzer") nicht ungewollt auf bestimmte Gruppen verengt. Ersetzt die früher
+// pro App hartkodierten EDITOR_GROUP_ID-Konstanten.
+async function resolveEditPermission(app, session, env, authHeader) {
+  if (session.isAdmin) return true;
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, app);
+  if (!entry) return false;
+  const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+  if (editGroupIds.length === 0) return false;
+  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
+  return editGroupIds.some((g) => userGroupIds.includes(g));
 }
 
 async function handleDavLoad(request, body, env, authHeader, corsHeaders) {

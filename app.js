@@ -308,9 +308,10 @@ function renderGroupCheckboxes(container, selectedIds) {
   });
 }
 
-function getCheckedValues(container) {
+function getCheckedValues(container, kind) {
   if (!container) return [];
-  return Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map((cb) => cb.value);
+  const selector = kind ? `input[type="checkbox"][data-kind="${kind}"]:checked` : 'input[type="checkbox"]:checked';
+  return Array.from(container.querySelectorAll(selector)).map((cb) => cb.value);
 }
 
 // Berechnet den neuen Sichtbarkeits-Zustand aller Tools, nachdem im "Apps"-Bereich
@@ -318,10 +319,16 @@ function getCheckedValues(container) {
 // durch diese Änderung seine letzte Gruppe, wird es wieder versteckt (visible:false),
 // statt für alle eingeloggten Nutzer sichtbar zu werden. Tools, die dieser Gruppe nie
 // zugeordnet waren (öffentlich oder bewusst "alle Eingeloggten"), bleiben unverändert.
-function computeGroupToolVisibility(groupId, selectedToolIds) {
+//
+// editGroupIds (Bearbeiten-Recht) ist bewusst unabhängig von visible/loginRequired:
+// eine Gruppe kann Bearbeiten-Rechte für ein Tool bekommen, ohne dessen Sichtbarkeits-
+// Modus zu verändern (z.B. bei einem Tool, das ohnehin für "Alle eingeloggten Nutzer"
+// sichtbar ist) — sonst würde das Vergeben eines Bearbeiten-Rechts die Sichtbarkeit
+// ungewollt auf "Nur bestimmte Gruppen" verengen.
+function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds) {
   const updated = {};
   TOOLS.forEach((t) => {
-    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [] };
+    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [] };
     const wasInGroup = (entry.groupIds || []).includes(groupId);
     const groupIds = new Set(entry.groupIds || []);
     const shouldHaveAccess = selectedToolIds.includes(t.id);
@@ -338,7 +345,11 @@ function computeGroupToolVisibility(groupId, selectedToolIds) {
       // Diese Gruppe war die letzte mit Zugriff — Tool wieder verstecken.
       visible = false;
     }
-    updated[t.id] = { visible, loginRequired, groupIds: remaining };
+
+    const editGroupIds = new Set(entry.editGroupIds || []);
+    if (selectedEditToolIds.includes(t.id)) editGroupIds.add(groupId); else editGroupIds.delete(groupId);
+
+    updated[t.id] = { visible, loginRequired, groupIds: remaining, editGroupIds: Array.from(editGroupIds) };
   });
   return updated;
 }
@@ -384,19 +395,25 @@ function renderGroupsList() {
       const picker = panel.querySelector(".group-picker");
       TOOLS.forEach((t) => {
         const entry = visibilityState[t.id] || {};
-        const checked = (entry.groupIds || []).includes(groupId);
-        const label = document.createElement("label");
-        label.className = "checkbox-label";
-        label.innerHTML = `<input type="checkbox" value="${escapeHtml(t.id)}" ${checked ? "checked" : ""} /> ${t.icon || "🔗"} ${escapeHtml(t.name)}`;
-        picker.appendChild(label);
+        const canSee = (entry.groupIds || []).includes(groupId);
+        const canEditTool = (entry.editGroupIds || []).includes(groupId);
+        const row = document.createElement("div");
+        row.className = "group-picker-row";
+        row.innerHTML = `
+          <span class="gp-tool-name">${t.icon || "🔗"} ${escapeHtml(t.name)}</span>
+          <label class="checkbox-label"><input type="checkbox" data-kind="see" value="${escapeHtml(t.id)}" ${canSee ? "checked" : ""} /> Sehen</label>
+          <label class="checkbox-label"><input type="checkbox" data-kind="edit" value="${escapeHtml(t.id)}" ${canEditTool ? "checked" : ""} /> Bearbeiten</label>
+        `;
+        picker.appendChild(row);
       });
       panel.style.display = "block";
       panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
-        const selectedToolIds = getCheckedValues(picker);
+        const selectedToolIds = getCheckedValues(picker, "see");
+        const selectedEditToolIds = getCheckedValues(picker, "edit");
         const errorEl = document.getElementById("groups-error");
         errorEl.style.display = "none";
         try {
-          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds);
+          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds);
           await callWorker("save-visibility", { tools: updatedTools });
           visibilityState = updatedTools;
           renderToolGrid();

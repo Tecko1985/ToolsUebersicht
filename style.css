@@ -412,6 +412,15 @@ main { flex: 1; min-width: 0; }
   gap: 4px 14px;
 }
 
+.group-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-basis: 100%;
+  padding: 4px 0;
+}
+.group-picker-row .gp-tool-name { flex: 1; min-width: 140px; }
+
 .group-chip {
   display: inline-flex;
   align-items: center;
