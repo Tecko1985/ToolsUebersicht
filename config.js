@@ -153,7 +153,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/busplan/",
     icon: "🚌",
     category: "Verein",
-    version: "1.1",
+    version: "1.2",
     devices: ["mobile", "desktop"]
   }
 ];
