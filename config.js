@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -203,6 +203,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.9",
+    groups: [
+      {
+        title: "Sichtbarkeit der Tools",
+        items: [
+          "Auch in der Ansicht „Sichtbarkeit der Tools“ lässt sich pro App und Gruppe jetzt neben „Sehen“ zusätzlich „Bearbeiten“ setzen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.8",
     groups: [

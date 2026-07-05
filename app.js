@@ -658,6 +658,7 @@ function renderVisibilityList() {
     const entry = visibilityState[t.id] || {};
     const mode = visibilityMode(entry);
     const groupIds = entry.groupIds || [];
+    const editGroupIds = entry.editGroupIds || [];
     const row = document.createElement("div");
     row.className = "visibility-row";
     row.dataset.toolId = t.id;
@@ -671,11 +672,19 @@ function renderVisibilityList() {
         <option value="loggedin" ${mode === "loggedin" ? "selected" : ""}>Alle eingeloggten Nutzer</option>
         <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
       </select>
-      <div class="group-picker" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};"></div>
+      <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
+        <div class="gp-label">Sehen</div>
+        <div class="group-picker" data-role="see-boxes"></div>
+      </div>
+      <div class="group-picker-wrap" data-field="editGroupIds">
+        <div class="gp-label">Bearbeiten</div>
+        <div class="group-picker" data-role="edit-boxes"></div>
+      </div>
     `;
     container.appendChild(row);
 
-    renderGroupCheckboxes(row.querySelector('[data-field="groupIds"]'), groupIds);
+    renderGroupCheckboxes(row.querySelector('[data-field="groupIds"] [data-role="see-boxes"]'), groupIds);
+    renderGroupCheckboxes(row.querySelector('[data-field="editGroupIds"] [data-role="edit-boxes"]'), editGroupIds);
 
     row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
       row.querySelector('[data-field="groupIds"]').style.display = e.target.value === "groups" ? "block" : "none";
@@ -1197,9 +1206,10 @@ function setupAuthForms() {
       const id = row.dataset.toolId;
       const mode = row.querySelector('[data-field="mode"]').value;
       const groupIds = mode === "groups" ? getCheckedValues(row.querySelector('[data-field="groupIds"]')) : [];
+      const editGroupIds = getCheckedValues(row.querySelector('[data-field="editGroupIds"]'));
       const visible = mode !== "hidden";
       const loginRequired = mode === "loggedin" || mode === "groups";
-      tools[id] = { visible, loginRequired, groupIds };
+      tools[id] = { visible, loginRequired, groupIds, editGroupIds };
     });
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");
