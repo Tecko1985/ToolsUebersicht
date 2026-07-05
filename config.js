@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.6";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -203,6 +203,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.6",
+    groups: [
+      {
+        title: "Private Tools aus der Übersicht entfernt",
+        items: [
+          "Kassenbuch, Familien-Quartett und Beleg-Scanner sind keine Vereins-Tools und daher nicht mehr auf dieser Seite gelistet."
+        ]
+      }
+    ]
+  },
   {
     version: "1.5",
     groups: [
