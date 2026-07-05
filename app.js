@@ -121,7 +121,9 @@ async function loadAndRenderUsers() {
   errorEl.style.display = "none";
   try {
     const data = await callWorker("list-users", {});
-    usersState = data.users;
+    usersState = data.users.slice().sort((a, b) =>
+      (a.displayName || a.username).localeCompare(b.displayName || b.username, "de")
+    );
     renderUsersList(usersState);
     document.getElementById("users-count").textContent = usersState.length;
   } catch (e) {
