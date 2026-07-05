@@ -48,7 +48,6 @@
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
 //   POST { action: "me" } + Authorization: Bearer <token>       -> { username, isAdmin, groupIds }
 //   POST { action: "create-user", vorname, nachname, isAdmin, groupIds } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
-//   POST { action: "bulk-create-users", entries: [{vorname,nachname}], isAdmin, groupIds } (admin) -> { created, skipped }
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
 //   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden)
@@ -165,8 +164,6 @@ export default {
         return handleMe(request, env, authHeader, corsHeaders);
       case "create-user":
         return handleCreateUser(request, body, env, authHeader, corsHeaders);
-      case "bulk-create-users":
-        return handleBulkCreateUsers(request, body, env, authHeader, corsHeaders);
       case "list-users":
         return handleListUsers(request, env, authHeader, corsHeaders);
       case "reset-password":
@@ -343,49 +340,6 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ username, vorname, nachname, mustSetPassword: true }, 201, corsHeaders);
-}
-
-async function handleBulkCreateUsers(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
-  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
-
-  const entries = Array.isArray(body.entries) ? body.entries : [];
-  const isAdmin = !!body.isAdmin;
-
-  const usersDoc = session.usersDoc;
-  if (!usersDoc.groups) usersDoc.groups = {};
-
-  const existingUsernames = new Set(Object.keys(usersDoc.users));
-  const created = [];
-  const skipped = [];
-
-  for (const entry of entries) {
-    const vorname = String((entry && entry.vorname) || "").trim();
-    const nachname = String((entry && entry.nachname) || "").trim();
-    if (!vorname || !nachname) {
-      skipped.push({ vorname, nachname, reason: "Vorname oder Nachname fehlt" });
-      continue;
-    }
-    const username = generateUsername(vorname, nachname, existingUsernames);
-    existingUsernames.add(username);
-    usersDoc.users[username] = {
-      username, vorname, nachname, passwordHash: null, salt: null, iterations: null,
-      isAdmin, mustSetPassword: true,
-      createdAt: new Date().toISOString(), passwordSetAt: null
-    };
-    addUserToGroups(usersDoc, username, body.groupIds);
-    created.push({ username, vorname, nachname });
-  }
-
-  if (created.length > 0) {
-    try {
-      await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
-    } catch (e) {
-      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
-    }
-  }
-
-  return json({ created, skipped }, 200, corsHeaders);
 }
 
 async function handleListUsers(request, env, authHeader, corsHeaders) {

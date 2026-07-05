@@ -287,7 +287,6 @@ async function loadAndRenderGroups() {
     groupsState = data.groups;
     renderGroupsList();
     renderGroupCheckboxes(document.getElementById("new-user-groups"), []);
-    renderGroupCheckboxes(document.getElementById("bulk-import-groups"), []);
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = "block";
@@ -979,7 +978,6 @@ function renderAdminPanels() {
   document.getElementById("first-login-panel").style.display = "none";
   document.getElementById("admin-logged-in-panel").style.display = "none";
   document.getElementById("admin-users-panel").style.display = "none";
-  document.getElementById("admin-bulk-import-panel").style.display = "none";
   document.getElementById("admin-groups-panel").style.display = "none";
   document.getElementById("admin-visibility-panel").style.display = "none";
   document.getElementById("admin-news-panel").style.display = "none";
@@ -989,7 +987,6 @@ function renderAdminPanels() {
     document.getElementById("admin-logged-in-panel").style.display = "block";
     if (currentUser.isAdmin) {
       document.getElementById("admin-users-panel").style.display = "block";
-      document.getElementById("admin-bulk-import-panel").style.display = "block";
       document.getElementById("admin-groups-panel").style.display = "block";
       document.getElementById("admin-visibility-panel").style.display = "block";
       document.getElementById("admin-news-panel").style.display = "block";
@@ -1171,42 +1168,6 @@ function setupAuthForms() {
       document.getElementById("new-group-name").value = "";
       await loadAndRenderGroups();
       renderVisibilityList();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.style.display = "block";
-    }
-  });
-
-  document.getElementById("btn-bulk-import").addEventListener("click", async () => {
-    const text = document.getElementById("bulk-import-text").value;
-    const isAdmin = document.getElementById("bulk-import-is-admin").checked;
-    const groupIds = getCheckedValues(document.getElementById("bulk-import-groups"));
-    const entries = text.split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const idx = line.lastIndexOf(" ");
-        if (idx === -1) return { vorname: line, nachname: "" };
-        return { vorname: line.slice(0, idx).trim(), nachname: line.slice(idx + 1).trim() };
-      });
-    const errorEl = document.getElementById("bulk-import-error");
-    const resultEl = document.getElementById("bulk-import-result");
-    errorEl.style.display = "none";
-    resultEl.innerHTML = "";
-    if (entries.length === 0) {
-      errorEl.textContent = "Bitte mindestens eine Zeile eingeben.";
-      errorEl.style.display = "block";
-      return;
-    }
-    try {
-      const data = await callWorker("bulk-create-users", { entries, isAdmin, groupIds });
-      resultEl.innerHTML = `
-        <p>${data.created.length} angelegt${data.skipped.length ? `, ${data.skipped.length} übersprungen` : ""}.</p>
-        ${data.created.length ? `<ul>${data.created.map((c) => `<li>${escapeHtml(c.vorname)} ${escapeHtml(c.nachname)} → ${escapeHtml(c.username)}</li>`).join("")}</ul>` : ""}
-        ${data.skipped.length ? `<ul class="muted">${data.skipped.map((s) => `<li>übersprungen: "${escapeHtml(s.vorname || "")} ${escapeHtml(s.nachname || "")}" (${escapeHtml(s.reason)})</li>`).join("")}</ul>` : ""}
-      `;
-      document.getElementById("bulk-import-text").value = "";
-      await loadAndRenderUsers();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
