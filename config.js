@@ -1,4 +1,4 @@
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -203,6 +203,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Navigation",
+        items: [
+          "Der Tab „Einstellungen“ zeigt jetzt zusätzlich die aktuelle Versionsnummer direkt am Tab-Reiter an."
+        ]
+      }
+    ]
+  },
   {
     version: "1.6",
     groups: [
