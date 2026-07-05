@@ -21,13 +21,13 @@
 //   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung-Anmeldung: Teilnehmer-Tab in verwaltung.html öffnen
 //   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
 //   PW_TRAINERKODEX_LOESCHEN = Trainerkodex: Bestätigungen löschen (einzeln/alle)
-//   PW_BELEGSCANNER_SUCHE   = Beleg-Scanner-Worker (eigenes Cloudflare-Deploy!): GET /search
-//   PW_BELEGSCANNER_UPLOAD  = Beleg-Scanner-Worker (eigenes Cloudflare-Deploy!): POST / (Upload)
 //   PW_BUDGET_EINGANG_ZUGANG = sc-heiligenstadt-beleg-upload-Worker (eigenes Cloudflare-Deploy!): Zugriffscode in beleg-eingang.html
 //
-// Die letzten drei werden nicht vom Browser-Client, sondern von den jeweils
-// EIGENEN Cloudflare Workern serverseitig abgefragt (Worker-zu-Worker-Fetch) -
-// diese Worker brauchen dafür kein eigenes Passwort-Secret mehr.
+// Die letzte wird nicht vom Browser-Client, sondern vom EIGENEN Cloudflare Worker
+// serverseitig abgefragt (Worker-zu-Worker-Fetch) - dieser Worker braucht dafür
+// kein eigenes Passwort-Secret mehr.
+// (beleg-scanner nutzte diesen Weg vorübergehend ebenfalls, seit 2026-07-05 wieder
+// eigenständig mit lokalen Secrets SEARCH_PASSWORD/UPLOAD_PASSWORD - siehe dort.)
 //
 // BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
 // Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
@@ -659,8 +659,6 @@ const ACTION_PASSWORD_SECRETS = {
   "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
   "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN", // Trainerkodex: Bestätigungen löschen (einzeln/alle)
-  "belegscanner-suche": "PW_BELEGSCANNER_SUCHE",     // Beleg-Scanner-Worker: GET /search (serverseitig delegiert)
-  "belegscanner-upload": "PW_BELEGSCANNER_UPLOAD",   // Beleg-Scanner-Worker: POST / Upload (serverseitig delegiert)
   "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG" // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
 };
 

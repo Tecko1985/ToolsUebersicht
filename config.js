@@ -87,36 +87,6 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
-    id: "kassenbuch",
-    name: "Kassenbuch",
-    description: "Persönliches Kassenbuch als PWA fürs iPad.",
-    url: "https://tecko1985.github.io/kassenbuch/",
-    icon: "💰",
-    category: "Privat",
-    version: "1.0",
-    devices: ["mobile"]
-  },
-  {
-    id: "familien-quartett",
-    name: "Familien-Quartett",
-    description: "Digitales Kartenspiel nach dem Quartett-Prinzip mit Familienkarten.",
-    url: "https://tecko1985.github.io/familien-quartett/",
-    icon: "🃏",
-    category: "Privat",
-    version: "1.0",
-    devices: ["mobile", "desktop"]
-  },
-  {
-    id: "beleg-scanner",
-    name: "Beleg-Scanner",
-    description: "Foto vom Beleg per KI analysieren, als durchsuchbares PDF ablegen.",
-    url: "https://tecko1985.github.io/beleg-scanner/",
-    icon: "📷",
-    category: "Privat",
-    version: "1.0",
-    devices: ["mobile"]
-  },
-  {
     id: "vereinskalender",
     name: "Vereinskalender",
     description: "Kommende Vereinstermine im Überblick (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) — Pflege durch die Geschäftsstelle.",
