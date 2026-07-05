@@ -1249,20 +1249,22 @@ async function init() {
   setupTabs();
   setupAuthForms();
 
-  const data = await fetchVisibility();
+  // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft
+  // ein vorhandenes Token) sind voneinander unabhängige Worker-Aufrufe — parallel
+  // statt seriell spart einen kompletten Roundtrip beim Erstladen.
+  const [data] = await Promise.all([fetchVisibility(), checkSession()]);
   visibilityState = (data && data.tools) || defaultVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
   renderNews();
 
-  await checkSession();
-
   renderAdminPanels();
   renderToolGrid();
   await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
-    await loadAndRenderGroups();
-    await loadAndRenderUsers();
+    // Gruppen und Nutzer sind voneinander unabhängige Aktionen (Render-Funktionen
+    // greifen erst beim Aufklappen einzelner Gruppen aufeinander zu, nicht hier).
+    await Promise.all([loadAndRenderGroups(), loadAndRenderUsers()]);
     renderVisibilityList();
     renderNewsAdmin();
   }

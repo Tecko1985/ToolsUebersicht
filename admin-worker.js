@@ -137,8 +137,10 @@ export default {
     try {
 
     if (request.method === "GET") {
-      const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-      const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+      const [config, usersDoc] = await Promise.all([
+        readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }),
+        readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+      ]);
       return json({ tools: config.tools, news: Array.isArray(config.news) ? config.news : null, bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
     }
 
@@ -823,6 +825,19 @@ async function readJson(url, authHeader, fallback) {
   return (await readJsonWithRev(url, authHeader, fallback)).data;
 }
 
+// Kurzlebiger In-Memory-Cache für readJsonWithRev, ueberlebt auf einem warmen
+// Worker-Isolate mehrere Requests. Grund: nutzer.json und sichtbarkeit.json
+// werden bei JEDER einzelnen Aktion neu von Nextcloud gelesen (Session-Pruefung
+// + Sichtbarkeits-Check), obwohl z.B. das Laden des Dashboards mehrere Aktionen
+// (me, dav-load, list-users, list-groups) binnen Millisekunden ausloest — ohne
+// Cache also bis zu 6-8 serielle Nextcloud-Roundtrips fuer eine einzige
+// Seitenansicht. TTL kurz halten (statt unbegrenzt), damit eine Aenderung durch
+// ein ANDERES Isolate nicht zu lang unbemerkt bleibt; writeJson invalidiert den
+// eigenen Eintrag sofort, das deckt den Normalfall (Schreiben+Lesen im selben
+// Request-Burst) verzoegerungsfrei ab.
+const jsonCache = new Map(); // url -> { data, rev, expires }
+const CACHE_TTL_MS = 5000;
+
 // Nextcloud liefert ETags als "weak" (Praefix W/). HTTP verlangt fuer If-Match
 // zwingend einen "strong comparison" und lehnt JEDEN weak-getaggten Wert schon
 // dem Namen nach ab (RFC 7232 3.1) — ohne dieses Strippen bekommt jede
@@ -834,12 +849,18 @@ function normalizeETag(etag) {
 }
 
 async function readJsonWithRev(url, authHeader, fallback) {
+  const cached = jsonCache.get(url);
+  if (cached && cached.expires > Date.now()) return { data: cached.data, rev: cached.rev };
+
   let resp;
   try {
     resp = await fetch(url, { method: "GET", headers: { Authorization: authHeader } });
   } catch (e) {
     throw new NextcloudError("Nextcloud nicht erreichbar: " + e.message);
   }
+  // 404/leer wird bewusst NICHT gecacht: seltener Pfad (i.d.R. nur vor der
+  // allerersten Speicherung einer Datei), Cachen wuerde riskieren, eine
+  // zwischenzeitliche Erst-Anlage durch ein anderes Isolate zu verdecken.
   if (resp.status === 404) return { data: fallback, rev: null };
   if (!resp.ok) throw new NextcloudError(`Nextcloud GET ${resp.status}`);
   const rev = normalizeETag(resp.headers.get("ETag"));
@@ -851,7 +872,10 @@ async function readJsonWithRev(url, authHeader, fallback) {
   } catch (_) {
     throw new NextcloudError("Nextcloud-Datei enthält kein gültiges JSON — Zugriff abgebrochen, Datei bitte prüfen");
   }
-  if (parsed && typeof parsed === "object") return { data: parsed, rev };
+  if (parsed && typeof parsed === "object") {
+    jsonCache.set(url, { data: parsed, rev, expires: Date.now() + CACHE_TTL_MS });
+    return { data: parsed, rev };
+  }
   throw new NextcloudError("Nextcloud-Datei hat ein unerwartetes Format — Zugriff abgebrochen");
 }
 
@@ -873,6 +897,7 @@ async function writeJson(url, authHeader, data, ifMatch) {
   }
   if (resp.status === 412) throw new ConflictError("Datei wurde zwischenzeitlich geändert");
   if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
+  jsonCache.delete(url); // ab jetzt garantiert veraltet, naechster Read holt frisch
   return normalizeETag(resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null);
 }
 
