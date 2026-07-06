@@ -144,8 +144,6 @@ function renderUsersList(users) {
         <span class="muted">(${escapeHtml(u.username)})</span>
         ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
         ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
-        ${u.lizenz ? `<span class="muted">Lizenz: ${escapeHtml(u.lizenz)}</span>` : ""}
-        ${(u.mannschaften || []).length ? `<span class="muted">${escapeHtml(u.mannschaften.join(", "))}</span>` : ""}
         <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
         <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
