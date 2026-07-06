@@ -61,10 +61,13 @@
 //     damit Gateway-Apps (Personalkosten, TrainerVertrag, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
 //     me()-Profil, sondern auch das anderer Nutzer nachschlagen können (Namensabgleich bzw. linkedUsername-Join).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
+//   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
+//     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
-//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds}
+//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds, provisionGroupIds}
 //     (groupIds steuert die Sichtbarkeit im Modus "Nur bestimmte Gruppen"; editGroupIds ist unabhängig davon
-//     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools.)
+//     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools; provisionGroupIds
+//     steuert das Auto-Provisioning: Mitglieder dieser Gruppen bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
@@ -112,6 +115,14 @@ const DAV_APPS = {
   "kadermanager":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json",
   "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
   "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json"
+};
+
+// Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
+// bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: TrainerVertrag
+// enthält IBAN-Daten und läuft sonst über den eigenen submit-worker — die Datei hier
+// nur intern (server-seitig) beschreiben, nie für eingeloggte Nutzer lesbar machen.
+const PROVISION_ONLY_PATHS = {
+  "trainervertrag": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerVertrag/trainervertrag.json"
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -203,6 +214,8 @@ export default {
         return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
+      case "provision-group":
+        return handleProvisionGroup(request, body, env, authHeader, corsHeaders);
       case "delete-group":
         return handleDeleteGroup(request, body, env, authHeader, corsHeaders);
       case "save-visibility":
@@ -371,7 +384,17 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ username, vorname, nachname, mustSetPassword: true }, 201, corsHeaders);
+  // Auto-Provisioning: je nach Gruppen des Nutzers Einträge in den passenden Tools
+  // anlegen (best effort — der Nutzer ist bereits angelegt, ein Fehler hier darf die
+  // Antwort nicht kippen).
+  let provisioned = {};
+  try {
+    const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    const apps = provisionAppsForGroups(config, getUserGroupIds(usersDoc, username));
+    if (apps.length) provisioned = await provisionUsers([usersDoc.users[username]], apps, env, authHeader);
+  } catch (_) { /* Provisioning ist best effort */ }
+
+  return json({ username, vorname, nachname, mustSetPassword: true, provisioned }, 201, corsHeaders);
 }
 
 async function handleListUsers(request, env, authHeader, corsHeaders) {
@@ -571,6 +594,31 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
   return json({ group }, 200, corsHeaders);
 }
 
+// Provisioniert nachträglich ALLE aktuellen Mitglieder einer Gruppe in die für diese
+// Gruppe konfigurierten Tools (Button "Bestehende Mitglieder jetzt eintragen").
+// Batch pro App (1 Read + 1 Write), idempotent — bereits vorhandene Einträge bleiben.
+async function handleProvisionGroup(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const groupId = String(body.groupId || "");
+  const usersDoc = session.usersDoc;
+  const group = getOwn(usersDoc.groups || {}, groupId);
+  if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const apps = provisionAppsForGroups(config, [groupId]);
+  const members = (group.memberUsernames || [])
+    .map((u) => getOwn(usersDoc.users, u))
+    .filter(Boolean);
+
+  let provisioned = {};
+  if (apps.length && members.length) {
+    provisioned = await provisionUsers(members, apps, env, authHeader);
+  }
+  return json({ provisioned, apps, memberCount: members.length }, 200, corsHeaders);
+}
+
 async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
@@ -598,6 +646,10 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
       }
       if (Array.isArray(entry.editGroupIds) && entry.editGroupIds.includes(groupId)) {
         entry.editGroupIds = entry.editGroupIds.filter((id) => id !== groupId);
+        changed = true;
+      }
+      if (Array.isArray(entry.provisionGroupIds) && entry.provisionGroupIds.includes(groupId)) {
+        entry.provisionGroupIds = entry.provisionGroupIds.filter((id) => id !== groupId);
         changed = true;
       }
     });
@@ -1032,6 +1084,207 @@ function getUserGroupIds(usersDoc, username) {
   return Object.values(groups)
     .filter((g) => Array.isArray(g.memberUsernames) && g.memberUsernames.includes(username))
     .map((g) => g.id);
+}
+
+// ---------- Auto-Provisioning: gruppengesteuertes Anlegen von Tool-Einträgen ----------
+//
+// Legt beim Anlegen eines Nutzers (bzw. per provision-group nachträglich) einen
+// verknüpften Eintrag in den fachlich passenden Tools an — z.B. ein "Trainer" wird
+// automatisch zur Zeile in der Personalkosten-Kostenliste. Welche App für welche
+// Gruppe, steht als provisionGroupIds je Tool in sichtbarkeit.json (parallel zu
+// groupIds/editGroupIds). Rein ADDITIV und IDEMPOTENT: jeder Eintrag trägt
+// linkedUsername; ein zweiter Lauf legt kein Duplikat an, es wird nie etwas
+// gelöscht/überschrieben.
+
+// Nur diese Apps haben einen Adapter (die restlichen Tools bekommen keine Checkbox).
+const PROVISION_ADAPTERS = {
+  "personalkosten": provisionPersonalkosten,
+  "trainercheckliste": provisionTrainercheckliste,
+  "kadermanager": provisionKadermanager,
+  "trainervertrag": provisionTrainervertrag
+  // "trainerkodex": Phase 2 (braucht eine Client-Anzeige-Anpassung für "offen")
+};
+
+function provisionPathFor(app) {
+  return getOwn(DAV_APPS, app) || getOwn(PROVISION_ONLY_PATHS, app) || null;
+}
+
+// Leerstruktur je App, falls die Datei noch nicht existiert (Fallback beim Lesen).
+function provisionDefault(app) {
+  switch (app) {
+    case "personalkosten":    return { meta: {}, seasons: {}, parameter: {} };
+    case "trainercheckliste": return { trainerEintraege: [] };
+    case "kadermanager":      return { meta: {}, teams: [] };
+    case "trainervertrag":    return { trainer: [] };
+    default:                  return {};
+  }
+}
+
+function provisionProfile(user) {
+  return {
+    username: user.username,
+    vorname: String(user.vorname || "").trim(),
+    nachname: String(user.nachname || "").trim(),
+    lizenz: user.lizenz || "",
+    mannschaften: Array.isArray(user.mannschaften) ? user.mannschaften : []
+  };
+}
+
+function sameText(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+// --- Adapter: mutieren die App-Daten in place, geben das Ergebnis je Nutzer zurück
+// ("created" | "exists" | "no-team" | "no-season"). "created" => Datei muss geschrieben werden.
+
+function provisionPersonalkosten(data, p) {
+  if (!data.meta || typeof data.meta !== "object") data.meta = {};
+  if (!data.seasons || typeof data.seasons !== "object") data.seasons = {};
+  let seasonKey = data.meta.currentSeason;
+  if (!seasonKey || !data.seasons[seasonKey]) seasonKey = Object.keys(data.seasons)[0];
+  if (!seasonKey) return "no-season"; // ohne Saison nicht raten
+  const season = data.seasons[seasonKey];
+  if (!Array.isArray(season.trainer)) season.trainer = [];
+  const fullName = `${p.vorname} ${p.nachname}`.trim();
+  const exists = season.trainer.some((t) =>
+    (t.linkedUsername && sameText(t.linkedUsername, p.username)) || sameText(t.name, fullName));
+  if (exists) return "exists";
+  season.trainer.push({
+    id: crypto.randomUUID(),
+    name: fullName,
+    mannschaft: p.mannschaften[0] || "",
+    position: "",
+    jahrgangsleiter: "",
+    lizenz: p.lizenz || "",
+    landesebene: "",
+    stelle: "",
+    manuellAE: "",
+    besonderheit: "",
+    linkedUsername: p.username
+  });
+  return "created";
+}
+
+function provisionTrainercheckliste(data, p) {
+  if (!Array.isArray(data.trainerEintraege)) data.trainerEintraege = [];
+  const exists = data.trainerEintraege.some((e) =>
+    (e.linkedUsername && sameText(e.linkedUsername, p.username)) ||
+    (sameText(e.vorname, p.vorname) && sameText(e.name, p.nachname)));
+  if (exists) return "exists";
+  // Minimal-Stub: die Client-migrateData ergänzt zugang/abgang beim Laden selbst.
+  data.trainerEintraege.push({
+    id: crypto.randomUUID(),
+    name: p.nachname, // in dieser App ist "name" der Nachname
+    vorname: p.vorname,
+    geburtsdatum: "",
+    anschrift: "",
+    telefon: "",
+    email: "",
+    linkedUsername: p.username
+  });
+  return "created";
+}
+
+function provisionKadermanager(data, p) {
+  if (!Array.isArray(data.teams)) return "no-team";
+  // Erstes Team, dessen Name zu einer betreuten Mannschaft des Nutzers passt.
+  const team = data.teams.find((t) => p.mannschaften.some((m) => sameText(t.name, m)));
+  if (!team) return "no-team";
+  if (!Array.isArray(team.kader)) team.kader = [];
+  const exists = team.kader.some((s) => s.linkedUsername && sameText(s.linkedUsername, p.username));
+  if (exists) return "exists";
+  team.kader.push({
+    id: crypto.randomUUID(),
+    name: `${p.vorname} ${p.nachname}`.trim(),
+    position: "",
+    nummer: "",
+    linkedUsername: p.username,
+    rollen: ["trainer"],
+    fotoId: ""
+  });
+  return "created";
+}
+
+function provisionTrainervertrag(data, p) {
+  if (!Array.isArray(data.trainer)) data.trainer = [];
+  // Stub wie _createStubTrainer der App (ohne username -> Admin-Liste zeigt
+  // "Unvollständig"; ein späteres Self-Submit merged per exaktem Namensabgleich).
+  const exists = data.trainer.some((t) =>
+    (t.linkedUsername && sameText(t.linkedUsername, p.username)) ||
+    (sameText(t.vorname, p.vorname) && sameText(t.nachname, p.nachname)));
+  if (exists) return "exists";
+  data.trainer.push({
+    id: crypto.randomUUID(),
+    vorname: p.vorname,
+    nachname: p.nachname,
+    lizenz: p.lizenz || "",
+    pauschale: "",
+    erstelltAm: new Date().toISOString(),
+    vertragsGeneriert: false,
+    linkedUsername: p.username
+  });
+  return "created";
+}
+
+// Ermittelt die Ziel-Apps für eine Menge Gruppen-Ids aus der Sichtbarkeits-Config
+// (tools[].provisionGroupIds), gefiltert auf Apps, die überhaupt einen Adapter haben.
+function provisionAppsForGroups(config, groupIds) {
+  const tools = (config && config.tools) || {};
+  const apps = [];
+  for (const [appId, entry] of Object.entries(tools)) {
+    if (!getOwn(PROVISION_ADAPTERS, appId)) continue;
+    const pg = Array.isArray(entry.provisionGroupIds) ? entry.provisionGroupIds : [];
+    if (pg.some((g) => groupIds.includes(g))) apps.push(appId);
+  }
+  return apps;
+}
+
+// Schreibt EINE App-Datei für ALLE Mitglieder auf einmal (1 Read + 1 Write statt pro
+// Mitglied — schont die Cloudflare-Subrequest-Grenze). Bei Konflikt einmal frisch
+// neu laden und erneut anwenden (Adapter sind idempotent). Gibt je Nutzer das
+// Ergebnis zurück.
+async function provisionAppBatch(app, adapter, url, members, env, authHeader) {
+  let outcomes = {};
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) jsonCache.delete(url); // frischen Stand erzwingen
+    const { data, rev } = await readJsonWithRev(url, authHeader, provisionDefault(app));
+    const doc = (data && typeof data === "object") ? data : provisionDefault(app);
+    outcomes = {};
+    let anyCreated = false;
+    for (const u of members) {
+      const o = adapter(doc, provisionProfile(u));
+      outcomes[u.username] = o;
+      if (o === "created") anyCreated = true;
+    }
+    if (!anyCreated) return outcomes; // nichts zu schreiben
+    try {
+      await writeJson(url, authHeader, doc, rev || undefined);
+      return outcomes;
+    } catch (e) {
+      if (e instanceof ConflictError && attempt === 0) continue;
+      Object.keys(outcomes).forEach((k) => { if (outcomes[k] === "created") outcomes[k] = "error"; });
+      return outcomes;
+    }
+  }
+  return outcomes;
+}
+
+// Provisioniert eine Mitgliederliste in eine Liste von Apps. Report: { [app]: { [username]: ergebnis } }.
+async function provisionUsers(members, apps, env, authHeader) {
+  const report = {};
+  for (const app of apps) {
+    const adapter = getOwn(PROVISION_ADAPTERS, app);
+    const url = provisionPathFor(app);
+    if (!adapter || !url) continue;
+    try {
+      report[app] = await provisionAppBatch(app, adapter, url, members, env, authHeader);
+    } catch (e) {
+      const o = {};
+      members.forEach((u) => { o[u.username] = "error"; });
+      report[app] = o;
+    }
+  }
+  return report;
 }
 
 // ---------- Trainerprofil-Helfer (Lizenz + Mannschaften) ----------

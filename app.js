@@ -491,6 +491,28 @@ function getCheckedValues(container, kind) {
   return Array.from(container.querySelectorAll(selector)).map((cb) => cb.value);
 }
 
+// Apps, die einen serverseitigen Provisioning-Adapter haben (siehe admin-worker.js
+// PROVISION_ADAPTERS) — nur für diese wird die "Auto-Eintrag"-Checkbox angeboten.
+// Trainerkodex folgt in Phase 2 (braucht eine eigene Anzeige-Anpassung).
+const PROVISIONABLE_APPS = ["personalkosten", "trainercheckliste", "kadermanager", "trainervertrag"];
+
+// Fasst den Provisioning-Report ({ [app]: { [username]: ergebnis } }) knapp zusammen.
+function summarizeProvisionReport(report) {
+  const parts = [];
+  Object.entries(report || {}).forEach(([app, byUser]) => {
+    const vals = Object.values(byUser || {});
+    const count = (x) => vals.filter((v) => v === x).length;
+    const bits = [];
+    if (count("created")) bits.push(`${count("created")} neu`);
+    if (count("exists")) bits.push(`${count("exists")} vorhanden`);
+    if (count("no-team")) bits.push(`${count("no-team")}× kein Team`);
+    if (count("no-season")) bits.push(`${count("no-season")}× keine Saison`);
+    if (count("error")) bits.push(`${count("error")} Fehler`);
+    parts.push(`${app}: ${bits.join(", ") || "—"}`);
+  });
+  return parts.join(" · ");
+}
+
 // Berechnet den neuen Sichtbarkeits-Zustand aller Tools, nachdem im "Apps"-Bereich
 // einer Gruppe die Tool-Auswahl geändert wurde. Zentrale Regel: Verliert ein Tool
 // durch diese Änderung seine letzte Gruppe, wird es wieder versteckt (visible:false),
@@ -502,10 +524,10 @@ function getCheckedValues(container, kind) {
 // Modus zu verändern (z.B. bei einem Tool, das ohnehin für "Alle eingeloggten Nutzer"
 // sichtbar ist) — sonst würde das Vergeben eines Bearbeiten-Rechts die Sichtbarkeit
 // ungewollt auf "Nur bestimmte Gruppen" verengen.
-function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds) {
+function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedProvisionToolIds) {
   const updated = {};
   TOOLS.forEach((t) => {
-    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [] };
+    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [], provisionGroupIds: [] };
     const wasInGroup = (entry.groupIds || []).includes(groupId);
     const groupIds = new Set(entry.groupIds || []);
     const shouldHaveAccess = selectedToolIds.includes(t.id);
@@ -526,7 +548,18 @@ function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolId
     const editGroupIds = new Set(entry.editGroupIds || []);
     if (selectedEditToolIds.includes(t.id)) editGroupIds.add(groupId); else editGroupIds.delete(groupId);
 
-    updated[t.id] = { visible, loginRequired, groupIds: remaining, editGroupIds: Array.from(editGroupIds) };
+    // provisionGroupIds nur für provisionierbare Apps anfassen, sonst unverändert lassen.
+    const provisionGroupIds = new Set(entry.provisionGroupIds || []);
+    if (PROVISIONABLE_APPS.includes(t.id)) {
+      if ((selectedProvisionToolIds || []).includes(t.id)) provisionGroupIds.add(groupId); else provisionGroupIds.delete(groupId);
+    }
+
+    updated[t.id] = {
+      visible, loginRequired,
+      groupIds: remaining,
+      editGroupIds: Array.from(editGroupIds),
+      provisionGroupIds: Array.from(provisionGroupIds)
+    };
   });
   return updated;
 }
@@ -567,19 +600,29 @@ function renderGroupsList() {
       }
       panel.innerHTML = `
         <div class="group-picker"></div>
-        <button type="button" class="btn small" data-save-group-tools="${escapeHtml(groupId)}">Speichern</button>
+        <p class="muted" style="margin:8px 0 4px;">„Auto-Eintrag“: Mitglieder dieser Gruppe werden beim Anlegen automatisch als Eintrag in der App angelegt (z. B. Trainer-Zeile in Personalkosten).</p>
+        <div class="btn-row" style="justify-content:flex-start; gap:8px;">
+          <button type="button" class="btn small" data-save-group-tools="${escapeHtml(groupId)}">Speichern</button>
+          <button type="button" class="btn secondary small" data-provision-group="${escapeHtml(groupId)}">Bestehende Mitglieder jetzt eintragen</button>
+        </div>
+        <p class="muted" data-provision-status style="margin-top:8px;"></p>
       `;
       const picker = panel.querySelector(".group-picker");
       TOOLS.forEach((t) => {
         const entry = visibilityState[t.id] || {};
         const canSee = (entry.groupIds || []).includes(groupId);
         const canEditTool = (entry.editGroupIds || []).includes(groupId);
+        const canProvision = (entry.provisionGroupIds || []).includes(groupId);
+        const provisionCell = PROVISIONABLE_APPS.includes(t.id)
+          ? `<label class="checkbox-label"><input type="checkbox" data-kind="provision" value="${escapeHtml(t.id)}" ${canProvision ? "checked" : ""} /> Auto-Eintrag</label>`
+          : "";
         const row = document.createElement("div");
         row.className = "group-picker-row";
         row.innerHTML = `
           <span class="gp-tool-name">${t.icon || "🔗"} ${escapeHtml(t.name)}</span>
           <label class="checkbox-label"><input type="checkbox" data-kind="see" value="${escapeHtml(t.id)}" ${canSee ? "checked" : ""} /> Sehen</label>
           <label class="checkbox-label"><input type="checkbox" data-kind="edit" value="${escapeHtml(t.id)}" ${canEditTool ? "checked" : ""} /> Bearbeiten</label>
+          ${provisionCell}
         `;
         picker.appendChild(row);
       });
@@ -587,10 +630,11 @@ function renderGroupsList() {
       panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
         const selectedToolIds = getCheckedValues(picker, "see");
         const selectedEditToolIds = getCheckedValues(picker, "edit");
+        const selectedProvisionToolIds = getCheckedValues(picker, "provision");
         const errorEl = document.getElementById("groups-error");
         errorEl.style.display = "none";
         try {
-          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds);
+          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedProvisionToolIds);
           await callWorker("save-visibility", { tools: updatedTools });
           visibilityState = updatedTools;
           renderToolGrid();
@@ -599,6 +643,23 @@ function renderGroupsList() {
         } catch (e) {
           errorEl.textContent = e.message;
           errorEl.style.display = "block";
+        }
+      });
+      panel.querySelector("[data-provision-group]").addEventListener("click", async (ev) => {
+        const statusEl = panel.querySelector("[data-provision-status]");
+        const pbtn = ev.currentTarget;
+        pbtn.disabled = true;
+        statusEl.textContent = "Lege Einträge an…";
+        try {
+          const res = await callWorker("provision-group", { groupId });
+          const summary = summarizeProvisionReport(res.provisioned);
+          statusEl.textContent = summary
+            ? `Fertig (${res.memberCount} Mitglied(er)): ${summary}`
+            : "Für diese Gruppe ist keine App als „Auto-Eintrag“ markiert (oder keine Mitglieder). Erst oben anhaken + speichern.";
+        } catch (e) {
+          statusEl.textContent = "Fehler: " + e.message + " (Worker schon deployed?)";
+        } finally {
+          pbtn.disabled = false;
         }
       });
     });
@@ -1370,17 +1431,23 @@ function setupAuthForms() {
     const vorname = document.getElementById("new-user-vorname").value;
     const nachname = document.getElementById("new-user-nachname").value;
     const isAdmin = document.getElementById("new-user-is-admin").checked;
+    const lizenz = document.getElementById("new-user-lizenz").value;
+    const mannschaften = document.getElementById("new-user-mannschaften").value
+      .split(",").map((s) => s.trim()).filter(Boolean);
     const groupIds = getCheckedValues(document.getElementById("new-user-groups"));
     const errorEl = document.getElementById("users-error");
     const successEl = document.getElementById("users-success");
     errorEl.style.display = "none";
     successEl.style.display = "none";
     try {
-      const data = await callWorker("create-user", { vorname, nachname, isAdmin, groupIds });
+      const data = await callWorker("create-user", { vorname, nachname, isAdmin, lizenz, mannschaften, groupIds });
       document.getElementById("new-user-vorname").value = "";
       document.getElementById("new-user-nachname").value = "";
+      document.getElementById("new-user-lizenz").value = "";
+      document.getElementById("new-user-mannschaften").value = "";
       document.getElementById("new-user-is-admin").checked = false;
-      successEl.textContent = `Angelegt: ${data.username}`;
+      const prov = summarizeProvisionReport(data.provisioned);
+      successEl.textContent = `Angelegt: ${data.username}` + (prov ? ` · Auto-Einträge → ${prov}` : "");
       successEl.style.display = "block";
       await loadAndRenderGroups();
       await loadAndRenderUsers();

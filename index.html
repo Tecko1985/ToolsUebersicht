@@ -180,6 +180,22 @@
           <input type="text" id="new-user-nachname" required />
         </div>
         <div class="form-field">
+          <label>Trainerlizenz</label>
+          <select id="new-user-lizenz">
+            <option value="">— keine —</option>
+            <option value="ohne Lizenz">ohne Lizenz</option>
+            <option value="Basis">Basis</option>
+            <option value="C">C</option>
+            <option value="B">B</option>
+            <option value="B Elite">B Elite</option>
+            <option value="A">A</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Mannschaft(en)</label>
+          <input type="text" id="new-user-mannschaften" placeholder="z. B. B-Jugend, C-Jugend" />
+        </div>
+        <div class="form-field">
           <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" id="new-user-is-admin" /> Admin-Rechte</label>
         </div>
         <div class="form-field">
@@ -232,7 +248,7 @@
   </main>
 </div>
 
-<script src="config.js?v=1.3"></script>
-<script src="app.js?v=1.3"></script>
+<script src="config.js?v=1.4"></script>
+<script src="app.js?v=1.4"></script>
 </body>
 </html>
