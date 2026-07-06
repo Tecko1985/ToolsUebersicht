@@ -1,4 +1,4 @@
-const APP_VERSION = "1.10";
+const APP_VERSION = "1.11";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -227,6 +227,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.11",
+    groups: [
+      {
+        title: "Dashboard",
+        items: [
+          "Das Widget „Nächste Termine“ zeigt jetzt 8 statt 3 anstehende Termine an."
+        ]
+      }
+    ]
+  },
   {
     version: "1.10",
     groups: [
