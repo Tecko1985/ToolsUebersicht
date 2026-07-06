@@ -193,7 +193,8 @@
         </div>
         <div class="form-field">
           <label>Mannschaft(en)</label>
-          <input type="text" id="new-user-mannschaften" placeholder="z. B. B-Jugend, C-Jugend" />
+          <input type="text" id="new-user-mannschaften" list="mannschaft-suggestions" placeholder="z. B. B-Jugend, C-Jugend" />
+          <datalist id="mannschaft-suggestions"></datalist>
         </div>
         <div class="form-field">
           <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" id="new-user-is-admin" /> Admin-Rechte</label>
@@ -248,7 +249,7 @@
   </main>
 </div>
 
-<script src="config.js?v=1.5"></script>
-<script src="app.js?v=1.5"></script>
+<script src="config.js?v=1.6"></script>
+<script src="app.js?v=1.6"></script>
 </body>
 </html>

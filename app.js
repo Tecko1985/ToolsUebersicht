@@ -125,11 +125,27 @@ async function loadAndRenderUsers() {
       (a.displayName || a.username).localeCompare(b.displayName || b.username, "de")
     );
     renderUsersList(usersState);
+    renderMannschaftSuggestions();
     document.getElementById("users-count").textContent = usersState.length;
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = "block";
   }
+}
+
+// Füllt das <datalist> für die Mannschaft(en)-Felder (Anlegen + Bearbeiten) mit allen
+// bereits vergebenen Mannschaftsnamen — Autovervollständigung, die zugleich hilft,
+// konsistente Namen zu treffen (wichtig fürs Kadermanager-Team-Matching beim Auto-Provisioning).
+function renderMannschaftSuggestions() {
+  const dl = document.getElementById("mannschaft-suggestions");
+  if (!dl) return;
+  const set = new Set();
+  usersState.forEach((u) => (u.mannschaften || []).forEach((m) => {
+    const t = String(m || "").trim();
+    if (t) set.add(t);
+  }));
+  const names = Array.from(set).sort((a, b) => a.localeCompare(b, "de"));
+  dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
 }
 
 function renderUsersList(users) {
@@ -216,7 +232,7 @@ function renderUsersList(users) {
           </div>
           <div class="form-field">
             <label>Mannschaft(en)</label>
-            <input type="text" data-edit-user-mannschaften value="${escapeHtml((user.mannschaften || []).join(", "))}" placeholder="z. B. B-Jugend, C-Jugend" />
+            <input type="text" data-edit-user-mannschaften list="mannschaft-suggestions" value="${escapeHtml((user.mannschaften || []).join(", "))}" placeholder="z. B. B-Jugend, C-Jugend" />
           </div>
           <div class="form-field">
             <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-is-admin ${user.isAdmin ? "checked" : ""} /> Admin-Rechte</label>
