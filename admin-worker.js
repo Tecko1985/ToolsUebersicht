@@ -1499,7 +1499,11 @@ async function getVerifiedSession(request, env, authHeader) {
 // ---------- sonstige Helfer ----------
 
 function normalizeUsername(raw) {
-  return String(raw || "").trim().toLowerCase().replace(/\s+/g, ".");
+  // Umlaute EXAKT wie beim Anlegen transliterieren (generateUsername -> slugifyNamePart
+  // -> transliterate: ö->oe usw.), sonst wird "Uwe Förster" beim Login zu "uwe.förster",
+  // der Account liegt aber unter "uwe.foerster" -> Konto nie gefunden, 401 statt
+  // needsPasswordSetup (Login zeigt fälschlich das Passwort-Feld statt "Konto einrichten").
+  return transliterate(String(raw || "")).trim().toLowerCase().replace(/\s+/g, ".");
 }
 
 // Dynamische Objekt-Lookups mit von außen bestimmten Keys: nur echte eigene
