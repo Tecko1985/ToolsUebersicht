@@ -796,9 +796,13 @@ async function handleDavFilePut(request, body, env, authHeader, corsHeaders) {
 
   const headers = { Authorization: authHeader, "Content-Type": ctype };
   let resp = await fetch(p.fileUrl, { method: "PUT", headers, body: bytes });
-  // 409 beim PUT = der Unterordner "dateien" existiert noch nicht -> anlegen und
+  // 409 oder 404 beim PUT = ein Elternordner existiert noch nicht -> anlegen und
   // EINMAL wiederholen (MKCOL-Autofix, wie bei der ersten JSON-Speicherung).
-  if (resp.status === 409) {
+  // Nextcloud liefert 409, wenn nur EIN Ordner-Level fehlt (z.B. nur "dateien"),
+  // aber 404, wenn zwei oder mehr Ebenen zugleich fehlen — das passiert, wenn eine
+  // App ihre erste Datei hochlädt, bevor sie je ihre JSON-Datei gespeichert hat
+  // (dann fehlen der App-Ordner UND dessen "dateien"-Unterordner gleichzeitig).
+  if (resp.status === 409 || resp.status === 404) {
     await ensureCollection(p.dir, authHeader, 0);
     resp = await fetch(p.fileUrl, { method: "PUT", headers, body: bytes });
   }
@@ -916,12 +920,13 @@ async function writeJson(url, authHeader, data, ifMatch) {
   if (ifMatch) headers["If-Match"] = ifMatch;
   const body = JSON.stringify(data, null, 2);
   let resp = await fetch(url, { method: "PUT", headers, body });
-  // 409 beim PUT heißt in WebDAV: der Elternordner existiert noch nicht (passiert
-  // bei der allerersten Speicherung einer neu angebundenen App). Ordner anlegen und
-  // EINMAL wiederholen. Mit ifMatch kann ein 409 hier nicht aus einem fehlenden
-  // Ordner stammen (die Datei — und damit ihr Ordner — existierte ja schon), daher
-  // nur im unbedingten Fall automatisch anlegen.
-  if (resp.status === 409 && !ifMatch) {
+  // 409 ODER 404 beim PUT heißt in WebDAV: ein Elternordner existiert noch nicht
+  // (passiert bei der allerersten Speicherung einer neu angebundenen App). 409 bei
+  // nur einer fehlenden Ebene, 404 wenn zwei oder mehr Ebenen zugleich fehlen.
+  // Ordner anlegen und EINMAL wiederholen. Mit ifMatch kann das hier nicht aus
+  // einem fehlenden Ordner stammen (die Datei — und damit ihr Ordner — existierte
+  // ja schon), daher nur im unbedingten Fall automatisch anlegen.
+  if ((resp.status === 409 || resp.status === 404) && !ifMatch) {
     await ensureParentCollection(url, authHeader);
     resp = await fetch(url, { method: "PUT", headers, body });
   }
