@@ -137,13 +137,13 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
-    id: "spielerplus-klon",
-    name: "Spielerplus-Klon",
+    id: "kadermanager",
+    name: "Kadermanager",
     description: "Vereinsinterne Alternative zu SpielerPlus: mehrere Mannschaften, Termine mit An-/Abmeldung, Anwesenheit, Umfragen und Mannschaftskasse.",
-    url: "https://tecko1985.github.io/spielerplus-klon/",
+    url: "https://tecko1985.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
-    version: "1.3",
+    version: "1.4",
     devices: ["mobile", "desktop"]
   },
   {
