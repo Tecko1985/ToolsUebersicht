@@ -139,11 +139,11 @@ const TOOLS = [
   {
     id: "kadermanager",
     name: "Kadermanager",
-    description: "Vereinsinterne Alternative zu SpielerPlus: mehrere Mannschaften, Termine mit An-/Abmeldung, Anwesenheit, Umfragen und Mannschaftskasse.",
+    description: "Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung, Spielberichte, Urlaub/Krank, Umfragen, Mannschaftskasse und Dateiablage je Mannschaft.",
     url: "https://tecko1985.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
-    version: "1.4",
+    version: "2.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -176,6 +176,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-06",
+    type: "update",
+    title: "Kadermanager stark erweitert",
+    text: "Neu: Rollen je Spieler mit granularen Rechten, Aufgaben/Aufstellung/Spielberichte je Termin, Urlaub/Krank, Kasse-Kategorien mit Stornos und eine Dateiablage je Mannschaft.",
+    toolId: "kadermanager",
+  },
   {
     date: "2026-07-06",
     type: "neu",
