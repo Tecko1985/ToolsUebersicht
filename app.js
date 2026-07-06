@@ -779,7 +779,7 @@ function renderNews() {
 // lesend, kein eigener Worker-Code nötig. Ohne Login/Zugriff wird das Widget
 // einfach ausgeblendet statt einen Fehler zu zeigen.
 const CALENDAR_WIDGET_APP_ID = "vereinskalender";
-const CALENDAR_WIDGET_COUNT = 3;
+const CALENDAR_WIDGET_COUNT = 8;
 
 function calendarTerminEndIso(t) {
   return t.endDatum && /^\d{4}-\d{2}-\d{2}$/.test(t.endDatum) && t.endDatum >= t.datum ? t.endDatum : t.datum;
