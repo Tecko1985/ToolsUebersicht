@@ -1,4 +1,4 @@
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -175,6 +175,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "fahrtenbuch",
+    name: "Fahrtenbuch",
+    description: "Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit Fotos hochladen, unterschreiben — plus Führerschein-Kopie je Saison hinterlegen.",
+    url: "https://tecko1985.github.io/fahrtenbuch/",
+    icon: "🚐",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -186,6 +196,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-06",
+    type: "neu",
+    title: "Fahrtenbuch ist online",
+    text: "Die Fahrer-Checkliste für Vereinsfahrzeuge gibt es jetzt digital: Fahrt erfassen, Checklisten abhaken, Mängel mit Foto dokumentieren, unterschreiben und die Führerschein-Kopie je Saison hinterlegen.",
+    toolId: "fahrtenbuch",
+  },
   {
     date: "2026-07-06",
     type: "neu",

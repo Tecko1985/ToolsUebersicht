@@ -95,6 +95,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8780", // Kadermanager (Dev-Server, bis 1.3 Spielerplus-Klon)
   "http://localhost:8794", // Digitaler Stempel (Dev-Server)
   "http://localhost:8795", // Kleiderbestellung (Dev-Server)
+  "http://localhost:8796", // Fahrtenbuch (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -114,7 +115,8 @@ const DAV_APPS = {
   "busplan":           "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Busplan/busplan.json",
   "kadermanager":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json",
   "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
-  "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json"
+  "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json",
+  "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json"
 };
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
