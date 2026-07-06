@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -155,6 +155,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.7",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "digitaler-stempel",
+    name: "Digitaler Stempel",
+    description: "PDF-Dokumente digital stempeln (Position, Größe, Drehung frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
+    url: "https://tecko1985.github.io/digitaler-stempel/",
+    icon: "🖋️",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -166,6 +176,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-06",
+    type: "neu",
+    title: "Digitaler Stempel ist online",
+    text: "PDF-Dokumente digital stempeln — jede Stempelung wird automatisch mit Nutzer und Zeitpunkt archiviert.",
+    toolId: "digitaler-stempel",
+  },
   {
     date: "2026-07-05",
     type: "neu",
@@ -203,6 +220,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.10",
+    groups: [
+      {
+        title: "Neues Tool",
+        items: [
+          "Digitaler Stempel: PDF-Dokumente digital stempeln, mit automatischer Archivierung (wer hat wann gestempelt, wer hat wann heruntergeladen)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.9",
     groups: [
