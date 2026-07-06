@@ -85,6 +85,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8792", // Busplan (Dev-Server)
   "http://localhost:8780", // Kadermanager (Dev-Server, bis 1.3 Spielerplus-Klon)
   "http://localhost:8794", // Digitaler Stempel (Dev-Server)
+  "http://localhost:8795", // Kleiderbestellung (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -103,7 +104,8 @@ const DAV_APPS = {
   "vereinskalender":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinskalender/vereinskalender.json",
   "busplan":           "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Busplan/busplan.json",
   "kadermanager":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json",
-  "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json"
+  "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
+  "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json"
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -487,6 +489,22 @@ async function handleListGroups(request, env, authHeader, corsHeaders) {
 
   const usersDoc = session.usersDoc;
   return json({ groups: Object.values(usersDoc.groups || {}) }, 200, corsHeaders);
+}
+
+// Schlanke, nicht-Admin-Variante von list-users/list-groups für "Teilen mit"-Picker
+// in Gateway-Apps: nur Name+Nutzername bzw. Id+Name, keine Passwort-/Admin-/
+// Mitgliederdaten. Jeder eingeloggte Nutzer darf das abrufen (kein isAdmin-Gate).
+async function handleListDirectory(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const users = Object.values(usersDoc.users).map((u) => ({
+    username: u.username,
+    displayName: (u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : u.username
+  }));
+  const groups = Object.values(usersDoc.groups || {}).map((g) => ({ id: g.id, name: g.name }));
+  return json({ users, groups }, 200, corsHeaders);
 }
 
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
