@@ -582,6 +582,7 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
   const group = getOwn(usersDoc.groups || {}, groupId);
   if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
 
+  const previous = Array.isArray(group.memberUsernames) ? group.memberUsernames.slice() : [];
   const requested = Array.isArray(body.memberUsernames) ? body.memberUsernames.map(normalizeUsername) : [];
   group.memberUsernames = requested.filter((u) => getOwn(usersDoc.users, u));
 
@@ -591,7 +592,19 @@ async function handleUpdateGroupMembers(request, body, env, authHeader, corsHead
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ group }, 200, corsHeaders);
+  // Auto-Provisioning für NEU hinzugekommene Mitglieder (best effort).
+  let provisioned = {};
+  try {
+    const added = group.memberUsernames.filter((u) => !previous.includes(u));
+    if (added.length) {
+      const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+      const apps = provisionAppsForGroups(config, [groupId]);
+      const members = added.map((u) => getOwn(usersDoc.users, u)).filter(Boolean);
+      if (apps.length && members.length) provisioned = await provisionUsers(members, apps, env, authHeader);
+    }
+  } catch (_) { /* Provisioning ist best effort */ }
+
+  return json({ group, provisioned }, 200, corsHeaders);
 }
 
 // Provisioniert nachträglich ALLE aktuellen Mitglieder einer Gruppe in die für diese
@@ -1101,8 +1114,8 @@ const PROVISION_ADAPTERS = {
   "personalkosten": provisionPersonalkosten,
   "trainercheckliste": provisionTrainercheckliste,
   "kadermanager": provisionKadermanager,
-  "trainervertrag": provisionTrainervertrag
-  // "trainerkodex": Phase 2 (braucht eine Client-Anzeige-Anpassung für "offen")
+  "trainervertrag": provisionTrainervertrag,
+  "trainerkodex": provisionTrainerkodex
 };
 
 function provisionPathFor(app) {
@@ -1116,6 +1129,7 @@ function provisionDefault(app) {
     case "trainercheckliste": return { trainerEintraege: [] };
     case "kadermanager":      return { meta: {}, teams: [] };
     case "trainervertrag":    return { trainer: [] };
+    case "trainerkodex":      return { bestaetigungen: {} };
     default:                  return {};
   }
 }
@@ -1223,6 +1237,17 @@ function provisionTrainervertrag(data, p) {
     vertragsGeneriert: false,
     linkedUsername: p.username
   });
+  return "created";
+}
+
+function provisionTrainerkodex(data, p) {
+  if (!data.bestaetigungen || typeof data.bestaetigungen !== "object") data.bestaetigungen = {};
+  // Key = username. Ein vorhandener Eintrag (echte Bestätigung ODER Platzhalter)
+  // bleibt unangetastet — die echte Bestätigung überschreibt den Platzhalter später
+  // client-seitig. Der Platzhalter (soll:true, ohne datum) erscheint in der
+  // Admin-Übersicht als "offen — noch nicht bestätigt".
+  if (getOwn(data.bestaetigungen, p.username)) return "exists";
+  data.bestaetigungen[p.username] = { vorname: p.vorname, nachname: p.nachname, soll: true };
   return "created";
 }
 
