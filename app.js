@@ -281,6 +281,169 @@ function renderUsersList(users) {
   });
 }
 
+// ---- Backfill: Lizenz & Mannschaft aus Personalkosten nachpflegen ----
+// Admins dürfen jede Gateway-App per dav-load lesen (Admin-Bypass im Worker), also
+// kann das Nutzer-Panel die Personalkosten-Daten laden und daraus das zentrale
+// Trainerprofil (lizenz/mannschaften) der passenden Konten vorschlagen. Bewusst
+// rein additiv: eine bereits gesetzte Lizenz wird NIE überschrieben, Mannschaften
+// werden nur ergänzt (Vereinigung) — es geht kein manuell gepflegter Wert verloren.
+
+function nameKey(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Baut aus den Personalkosten-Daten eine Map nameKey -> {displayName, lizenz, mannschaften[]}.
+// Aggregiert über ALLE Saisons und alle drei Bereiche (Trainer/Schwerpunkt/Förderung);
+// die aktuelle Saison wird zuletzt verarbeitet, damit ihre Lizenz gewinnt.
+function buildPersonalkostenProfileMap(data) {
+  const LIZENZEN = ["ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
+  const map = new Map();
+  if (!data || !data.seasons || typeof data.seasons !== "object") return map;
+  const current = data.meta && data.meta.currentSeason;
+  const seasonKeys = Object.keys(data.seasons)
+    .sort((a, b) => (a === current ? 1 : 0) - (b === current ? 1 : 0));
+  seasonKeys.forEach((sk) => {
+    const season = data.seasons[sk] || {};
+    ["trainer", "schwerpunkt", "foerderung"].forEach((bereich) => {
+      const list = Array.isArray(season[bereich]) ? season[bereich] : [];
+      list.forEach((e) => {
+        const name = String((e && e.name) || "").trim();
+        if (!name || name === "0") return;
+        const key = nameKey(name);
+        if (!map.has(key)) map.set(key, { displayName: name, lizenz: "", mannschaften: [] });
+        const rec = map.get(key);
+        const mannschaft = String((e && e.mannschaft) || "").trim();
+        if (mannschaft && !rec.mannschaften.includes(mannschaft)) rec.mannschaften.push(mannschaft);
+        const lizenz = String((e && e.lizenz) || "").trim();
+        if (lizenz && LIZENZEN.includes(lizenz)) rec.lizenz = lizenz;
+      });
+    });
+  });
+  return map;
+}
+
+async function openBackfillFromPersonalkosten() {
+  const panel = document.getElementById("backfill-panel");
+  const errorEl = document.getElementById("users-error");
+  errorEl.style.display = "none";
+  panel.style.display = "block";
+  panel.innerHTML = '<p class="muted">Lade Personalkosten…</p>';
+
+  let res;
+  try {
+    res = await callWorker("dav-load", { app: "personalkosten" });
+  } catch (e) {
+    panel.innerHTML = `<p class="muted" style="color:#c0392b;">Konnte Personalkosten nicht laden: ${escapeHtml(e.message)}</p>`;
+    return;
+  }
+
+  const profileMap = buildPersonalkostenProfileMap(res && res.data);
+  if (profileMap.size === 0) {
+    panel.innerHTML = '<p class="muted">In den Personalkosten wurden keine Personen mit Namen gefunden (schon deployed &amp; befüllt?).</p>';
+    return;
+  }
+
+  const matchedKeys = new Set();
+  const rows = [];
+  usersState.forEach((u) => {
+    const full = `${u.vorname || ""} ${u.nachname || ""}`.trim();
+    const key = nameKey(full);
+    if (!key || !profileMap.has(key)) return;
+    matchedKeys.add(key);
+    const prof = profileMap.get(key);
+    const curLizenz = u.lizenz || "";
+    const curTeams = Array.isArray(u.mannschaften) ? u.mannschaften : [];
+    const addTeams = prof.mannschaften.filter((m) => !curTeams.includes(m));
+    const lizenzChange = !curLizenz && !!prof.lizenz;
+    const teamChange = addTeams.length > 0;
+    if (!lizenzChange && !teamChange) return; // matched, aber nichts nachzupflegen
+    rows.push({
+      username: u.username, displayName: full,
+      vorname: u.vorname || "", nachname: u.nachname || "", isAdmin: !!u.isAdmin,
+      curLizenz, newLizenz: curLizenz || prof.lizenz, lizenzChange,
+      curTeams, addTeams, newTeams: curTeams.concat(addTeams), teamChange
+    });
+  });
+
+  const unmatched = [];
+  profileMap.forEach((prof, key) => { if (!matchedKeys.has(key)) unmatched.push(prof.displayName); });
+  unmatched.sort((a, b) => a.localeCompare(b, "de"));
+
+  renderBackfillPanel(panel, rows, unmatched, matchedKeys.size - rows.length);
+}
+
+function renderBackfillPanel(panel, rows, unmatched, upToDateCount) {
+  const unmatchedHtml = unmatched.length
+    ? `<p class="muted" style="margin-top:10px;">Ohne passendes Nutzerkonto (${unmatched.length}) — bitte ggf. erst als Nutzer anlegen: ${escapeHtml(unmatched.join(", "))}</p>`
+    : "";
+
+  if (rows.length === 0) {
+    panel.innerHTML =
+      `<p class="muted">Nichts nachzupflegen — alle zugeordneten Nutzer sind bereits aktuell${upToDateCount > 0 ? ` (${upToDateCount})` : ""}.</p>` +
+      unmatchedHtml;
+    return;
+  }
+
+  const rowsHtml = rows.map((r, i) => {
+    const lizenzHtml = r.lizenzChange
+      ? `Lizenz: <span class="muted">—</span> → <strong>${escapeHtml(r.newLizenz)}</strong>`
+      : (r.curLizenz ? `Lizenz: ${escapeHtml(r.curLizenz)} <span class="muted">(bleibt)</span>` : `Lizenz: <span class="muted">—</span>`);
+    const teamHtml = r.teamChange
+      ? `Mannschaft: ${r.curTeams.length ? escapeHtml(r.curTeams.join(", ")) + " " : ""}<strong>+ ${escapeHtml(r.addTeams.join(", "))}</strong>`
+      : `Mannschaft: ${r.curTeams.length ? escapeHtml(r.curTeams.join(", ")) : "—"} <span class="muted">(bleibt)</span>`;
+    return `
+      <label class="checkbox-label" style="display:flex; gap:10px; align-items:flex-start; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08);">
+        <input type="checkbox" data-backfill-row="${i}" checked />
+        <span><strong>${escapeHtml(r.displayName)}</strong><br>
+        <span class="muted" style="font-size:0.9em;">${lizenzHtml} · ${teamHtml}</span></span>
+      </label>`;
+  }).join("");
+
+  panel.innerHTML = `
+    <p class="muted">${rows.length} Nutzer aus den Personalkosten nachpflegbar${upToDateCount > 0 ? `, ${upToDateCount} bereits aktuell` : ""}. Bestehende Lizenzen werden nicht überschrieben, Mannschaften nur ergänzt.</p>
+    <div id="backfill-rows">${rowsHtml}</div>
+    <div class="btn-row" style="margin-top:12px; gap:8px; justify-content:flex-start;">
+      <button type="button" class="btn small" id="btn-backfill-apply">Ausgewählte übernehmen</button>
+      <button type="button" class="btn secondary small" id="btn-backfill-cancel">Abbrechen</button>
+    </div>
+    <p class="muted" id="backfill-status" style="margin-top:10px;"></p>
+    ${unmatchedHtml}`;
+
+  document.getElementById("btn-backfill-cancel").addEventListener("click", () => {
+    panel.style.display = "none";
+    panel.innerHTML = "";
+  });
+  document.getElementById("btn-backfill-apply").addEventListener("click", () => applyBackfill(rows));
+}
+
+async function applyBackfill(rows) {
+  const statusEl = document.getElementById("backfill-status");
+  const applyBtn = document.getElementById("btn-backfill-apply");
+  const selected = rows.filter((r, i) => {
+    const cb = document.querySelector(`[data-backfill-row="${i}"]`);
+    return cb && cb.checked;
+  });
+  if (selected.length === 0) { statusEl.textContent = "Nichts ausgewählt."; return; }
+
+  applyBtn.disabled = true;
+  let done = 0, failed = 0;
+  for (const r of selected) {
+    statusEl.textContent = `Übernehme… (${done + failed + 1}/${selected.length})`;
+    try {
+      await callWorker("update-user", {
+        username: r.username, vorname: r.vorname, nachname: r.nachname, isAdmin: r.isAdmin,
+        lizenz: r.newLizenz, mannschaften: r.newTeams
+      });
+      done++;
+    } catch (_) {
+      failed++;
+    }
+  }
+  statusEl.textContent = `Fertig: ${done} übernommen${failed ? `, ${failed} fehlgeschlagen (Worker schon deployed?)` : ""}. „Aus Personalkosten übernehmen“ erneut klicken, um das Ergebnis zu prüfen.`;
+  applyBtn.disabled = false;
+  await loadAndRenderUsers();
+}
+
 // Gleicht die Gruppenmitgliedschaft eines Nutzers auf den gewünschten Stand
 // ab, indem nur die tatsächlich geänderten Gruppen einzeln aktualisiert werden.
 async function applyUserGroupMembership(username, desiredGroupIds) {
@@ -1200,6 +1363,9 @@ function setupAuthForms() {
   document.getElementById("btn-logout").addEventListener("click", () => {
     logout();
   });
+
+  const backfillBtn = document.getElementById("btn-backfill-personalkosten");
+  if (backfillBtn) backfillBtn.addEventListener("click", openBackfillFromPersonalkosten);
 
   document.getElementById("create-user-form").addEventListener("submit", async (e) => {
     e.preventDefault();
