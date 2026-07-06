@@ -1,4 +1,4 @@
-const APP_VERSION = "1.12";
+const APP_VERSION = "1.13";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -244,6 +244,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.13",
+    groups: [
+      {
+        title: "Nächste-Termine-Widget",
+        items: [
+          "Private Termine aus dem Vereinskalender stehen jetzt in einem eigenen Bereich unterhalb der normalen anstehenden Termine, statt dazwischengemischt zu sein.",
+          "Private Termine werden dabei nur noch dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt (vorher sah jeder mit Vereinskalender-Zugriff auch fremde private Termine)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.12",
     groups: [

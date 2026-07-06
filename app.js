@@ -785,6 +785,21 @@ function calendarTerminEndIso(t) {
   return t.endDatum && /^\d{4}-\d{2}-\d{2}$/.test(t.endDatum) && t.endDatum >= t.datum ? t.endDatum : t.datum;
 }
 
+// Spiegelt terminVisibleFor() aus der Vereinskalender-App selbst: private Termine
+// (seit 1.6) sieht nur der Ersteller, explizit geteilte Nutzer/Gruppen sowie
+// Admins. Ohne diesen Filter würde das Widget private Termine ALLER Nutzer an
+// jeden eingeloggten Nutzer mit Vereinskalender-Zugriff ausliefern.
+function calendarTerminVisibleFor(t, user) {
+  if (!t.privat) return true;
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  if (t.ersteller && t.ersteller === user.username) return true;
+  if (Array.isArray(t.geteiltUsers) && t.geteiltUsers.includes(user.username)) return true;
+  if (Array.isArray(t.geteiltGruppen) && Array.isArray(user.groupIds) &&
+      t.geteiltGruppen.some((g) => user.groupIds.includes(g))) return true;
+  return false;
+}
+
 function calendarSortKey(t) {
   return `${t.datum}T${(t.ganztags ? "" : t.startZeit) || "00:00"}`;
 }
@@ -823,9 +838,11 @@ async function loadCalendarWidget() {
     const today = new Date().toISOString().slice(0, 10);
     const upcoming = termine
       .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.datum || "") && calendarTerminEndIso(t) >= today)
-      .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)))
-      .slice(0, CALENDAR_WIDGET_COUNT);
-    renderCalendarWidget(widget, upcoming, kategorien);
+      .filter((t) => calendarTerminVisibleFor(t, currentUser))
+      .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
+    const oeffentlich = upcoming.filter((t) => !t.privat).slice(0, CALENDAR_WIDGET_COUNT);
+    const privat = upcoming.filter((t) => t.privat).slice(0, CALENDAR_WIDGET_COUNT);
+    renderCalendarWidget(widget, oeffentlich, privat, kategorien);
   } catch (e) {
     console.warn("Vereinskalender-Widget nicht ladbar:", e);
     widget.dataset.hasContent = "0";
@@ -834,26 +851,35 @@ async function loadCalendarWidget() {
   }
 }
 
-function renderCalendarWidget(widget, termine, kategorien) {
+function renderCalendarWidget(widget, termine, privatTermine, kategorien) {
   const tool = toolById(CALENDAR_WIDGET_APP_ID);
   const url = tool ? tool.url : "#";
   const katFarbe = (id) => {
     const k = kategorien.find((k2) => k2.id === id);
     return k ? k.farbe : "#6b7280";
   };
-  const rows = termine.length
-    ? termine.map((t) => `
+  const rowHtml = (t) => `
         <a class="calendar-widget-item" href="${escapeHtml(url)}">
           <span class="cw-date">${escapeHtml(formatCalendarDate(t.datum))}</span>
           <span class="cw-dot" style="background:${escapeHtml(katFarbe(t.kategorie))}"></span>
           <span class="cw-title">${escapeHtml(t.titel || "")}</span>
         </a>
-      `).join("")
+      `;
+  const rows = termine.length
+    ? termine.map(rowHtml).join("")
     : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
+  // Private Termine (nur für den eingeloggten Nutzer sichtbar, siehe
+  // calendarTerminVisibleFor) stehen als eigener Abschnitt UNTER den normalen
+  // Terminen — der Abschnitt fehlt ganz, wenn der Nutzer keine hat.
+  const privateSection = privatTermine.length ? `
+      <h2 class="calendar-widget-sub-heading">🔒 Private Termine</h2>
+      <div class="calendar-widget-list">${privatTermine.map(rowHtml).join("")}</div>
+    ` : "";
   widget.innerHTML = `
     <div class="card">
       <h2>📅 Nächste Termine</h2>
       <div class="calendar-widget-list">${rows}</div>
+      ${privateSection}
     </div>
   `;
   widget.dataset.hasContent = "1";

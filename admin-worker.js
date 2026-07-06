@@ -54,6 +54,8 @@
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
+//   POST { action: "list-directory" } (jeder eingeloggte Nutzer)  -> { users:[{username,displayName}], groups:[{id,name}] } ohne
+//     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
 //   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds}
@@ -186,6 +188,8 @@ export default {
         return handleCreateGroup(request, body, env, authHeader, corsHeaders);
       case "list-groups":
         return handleListGroups(request, env, authHeader, corsHeaders);
+      case "list-directory":
+        return handleListDirectory(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "delete-group":
