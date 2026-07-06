@@ -144,6 +144,8 @@ function renderUsersList(users) {
         <span class="muted">(${escapeHtml(u.username)})</span>
         ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
         ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
+        ${u.lizenz ? `<span class="muted">Lizenz: ${escapeHtml(u.lizenz)}</span>` : ""}
+        ${(u.mannschaften || []).length ? `<span class="muted">${escapeHtml(u.mannschaften.join(", "))}</span>` : ""}
         <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
         <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
@@ -197,6 +199,7 @@ function renderUsersList(users) {
         return;
       }
       const user = usersState.find((u) => u.username === username);
+      const lizenzOptionen = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
       panel.innerHTML = `
         <div class="form-grid" style="align-items:flex-end;">
           <div class="form-field">
@@ -206,6 +209,16 @@ function renderUsersList(users) {
           <div class="form-field">
             <label>Nachname</label>
             <input type="text" data-edit-user-nachname value="${escapeHtml(user.nachname || "")}" />
+          </div>
+          <div class="form-field">
+            <label>Trainerlizenz</label>
+            <select data-edit-user-lizenz>
+              ${lizenzOptionen.map((l) => `<option value="${escapeHtml(l)}" ${((user.lizenz || "") === l) ? "selected" : ""}>${l ? escapeHtml(l) : "— keine —"}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-field">
+            <label>Mannschaft(en)</label>
+            <input type="text" data-edit-user-mannschaften value="${escapeHtml((user.mannschaften || []).join(", "))}" placeholder="z. B. B-Jugend, C-Jugend" />
           </div>
           <div class="form-field">
             <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-is-admin ${user.isAdmin ? "checked" : ""} /> Admin-Rechte</label>
@@ -220,10 +233,13 @@ function renderUsersList(users) {
         const vorname = panel.querySelector("[data-edit-user-vorname]").value.trim();
         const nachname = panel.querySelector("[data-edit-user-nachname]").value.trim();
         const isAdmin = panel.querySelector("[data-edit-user-is-admin]").checked;
+        const lizenz = panel.querySelector("[data-edit-user-lizenz]").value;
+        const mannschaften = panel.querySelector("[data-edit-user-mannschaften]").value
+          .split(",").map((s) => s.trim()).filter(Boolean);
         const errorEl = document.getElementById("users-error");
         errorEl.style.display = "none";
         try {
-          await callWorker("update-user", { username, vorname, nachname, isAdmin });
+          await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften });
           await loadAndRenderUsers();
         } catch (e) {
           errorEl.textContent = e.message;

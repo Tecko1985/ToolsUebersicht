@@ -56,6 +56,10 @@
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "list-directory" } (jeder eingeloggte Nutzer)  -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
+//   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften}] }
+//     für alle Nutzer mit gesetztem Vor-/Nachnamen — zentrales Trainerprofil (Lizenz + betreute Mannschaft(en)),
+//     damit Gateway-Apps (Personalkosten, TrainerVertrag, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
+//     me()-Profil, sondern auch das anderer Nutzer nachschlagen können (Namensabgleich bzw. linkedUsername-Join).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
 //   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds}
@@ -115,6 +119,11 @@ const SALT_BYTES = 16;
 const HASH_BITS = 256;
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 Tage
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
+
+// Zentrales Trainerprofil (seit 1.10): Lizenzstufe + betreute Mannschaft(en) je
+// Nutzer, einmalig hier gepflegt statt in Personalkosten/TrainerVertrag/etc.
+// dupliziert. Werte übernommen aus Personalkosten config.js DEFAULT_PARAMETER.lizenzen.
+const LIZENZ_OPTIONEN = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
 
 export default {
   async fetch(request, env) {
@@ -190,6 +199,8 @@ export default {
         return handleListGroups(request, env, authHeader, corsHeaders);
       case "list-directory":
         return handleListDirectory(request, env, authHeader, corsHeaders);
+      case "list-trainer-profiles":
+        return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "delete-group":
@@ -321,7 +332,9 @@ async function handleMe(request, body, env, authHeader, corsHeaders) {
     isAdmin: !!session.isAdmin,
     groupIds,
     vorname: (user && user.vorname) || null,
-    nachname: (user && user.nachname) || null
+    nachname: (user && user.nachname) || null,
+    lizenz: (user && user.lizenz) || "",
+    mannschaften: (user && Array.isArray(user.mannschaften)) ? user.mannschaften : []
   };
   if (body && body.app) {
     result.canEdit = await resolveEditPermission(String(body.app), session, env, authHeader);
@@ -346,6 +359,7 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
   usersDoc.users[username] = {
     username, vorname, nachname, passwordHash: null, salt: null, iterations: null,
     isAdmin: !!body.isAdmin, mustSetPassword: true,
+    lizenz: normalizeLizenz(body.lizenz), mannschaften: normalizeMannschaften(body.mannschaften),
     createdAt: new Date().toISOString(), passwordSetAt: null
   };
 
@@ -373,7 +387,9 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
     isAdmin: !!u.isAdmin,
     mustSetPassword: !!u.mustSetPassword,
     createdAt: u.createdAt,
-    groupIds: getUserGroupIds(usersDoc, u.username)
+    groupIds: getUserGroupIds(usersDoc, u.username),
+    lizenz: u.lizenz || "",
+    mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : []
   }));
   return json({ users }, 200, corsHeaders);
 }
@@ -424,6 +440,8 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   user.vorname = vorname;
   user.nachname = nachname;
   user.isAdmin = isAdmin;
+  user.lizenz = normalizeLizenz(body.lizenz);
+  user.mannschaften = normalizeMannschaften(body.mannschaften);
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
@@ -431,7 +449,7 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ username, vorname, nachname, isAdmin }, 200, corsHeaders);
+  return json({ username, vorname, nachname, isAdmin, lizenz: user.lizenz, mannschaften: user.mannschaften }, 200, corsHeaders);
 }
 
 async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
@@ -509,6 +527,27 @@ async function handleListDirectory(request, env, authHeader, corsHeaders) {
   }));
   const groups = Object.values(usersDoc.groups || {}).map((g) => ({ id: g.id, name: g.name }));
   return json({ users, groups }, 200, corsHeaders);
+}
+
+// Zentrales Trainerprofil (Lizenz + Mannschaften) für ALLE Nutzer, nicht nur den
+// eigenen Account (me() liefert nur das eigene Profil). Gleiche Vertrauensstufe
+// wie list-directory/dav-load: jeder eingeloggte Nutzer darf lesen, keine
+// sensiblen Felder (kein isAdmin/mustSetPassword/Passwort-Hash).
+async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const profiles = Object.values(usersDoc.users)
+    .filter((u) => u.vorname && u.nachname)
+    .map((u) => ({
+      username: u.username,
+      vorname: u.vorname,
+      nachname: u.nachname,
+      lizenz: u.lizenz || "",
+      mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : []
+    }));
+  return json({ profiles }, 200, corsHeaders);
 }
 
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
@@ -993,6 +1032,27 @@ function getUserGroupIds(usersDoc, username) {
   return Object.values(groups)
     .filter((g) => Array.isArray(g.memberUsernames) && g.memberUsernames.includes(username))
     .map((g) => g.id);
+}
+
+// ---------- Trainerprofil-Helfer (Lizenz + Mannschaften) ----------
+
+function normalizeLizenz(raw) {
+  const v = String(raw || "").trim();
+  return LIZENZ_OPTIONEN.includes(v) ? v : "";
+}
+
+function normalizeMannschaften(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const out = [];
+  raw.forEach((m) => {
+    const t = String(m || "").trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  });
+  return out;
 }
 
 function transliterate(str) {
