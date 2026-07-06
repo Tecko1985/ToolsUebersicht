@@ -1,4 +1,4 @@
-const APP_VERSION = "1.11";
+const APP_VERSION = "1.12";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
@@ -165,6 +165,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.1",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "kleiderbestellung",
+    name: "Kleiderbestellung",
+    description: "Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und Bestellfenster und exportiert eine Lieferanten-Bestellliste.",
+    url: "https://tecko1985.github.io/kleiderbestellung/",
+    icon: "👕",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -176,6 +186,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-06",
+    type: "neu",
+    title: "Kleiderbestellung ist online",
+    text: "Trainer:innen können jetzt Vereinskleidung/-ausrüstung mit ihrer Größe direkt online bestellen.",
+    toolId: "kleiderbestellung",
+  },
   {
     date: "2026-07-06",
     type: "update",
@@ -227,6 +244,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.12",
+    groups: [
+      {
+        title: "Neues Tool",
+        items: [
+          "Kleiderbestellung: Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und Bestellfenster und exportiert eine Lieferanten-Bestellliste."
+        ]
+      }
+    ]
+  },
   {
     version: "1.11",
     groups: [
