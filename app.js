@@ -160,47 +160,13 @@ function renderUsersList(users) {
         <span class="muted">(${escapeHtml(u.username)})</span>
         ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
         ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
-        <button type="button" class="btn secondary small" data-toggle-user-groups="${escapeHtml(u.username)}">Gruppen</button>
         <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
         <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
         <button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">Löschen</button>
       </div>
-      <div class="ur-groups" data-user-groups-for="${escapeHtml(u.username)}" style="display:none;"></div>
       <div class="ur-groups" data-edit-user-for="${escapeHtml(u.username)}" style="display:none;"></div>
     `;
     container.appendChild(row);
-  });
-
-  container.querySelectorAll("[data-toggle-user-groups]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const username = btn.dataset.toggleUserGroups;
-      const panel = btn.closest(".user-row").querySelector("[data-user-groups-for]");
-      const isOpen = panel.style.display !== "none";
-      if (isOpen) {
-        panel.style.display = "none";
-        return;
-      }
-      const user = usersState.find((u) => u.username === username);
-      panel.innerHTML = `
-        <div class="group-picker"></div>
-        <button type="button" class="btn small" data-save-user-groups="${escapeHtml(username)}">Speichern</button>
-      `;
-      renderGroupCheckboxes(panel.querySelector(".group-picker"), user ? user.groupIds : []);
-      panel.style.display = "block";
-      panel.querySelector("[data-save-user-groups]").addEventListener("click", async () => {
-        const desiredGroupIds = getCheckedValues(panel.querySelector(".group-picker"));
-        const errorEl = document.getElementById("users-error");
-        errorEl.style.display = "none";
-        try {
-          await applyUserGroupMembership(username, desiredGroupIds);
-          await loadAndRenderGroups();
-          await loadAndRenderUsers();
-        } catch (e) {
-          errorEl.textContent = e.message;
-          errorEl.style.display = "block";
-        }
-      });
-    });
   });
 
   container.querySelectorAll("[data-toggle-edit-user]").forEach((btn) => {
@@ -215,7 +181,9 @@ function renderUsersList(users) {
       const user = usersState.find((u) => u.username === username);
       const lizenzOptionen = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
       panel.innerHTML = `
-        <div class="form-grid" style="align-items:flex-end;">
+        <div class="gp-label">Gruppen</div>
+        <div class="group-picker"></div>
+        <div class="form-grid" style="align-items:flex-end; margin-top:12px;">
           <div class="form-field">
             <label>Vorname</label>
             <input type="text" data-edit-user-vorname value="${escapeHtml(user.vorname || "")}" />
@@ -242,6 +210,7 @@ function renderUsersList(users) {
           </div>
         </div>
       `;
+      renderGroupCheckboxes(panel.querySelector(".group-picker"), user ? user.groupIds : []);
       panel.style.display = "block";
       panel.querySelector("[data-save-edit-user]").addEventListener("click", async () => {
         const vorname = panel.querySelector("[data-edit-user-vorname]").value.trim();
@@ -250,10 +219,13 @@ function renderUsersList(users) {
         const lizenz = panel.querySelector("[data-edit-user-lizenz]").value;
         const mannschaften = panel.querySelector("[data-edit-user-mannschaften]").value
           .split(",").map((s) => s.trim()).filter(Boolean);
+        const desiredGroupIds = getCheckedValues(panel.querySelector(".group-picker"));
         const errorEl = document.getElementById("users-error");
         errorEl.style.display = "none";
         try {
           await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften });
+          await applyUserGroupMembership(username, desiredGroupIds);
+          await loadAndRenderGroups();
           await loadAndRenderUsers();
         } catch (e) {
           errorEl.textContent = e.message;
