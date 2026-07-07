@@ -148,26 +148,69 @@ function renderMannschaftSuggestions() {
   dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
 }
 
+// Baut eine einzelne Nutzer-Zeile (Bearbeiten/Passwort/Löschen) — von
+// renderUsersList sowohl für die flache als auch die nach Gruppen sortierte
+// Darstellung verwendet.
+function buildUserRow(u) {
+  const row = document.createElement("div");
+  row.className = "user-row";
+  row.innerHTML = `
+    <div class="ur-main">
+      <span class="ur-name">${escapeHtml(u.displayName || u.username)}</span>
+      <span class="muted">(${escapeHtml(u.username)})</span>
+      ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
+      ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
+      <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
+      <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
+      <button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">Löschen</button>
+    </div>
+    <div class="ur-groups" data-edit-user-for="${escapeHtml(u.username)}" style="display:none;"></div>
+  `;
+  return row;
+}
+
+// Aufklappbarer Abschnitt für eine Gruppe innerhalb der Nutzerliste. Ein
+// Nutzer in mehreren Gruppen erscheint entsprechend in mehreren Abschnitten —
+// konsistent damit, dass auch die Mitglieder-Auswahl einer Gruppe unabhängig
+// von anderen Mitgliedschaften des Nutzers ist.
+function buildUserGroupSection(name, members) {
+  const details = document.createElement("details");
+  details.className = "collapsible user-group-section";
+  const summary = document.createElement("summary");
+  summary.textContent = `${name} (${members.length})`;
+  details.appendChild(summary);
+  if (members.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "Keine Mitglieder.";
+    details.appendChild(empty);
+  } else {
+    members.forEach((u) => details.appendChild(buildUserRow(u)));
+  }
+  return details;
+}
+
 function renderUsersList(users) {
   const container = document.getElementById("users-list");
   container.innerHTML = "";
-  users.forEach((u) => {
-    const row = document.createElement("div");
-    row.className = "user-row";
-    row.innerHTML = `
-      <div class="ur-main">
-        <span class="ur-name">${escapeHtml(u.displayName || u.username)}</span>
-        <span class="muted">(${escapeHtml(u.username)})</span>
-        ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
-        ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
-        <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
-        <button type="button" class="btn secondary small" data-reset-user="${escapeHtml(u.username)}">Passwort zurücksetzen</button>
-        <button type="button" class="btn danger small" data-delete-user="${escapeHtml(u.username)}">Löschen</button>
-      </div>
-      <div class="ur-groups" data-edit-user-for="${escapeHtml(u.username)}" style="display:none;"></div>
-    `;
-    container.appendChild(row);
-  });
+
+  if (groupsState.length === 0) {
+    // Keine Gruppen angelegt — Gruppierung wäre nur ein einzelner "Ohne
+    // Gruppe"-Abschnitt und damit reine Mehrarbeit beim Aufklappen.
+    users.forEach((u) => container.appendChild(buildUserRow(u)));
+  } else {
+    const sortedGroups = groupsState.slice().sort((a, b) => a.name.localeCompare(b.name, "de"));
+    const groupedUsernames = new Set();
+    sortedGroups.forEach((g) => {
+      const members = users.filter((u) => (u.groupIds || []).includes(g.id));
+      members.forEach((u) => groupedUsernames.add(u.username));
+      container.appendChild(buildUserGroupSection(g.name, members));
+    });
+    const ohneGruppe = users.filter((u) => !groupedUsernames.has(u.username));
+    if (ohneGruppe.length > 0) {
+      container.appendChild(buildUserGroupSection("Keine Gruppe", ohneGruppe));
+    }
+  }
 
   container.querySelectorAll("[data-toggle-edit-user]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1550,9 +1593,12 @@ async function init() {
   renderToolGrid();
   await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
-    // Gruppen und Nutzer sind voneinander unabhängige Aktionen (Render-Funktionen
-    // greifen erst beim Aufklappen einzelner Gruppen aufeinander zu, nicht hier).
-    await Promise.all([loadAndRenderGroups(), loadAndRenderUsers()]);
+    // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
+    // anhand von groupsState, das also schon geladen sein muss, bevor
+    // loadAndRenderUsers() rendert (sonst Race, je nachdem welcher der beiden
+    // Worker-Aufrufe zuerst zurückkommt).
+    await loadAndRenderGroups();
+    await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
   }

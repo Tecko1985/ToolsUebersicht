@@ -382,6 +382,10 @@ main { flex: 1; min-width: 0; }
 .ur-main .ur-name { font-weight: 700; flex: 1; }
 .ur-groups { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
 
+.user-group-section { margin-bottom: 16px; padding-left: 4px; }
+.user-group-section summary { font-size: 15px; }
+.user-group-section .user-row { margin-left: 8px; }
+
 .badge-warning {
   display: inline-flex;
   align-items: center;
