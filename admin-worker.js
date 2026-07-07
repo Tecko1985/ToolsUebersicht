@@ -111,6 +111,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8795", // Kleiderbestellung (Dev-Server)
   "http://localhost:8796", // Fahrtenbuch (Dev-Server)
   "http://localhost:8782", // Spiele (Dev-Server)
+  "http://localhost:8798", // Materialbedarf (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -131,7 +132,8 @@ const DAV_APPS = {
   "kadermanager":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielerplus/spielerplus.json",
   "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
   "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json",
-  "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json"
+  "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json",
+  "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json"
 };
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber

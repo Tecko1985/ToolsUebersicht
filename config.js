@@ -1,4 +1,4 @@
-const APP_VERSION = "1.13";
+const APP_VERSION = "1.14";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -199,6 +199,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "materialbedarf",
+    name: "Materialbedarf",
+    description: "Trainer:innen melden Materialbedarf (z.B. neue Bälle, Erste-Hilfe-Set) an den Verein; Admin entscheidet über Annahme/Ablehnung und markiert den Kauf.",
+    url: "https://tecko1985.github.io/materialbedarf/",
+    icon: "🛒",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -282,6 +292,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.14",
+    groups: [
+      {
+        title: "Neues Tool",
+        items: [
+          "Materialbedarf: Trainer:innen melden Materialbedarf mit mehreren Positionen, Grund und Dringlichkeit; Admin entscheidet über Annahme/Ablehnung und markiert den Kauf, mit Text-/PDF-Export."
+        ]
+      }
+    ]
+  },
   {
     version: "1.13",
     groups: [
