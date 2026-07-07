@@ -1,4 +1,4 @@
-const APP_VERSION = "1.12";
+const APP_VERSION = "1.13";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -189,6 +189,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "spiele",
+    name: "Spiele",
+    description: "Mini-Spiele-Sammlung fürs Team — den Anfang macht Auto-Quartett, ideal für die Busfahrt zur Auswärtsfahrt.",
+    url: "https://tecko1985.github.io/spiele/",
+    icon: "🎮",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -200,6 +210,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-07",
+    type: "neu",
+    title: "Spiele ist online",
+    text: "Neue Mini-Spiele-Sammlung fürs Team: den Anfang macht Auto-Quartett als digitales Multiplayer-Kartenspiel, ideal für die Busfahrt zur Auswärtsfahrt.",
+    toolId: "spiele",
+  },
   {
     date: "2026-07-06",
     type: "neu",
@@ -265,6 +282,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.13",
+    groups: [
+      {
+        title: "Neues Tool",
+        items: [
+          "Spiele: Mini-Spiele-Sammlung fürs Team, startet mit Auto-Quartett als digitalem Multiplayer-Kartenspiel für die Busfahrt zur Auswärtsfahrt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [
