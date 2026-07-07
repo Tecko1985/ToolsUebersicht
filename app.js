@@ -13,6 +13,7 @@ let pendingLoginUsername = null;
 let groupsState = [];
 let usersState = [];
 let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte, sonst null
+let feedbackState = []; // Feedback-/Wunsch-Einträge, nur für eingeloggte Admins geladen (siehe loadAndRenderFeedback)
 
 function defaultVisibility() {
   const map = {};
@@ -113,6 +114,7 @@ function logout() {
   storeToken(null);
   renderAdminPanels();
   renderToolGrid();
+  renderFeedbackTab();
   loadCalendarWidget();
 }
 
@@ -1259,6 +1261,128 @@ function renderNewsAdmin() {
   });
 }
 
+// ---- Feedback & Hilfe ----
+
+function feedbackToolOptionsOnce() {
+  const sel = document.getElementById("feedback-tool");
+  if (!sel || sel.dataset.filled === "1") return;
+  TOOLS.forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t.id;
+    o.textContent = t.name;
+    sel.appendChild(o);
+  });
+  sel.dataset.filled = "1";
+}
+
+// Feedback-Tab ist komplett login-gated (wie das Dashboard bis zum ersten sichtbaren
+// Tool) — einfaches an/aus je nach currentUser, kein Feingranulares wie renderToolGrid.
+function renderFeedbackTab() {
+  const emptyEl = document.getElementById("feedback-empty");
+  const contentEl = document.getElementById("feedback-content");
+  if (!emptyEl || !contentEl) return;
+  if (!currentUser) {
+    emptyEl.style.display = "block";
+    contentEl.style.display = "none";
+    return;
+  }
+  emptyEl.style.display = "none";
+  contentEl.style.display = "block";
+  feedbackToolOptionsOnce();
+}
+
+function setupWhatsappLink() {
+  const link = document.getElementById("feedback-whatsapp-link");
+  if (!link) return;
+  const text = "Hallo Michel, ich habe eine Frage/ein Feedback zu einem Tool:";
+  link.href = "https://wa.me/" + WHATSAPP_CONTACT + "?text=" + encodeURIComponent(text);
+}
+
+async function loadAndRenderFeedback() {
+  const errorEl = document.getElementById("feedback-admin-error");
+  errorEl.style.display = "none";
+  try {
+    const data = await callWorker("list-feedback", {});
+    feedbackState = Array.isArray(data.entries) ? data.entries : [];
+    renderFeedbackAdmin();
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderFeedbackAdmin() {
+  const list = document.getElementById("feedback-admin-list");
+  if (!list) return;
+  // Unerledigt zuerst, sonst neueste zuerst — Admin sieht offene Einträge oben.
+  const sorted = feedbackState.slice().sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
+  if (sorted.length === 0) {
+    list.innerHTML = '<p class="muted">Noch kein Feedback vorhanden.</p>';
+    return;
+  }
+  list.innerHTML = sorted.map((f) => {
+    const tool = f.toolId ? toolById(f.toolId) : null;
+    const type = f.type === "wunsch" ? "wunsch" : "feedback";
+    const name = (f.vorname && f.nachname) ? `${f.vorname} ${f.nachname}` : (f.username || "?");
+    return `
+      <div class="feedback-admin-row" data-id="${escapeHtml(f.id || "")}">
+        <div class="feedback-admin-main">
+          <div class="feedback-item-head">
+            <span class="feedback-badge feedback-badge-${type}">${type === "wunsch" ? "Wunsch" : "Feedback"}</span>
+            <span class="muted">${escapeHtml(name)}</span>
+          </div>
+          <div class="muted" style="font-size:12px; margin-top:2px;">${tool ? `→ ${escapeHtml(tool.name)}` : "— Allgemein —"}</div>
+          <div class="feedback-item-text">${escapeHtml(f.text || "")}</div>
+        </div>
+        <div class="feedback-admin-actions">
+          <label class="checkbox-label"><input type="checkbox" class="feedback-done-checkbox" ${f.done ? "checked" : ""} /> Erledigt</label>
+          <button type="button" class="btn danger small feedback-del-btn">Löschen</button>
+        </div>
+      </div>`;
+  }).join("");
+  list.querySelectorAll(".feedback-admin-row").forEach((row) => {
+    const id = row.dataset.id;
+    row.querySelector(".feedback-done-checkbox").addEventListener("change", (e) => toggleFeedbackDone(id, e.target.checked));
+    row.querySelector(".feedback-del-btn").addEventListener("click", () => deleteFeedbackEntry(id));
+  });
+}
+
+async function toggleFeedbackDone(id, done) {
+  const prev = feedbackState.slice();
+  feedbackState = feedbackState.map((f) => (f.id === id ? { ...f, done } : f));
+  await persistFeedback(prev);
+}
+
+async function deleteFeedbackEntry(id) {
+  if (!confirm("Diesen Eintrag wirklich löschen?")) return;
+  const prev = feedbackState.slice();
+  feedbackState = feedbackState.filter((f) => f.id !== id);
+  await persistFeedback(prev);
+}
+
+// Speichert feedbackState serverseitig; bei Fehler Rollback auf den vorherigen Stand
+// (identisches Muster zu persistNews).
+async function persistFeedback(prevOnError) {
+  const errorEl = document.getElementById("feedback-admin-error");
+  const successEl = document.getElementById("feedback-admin-success");
+  errorEl.style.display = "none";
+  successEl.style.display = "none";
+  try {
+    const res = await callWorker("save-feedback", { entries: feedbackState });
+    if (res && Array.isArray(res.entries)) feedbackState = res.entries;
+    renderFeedbackAdmin();
+    successEl.style.display = "block";
+  } catch (err) {
+    if (prevOnError) feedbackState = prevOnError;
+    renderFeedbackAdmin();
+    errorEl.textContent = err.message;
+    errorEl.style.display = "block";
+  }
+}
+
 function activateTab(name) {
   document.querySelectorAll("nav button[data-tab]").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".tab-section").forEach((s) => s.classList.remove("active"));
@@ -1277,6 +1401,7 @@ function setupTabs() {
     btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
   document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
+  document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("admin"));
 }
 
 function renderHeaderUser() {
@@ -1301,6 +1426,7 @@ function renderAdminPanels() {
   document.getElementById("admin-groups-panel").style.display = "none";
   document.getElementById("admin-visibility-panel").style.display = "none";
   document.getElementById("admin-news-panel").style.display = "none";
+  document.getElementById("admin-feedback-panel").style.display = "none";
 
   if (currentUser) {
     document.getElementById("logged-in-username").textContent = currentUser.username;
@@ -1310,6 +1436,7 @@ function renderAdminPanels() {
       document.getElementById("admin-groups-panel").style.display = "block";
       document.getElementById("admin-visibility-panel").style.display = "block";
       document.getElementById("admin-news-panel").style.display = "block";
+      document.getElementById("admin-feedback-panel").style.display = "block";
     }
     return;
   }
@@ -1333,12 +1460,14 @@ function renderAdminPanels() {
 async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
+  renderFeedbackTab();
   await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
+    await loadAndRenderFeedback();
   }
 }
 
@@ -1560,6 +1689,37 @@ function setupAuthForms() {
     document.getElementById("btn-news-cancel").addEventListener("click", () => newsFormReset());
     newsFormReset();
   }
+
+  const feedbackForm = document.getElementById("feedback-form");
+  if (feedbackForm) {
+    feedbackForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = document.getElementById("feedback-text").value.trim();
+      const errorEl = document.getElementById("feedback-error");
+      const successEl = document.getElementById("feedback-success");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+      if (!text) {
+        errorEl.textContent = "Text ist ein Pflichtfeld.";
+        errorEl.style.display = "block";
+        return;
+      }
+      try {
+        await callWorker("submit-feedback", {
+          type: document.getElementById("feedback-type").value,
+          toolId: document.getElementById("feedback-tool").value,
+          text
+        });
+        document.getElementById("feedback-text").value = "";
+        successEl.style.display = "block";
+        // Admin sieht die eigene Einreichung sofort in admin-feedback-panel, ohne neu zu laden.
+        if (currentUser && currentUser.isAdmin) await loadAndRenderFeedback();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+  }
 }
 
 function escapeHtml(str) {
@@ -1579,6 +1739,7 @@ async function init() {
   renderNews();
   setupTabs();
   setupAuthForms();
+  setupWhatsappLink();
 
   // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft
   // ein vorhandenes Token) sind voneinander unabhängige Worker-Aufrufe — parallel
@@ -1591,6 +1752,7 @@ async function init() {
 
   renderAdminPanels();
   renderToolGrid();
+  renderFeedbackTab();
   await loadCalendarWidget();
   if (currentUser && currentUser.isAdmin) {
     // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
@@ -1601,6 +1763,7 @@ async function init() {
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
+    await loadAndRenderFeedback();
   }
 
   // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den

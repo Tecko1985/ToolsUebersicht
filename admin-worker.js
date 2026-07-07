@@ -69,6 +69,12 @@
 //     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools; provisionGroupIds
 //     steuert das Auto-Provisioning: Mitglieder dieser Gruppen bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
+//   POST { action: "submit-feedback", type, toolId?, text } (jeder eingeloggte Nutzer) -> { ok:true }
+//     (legt EINEN Feedback-/Wunsch-Eintrag an; Name/Nutzername kommen serverseitig aus dem eigenen Konto,
+//     der Client kann sie nicht fälschen oder für andere Nutzer einen Eintrag anlegen)
+//   POST { action: "list-feedback" } (admin)                     -> { entries } (alle Feedback-/Wunsch-Einträge)
+//   POST { action: "save-feedback", entries } (admin)            -> ersetzt alle Feedback-Einträge (Array, serverseitig
+//     validiert) — für "erledigt"-Status togglen und Einträge löschen (kompletter Array-Ersatz wie save-news)
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
@@ -134,6 +140,14 @@ const DAV_APPS = {
 const PROVISION_ONLY_PATHS = {
   "trainervertrag": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerVertrag/trainervertrag.json"
 };
+
+// Feedback & Wünsche aus dem Feedback-Tab (seit 1.10) — eigene Datei, damit ein
+// einfacher eingeloggter Nutzer per submit-feedback schreiben darf (Einzeleintrag,
+// serverseitig zusammengebaut) ohne Zugriff auf sichtbarkeit.json/nutzer.json zu
+// bekommen. Nicht in DAV_APPS: kein generisches dav-load/dav-save, sondern eigene
+// Aktionen mit eigener Validierung (siehe handleSubmitFeedback/handleListFeedback/
+// handleSaveFeedback).
+const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/feedback.json";
 
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
@@ -243,6 +257,12 @@ export default {
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
       case "save-news":
         return handleSaveNews(request, body, env, authHeader, corsHeaders);
+      case "submit-feedback":
+        return handleSubmitFeedback(request, body, env, authHeader, corsHeaders);
+      case "list-feedback":
+        return handleListFeedback(request, env, authHeader, corsHeaders);
+      case "save-feedback":
+        return handleSaveFeedback(request, body, env, authHeader, corsHeaders);
       case "verify-action-password":
         return handleVerifyActionPassword(body, env, corsHeaders);
       case "dav-load":
@@ -766,6 +786,101 @@ async function handleSaveNews(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ news: config.news }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Feedback & Hilfe ----------
+
+const FEEDBACK_VALID_TYPES = ["feedback", "wunsch"];
+
+// Jeder eingeloggte Nutzer darf EINEN Eintrag anlegen (kein Admin-Gate) — anders als
+// save-feedback nimmt diese Aktion nie ein ganzes Array vom Client entgegen, sondern
+// baut genau einen Eintrag serverseitig zusammen. So kann ein Nutzer weder fremde
+// Einträge überschreiben/löschen noch unter fremdem Namen einreichen.
+async function handleSubmitFeedback(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const text = String(body.text || "").trim().slice(0, 2000);
+  if (!text) return json({ error: "Text darf nicht leer sein" }, 400, corsHeaders);
+  const type = FEEDBACK_VALID_TYPES.includes(String(body.type)) ? String(body.type) : "feedback";
+  const toolId = String(body.toolId || "").trim().slice(0, 60);
+
+  const user = getOwn(session.usersDoc.users, session.username) || {};
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    type,
+    text,
+    username: session.username,
+    vorname: user.vorname || null,
+    nachname: user.nachname || null,
+    createdAt: new Date().toISOString(),
+    done: false
+  };
+  if (toolId) entry.toolId = toolId;
+
+  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  doc.version = doc.version || 1;
+  doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+  doc.entries.push(entry);
+  if (doc.entries.length > 500) doc.entries = doc.entries.slice(doc.entries.length - 500);
+
+  try {
+    await writeJson(FEEDBACK_URL, authHeader, doc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+async function handleListFeedback(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  return json({ entries: Array.isArray(doc.entries) ? doc.entries : [] }, 200, corsHeaders);
+}
+
+// Admin-only, kompletter Array-Ersatz (wie save-news) — Client schickt den lokal
+// mutierten Stand (done getoggelt bzw. Eintrag entfernt) komplett zurück. Jeder
+// Eintrag wird serverseitig neu zusammengebaut/validiert, kein Feld ungeprüft
+// übernommen.
+async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  if (!Array.isArray(body.entries)) {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  const clean = [];
+  for (const f of body.entries.slice(0, 500)) {
+    if (!f || typeof f !== "object") continue;
+    const text = String(f.text || "").trim().slice(0, 2000);
+    if (!text) continue; // Text ist Pflicht
+    const item = {
+      id: /^[a-z0-9-]{1,40}$/i.test(String(f.id || "")) ? String(f.id) : (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      type: FEEDBACK_VALID_TYPES.includes(String(f.type)) ? String(f.type) : "feedback",
+      text,
+      username: String(f.username || "").trim().slice(0, 32) || null,
+      vorname: f.vorname ? String(f.vorname).trim().slice(0, 100) : null,
+      nachname: f.nachname ? String(f.nachname).trim().slice(0, 100) : null,
+      createdAt: /^\d{4}-\d{2}-\d{2}T/.test(String(f.createdAt || "")) ? String(f.createdAt) : new Date().toISOString(),
+      done: !!f.done
+    };
+    const toolId = String(f.toolId || "").trim().slice(0, 60);
+    if (toolId) item.toolId = toolId;
+    clean.push(item);
+  }
+
+  const doc = { version: 1, entries: clean };
+  try {
+    await writeJson(FEEDBACK_URL, authHeader, doc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ entries: doc.entries }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------

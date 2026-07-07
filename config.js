@@ -1,4 +1,8 @@
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
+
+// WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
+// direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
+const WHATSAPP_CONTACT = "491778587294";
 
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
