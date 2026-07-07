@@ -77,6 +77,14 @@
 //     (lädt eine Binärdatei in den Unterordner dateien/ der App; id = UUID, Größe <= 10 MB; Sichtbarkeits-Check wie dav-load)
 //   POST { action: "dav-file-get", app, id } + Authorization: Bearer    -> rohe Datei-Bytes (Content-Type von Nextcloud) | 404
 //   POST { action: "dav-file-delete", app, id } + Authorization: Bearer -> { ok:true } (204/404 = Erfolg beim Aufräumen)
+//   POST { action: "dav-restricted-put", app, contentType, dataBase64 } + Bearer -> { ok:true }
+//     (abgeschotteter Datei-Upload: die Datei wird IMMER unter dem eigenen, aus dem Token stammenden
+//      Nutzernamen abgelegt und ist NUR für Eigentümer/viewGroupId/Admin lesbar — für sensible
+//      Dokumente wie Führerschein-Kopien, anders als dav-file-get, das jedem mit Tool-Zugriff jede Id liefert)
+//   POST { action: "dav-restricted-get", app, owner } + Bearer    -> rohe Datei-Bytes | 403 | 404
+//   POST { action: "dav-restricted-delete", app, owner } + Bearer -> { ok:true }
+//     (dav-restricted-get/-delete nur, wenn owner==eigener Nutzer ODER Admin ODER Mitglied der viewGroupId;
+//      abgeschotteter Bereich je App in RESTRICTED_FILE_APPS konfiguriert)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -125,6 +133,17 @@ const DAV_APPS = {
 // nur intern (server-seitig) beschreiben, nie für eingeloggte Nutzer lesbar machen.
 const PROVISION_ONLY_PATHS = {
   "trainervertrag": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerVertrag/trainervertrag.json"
+};
+
+// Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
+// (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
+// Mitglieder der viewGroupId — unabhängig davon, wer sonst Zugriff auf das Tool hat.
+// Anders als dav-file-get (das jedem mit Tool-Zugriff jede Datei-Id ausliefert) ist das
+// die echte serverseitige Abschottung für sensible Dokumente (z. B. Führerschein-Kopien).
+// Die Datei liegt unter <app-ordner>/<subdir>/<eigentuemer-username>, der Nutzername ist
+// zugleich der Zugriffsschlüssel (genau ein Dokument je Nutzer, Re-Upload überschreibt).
+const RESTRICTED_FILE_APPS = {
+  "fahrtenbuch": { subdir: "fuehrerscheine", viewGroupId: "fuehrerschein-einsicht" }
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -236,6 +255,12 @@ export default {
         return handleDavFileGet(request, body, env, authHeader, corsHeaders);
       case "dav-file-delete":
         return handleDavFileDelete(request, body, env, authHeader, corsHeaders);
+      case "dav-restricted-put":
+        return handleDavRestrictedPut(request, body, env, authHeader, corsHeaders);
+      case "dav-restricted-get":
+        return handleDavRestrictedGet(request, body, env, authHeader, corsHeaders);
+      case "dav-restricted-delete":
+        return handleDavRestrictedDelete(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -965,6 +990,121 @@ async function handleDavFileDelete(request, body, env, authHeader, corsHeaders) 
 
   const resp = await fetch(p.fileUrl, { method: "DELETE", headers: { Authorization: authHeader } });
   // 204/200 = gelöscht, 404 = war schon weg — beides ist Erfolg fürs Aufräumen.
+  if (resp.ok || resp.status === 404) return json({ ok: true }, 200, corsHeaders);
+  return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
+}
+
+// ---------- Aktionen: Abgeschottete Datei-Anhänge (nur Eigentümer/Gruppe/Admin) ----------
+//
+// Anders als dav-file-* (jede Datei-Id für jeden mit Tool-Zugriff lesbar) ist dieser
+// Bereich echt serverseitig abgeschottet: die Datei liegt unter <app>/<subdir>/<owner>,
+// wobei owner ein validierter Nutzername ist. dav-file-get kann ihn nicht erreichen
+// (fester "dateien/"-Pfad + UUID-Pflicht), und get/delete verlangen mayViewRestricted.
+
+// Verzeichnis-URL (ohne Slash am Ende) + Sicht-Gruppe des abgeschotteten Bereichs
+// einer App; null, wenn die App keinen solchen Bereich konfiguriert hat.
+function restrictedFileDir(app) {
+  const jsonUrl = getOwn(DAV_APPS, app);
+  const cfg = getOwn(RESTRICTED_FILE_APPS, app);
+  if (!jsonUrl || !cfg) return null;
+  return { dir: jsonUrl.slice(0, jsonUrl.lastIndexOf("/")) + "/" + cfg.subdir, viewGroupId: cfg.viewGroupId };
+}
+
+// Darf diese Sitzung die abgeschottete Datei des Eigentümers <owner> sehen/löschen?
+// Eigentümer selbst, Admins und Mitglieder der viewGroupId — sonst nein.
+function mayViewRestricted(session, viewGroupId, owner) {
+  if (session.isAdmin) return true;
+  if (session.username === owner) return true;
+  return getUserGroupIds(session.usersDoc, session.username).includes(viewGroupId);
+}
+
+// Eigene abgeschottete Datei hochladen. Der Dateiname ist IMMER der eigene, aus dem
+// signierten Token stammende Nutzername — ein Client kann so ausschließlich seine
+// EIGENE Datei schreiben, niemals eine fremde überschreiben (kein id/owner aus dem Body).
+async function handleDavRestrictedPut(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  const rf = restrictedFileDir(app);
+  if (!rf) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const owner = session.username; // aus dem Token, nie aus dem Body
+  if (!USERNAME_RE.test(owner)) return json({ error: "Ungültiger Eigentümer" }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+
+  const fileUrl = rf.dir + "/" + owner;
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  // 409/404 = ein Elternordner (App-Ordner und/oder "fuehrerscheine") fehlt noch -> anlegen und EINMAL wiederholen.
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(rf.dir, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// Abgeschottete Datei eines Eigentümers holen — nur mit mayViewRestricted-Recht.
+async function handleDavRestrictedGet(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  const rf = restrictedFileDir(app);
+  if (!rf) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const owner = normalizeUsername(body.owner);
+  if (!USERNAME_RE.test(owner)) return json({ error: "Ungültiger Eigentümer" }, 400, corsHeaders);
+  if (!mayViewRestricted(session, rf.viewGroupId, owner)) {
+    return json({ error: "Kein Zugriff auf diese Datei" }, 403, corsHeaders);
+  }
+  const fileUrl = rf.dir + "/" + owner;
+  let resp;
+  try {
+    resp = await fetch(fileUrl, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+  const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+  });
+}
+
+// Abgeschottete Datei löschen — gleiches Recht wie das Ansehen (Eigentümer/Gruppe/Admin).
+async function handleDavRestrictedDelete(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  const rf = restrictedFileDir(app);
+  if (!rf) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const owner = normalizeUsername(body.owner);
+  if (!USERNAME_RE.test(owner)) return json({ error: "Ungültiger Eigentümer" }, 400, corsHeaders);
+  if (!mayViewRestricted(session, rf.viewGroupId, owner)) {
+    return json({ error: "Kein Zugriff auf diese Datei" }, 403, corsHeaders);
+  }
+  const fileUrl = rf.dir + "/" + owner;
+  const resp = await fetch(fileUrl, { method: "DELETE", headers: { Authorization: authHeader } });
   if (resp.ok || resp.status === 404) return json({ ok: true }, 200, corsHeaders);
   return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
 }
