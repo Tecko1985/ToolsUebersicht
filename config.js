@@ -17,7 +17,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerVertrag/",
     icon: "📝",
     category: "Verein",
-    version: "1.0",
+    version: "1.6",
     devices: ["mobile", "desktop"]
   },
   {
@@ -27,7 +27,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -37,7 +37,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -87,7 +87,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielertool-test/",
     icon: "⚽",
     category: "Verein",
-    version: "1.0",
+    version: "1.3",
     devices: ["mobile", "desktop"]
   },
   {
@@ -97,7 +97,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -107,7 +107,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
@@ -117,7 +117,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    version: "1.0",
+    version: "1.2",
     devices: ["mobile", "desktop"]
   },
   {
@@ -127,7 +127,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.0",
+    version: "1.3",
     devices: ["mobile", "desktop"]
   },
   {
@@ -137,7 +137,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Personalkosten/",
     icon: "💶",
     category: "Verein",
-    version: "1.0",
+    version: "1.2",
     devices: ["mobile", "desktop"]
   },
   {
@@ -147,7 +147,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
-    version: "1.0",
+    version: "1.3",
     devices: ["mobile", "desktop"]
   },
   {
@@ -167,7 +167,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/digitaler-stempel/",
     icon: "🖋️",
     category: "Verein",
-    version: "1.0",
+    version: "1.2",
     devices: ["mobile", "desktop"]
   },
   {
@@ -177,7 +177,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kleiderbestellung/",
     icon: "👕",
     category: "Verein",
-    version: "1.0",
+    version: "1.2",
     devices: ["mobile", "desktop"]
   },
   {
@@ -187,7 +187,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/fahrtenbuch/",
     icon: "🚐",
     category: "Verein",
-    version: "1.0",
+    version: "1.6",
     devices: ["mobile", "desktop"]
   },
   {
@@ -207,7 +207,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/materialbedarf/",
     icon: "🛒",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   }
 ];
