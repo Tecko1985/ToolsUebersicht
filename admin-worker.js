@@ -110,6 +110,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8794", // Digitaler Stempel (Dev-Server)
   "http://localhost:8795", // Kleiderbestellung (Dev-Server)
   "http://localhost:8796", // Fahrtenbuch (Dev-Server)
+  "http://localhost:8782", // Spiele (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
