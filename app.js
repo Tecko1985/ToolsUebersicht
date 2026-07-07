@@ -1263,16 +1263,25 @@ function renderNewsAdmin() {
 
 // ---- Feedback & Hilfe ----
 
-function feedbackToolOptionsOnce() {
+// Bewusst kein "Once"-Cache wie bei newsToolOptionsOnce: welche Tools zur Auswahl
+// stehen, hängt von isVisibleToUser() (Login-Status + Gruppen des AKTUELLEN Nutzers)
+// ab, nicht von einer festen Liste — muss bei jedem Tab-/Login-Wechsel neu gebaut
+// werden, sonst zeigt das Dropdown nach einem Nutzerwechsel noch die Tools des
+// vorherigen Nutzers.
+function renderFeedbackToolOptions() {
   const sel = document.getElementById("feedback-tool");
-  if (!sel || sel.dataset.filled === "1") return;
-  TOOLS.forEach((t) => {
+  if (!sel) return;
+  sel.innerHTML = "";
+  const allgemein = document.createElement("option");
+  allgemein.value = "";
+  allgemein.textContent = "— Allgemein —";
+  sel.appendChild(allgemein);
+  TOOLS.filter((t) => isVisibleToUser(t.id, currentUser)).forEach((t) => {
     const o = document.createElement("option");
     o.value = t.id;
     o.textContent = t.name;
     sel.appendChild(o);
   });
-  sel.dataset.filled = "1";
 }
 
 // Feedback-Tab ist komplett login-gated (wie das Dashboard bis zum ersten sichtbaren
@@ -1288,7 +1297,7 @@ function renderFeedbackTab() {
   }
   emptyEl.style.display = "none";
   contentEl.style.display = "block";
-  feedbackToolOptionsOnce();
+  renderFeedbackToolOptions();
 }
 
 function setupWhatsappLink() {
