@@ -1092,6 +1092,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
 function buildTrainerRecord(user, usersDoc, sources) {
   const { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc } = sources;
   const fullName = `${user.vorname || ""} ${user.nachname || ""}`.trim();
+  const fullNameReversed = `${user.nachname || ""} ${user.vorname || ""}`.trim();
 
   // Trainerkodex: bestaetigungen[username] -- Platzhalter (soll:true, kein datum)
   // zaehlt als nicht bestaetigt, wie schon in handleGetAdminStats.
@@ -1119,10 +1120,12 @@ function buildTrainerRecord(user, usersDoc, sources) {
   } : { vorhanden: false, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig" };
 
   // TrainerCheckliste: exakt dieselbe Match-Konvention wie provisionTrainercheckliste
-  // ("name" ist in dieser App das Nachname-Feld, nicht der volle Name).
+  // ("name" ist in dieser App das Nachname-Feld, nicht der volle Name). Namens-
+  // Reihenfolge via sameNamePair toleriert (manuell angelegte Eintraege ohne
+  // linkedUsername vertauschen Vorname/Nachname in der Praxis gelegentlich).
   const eintrag = (checklisteDoc.trainerEintraege || []).find((e) =>
     (e.linkedUsername && sameText(e.linkedUsername, user.username)) ||
-    (sameText(e.vorname, user.vorname) && sameText(e.name, user.nachname)));
+    sameNamePair(e.vorname, e.name, user.vorname, user.nachname));
   const sectionSummary = (s) => s
     ? { abgeschlossen: !!s.abgeschlossen, datum: s.datum || s.headerDatum || null }
     : { abgeschlossen: false, datum: null };
@@ -1134,13 +1137,15 @@ function buildTrainerRecord(user, usersDoc, sources) {
   // Personalkosten: aktuelle Saison, "name" ist dort der VOLLE Name (siehe
   // provisionPersonalkosten) -- Rohfelder, keine AE-Euro-Formel neu berechnen
   // (drittes Duplikat dieser Formel wäre ein Drift-Risiko, siehe Trainerdaten-
-  // CLAUDE.md-Warnung zur selben Formel).
+  // CLAUDE.md-Warnung zur selben Formel). fullNameReversed faengt vertauschte
+  // Vorname/Nachname-Eingabe ab (gleicher Grund wie sameNamePair oben).
   let personalkosten = null;
   const pkSeasonKey = personalkostenDoc.meta && personalkostenDoc.meta.currentSeason;
   const pkSeason = pkSeasonKey ? (personalkostenDoc.seasons || {})[pkSeasonKey] : null;
   if (pkSeason && Array.isArray(pkSeason.trainer)) {
     const t = pkSeason.trainer.find((x) =>
-      (x.linkedUsername && sameText(x.linkedUsername, user.username)) || sameText(x.name, fullName));
+      (x.linkedUsername && sameText(x.linkedUsername, user.username)) ||
+      sameText(x.name, fullName) || sameText(x.name, fullNameReversed));
     if (t) {
       personalkosten = {
         mannschaft: t.mannschaft || "", position: t.position || "",
@@ -1842,6 +1847,15 @@ function provisionProfile(user) {
 
 function sameText(a, b) {
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+
+// Menschliche Dateneingabe vertauscht Vorname/Nachname gelegentlich (Bugreport
+// 2026-07-08: TrainerCheckliste-Testeintrag Vorname="user"/Name="test" fuer ein
+// Konto mit Vorname="Test"/Nachname="User"). Ohne linkedUsername beide
+// Reihenfolgen zulassen, statt den Namensabgleich lautlos scheitern zu lassen.
+function sameNamePair(aFirst, aLast, bFirst, bLast) {
+  return (sameText(aFirst, bFirst) && sameText(aLast, bLast)) ||
+         (sameText(aFirst, bLast) && sameText(aLast, bFirst));
 }
 
 // --- Adapter: mutieren die App-Daten in place, geben das Ergebnis je Nutzer zurück
