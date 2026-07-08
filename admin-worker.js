@@ -82,10 +82,12 @@
 //     TRAINER_GROUP_NAME ("Trainer") — existiert diese Gruppe noch nicht, liefert trainerGroup.exists:false.
 //     Archivierte Trainer zählen NICHT zum Nenner dieser beiden Quoten (siehe archiviert-Feld unten).
 //   POST { action: "personalakte-overview" } (Personalakte-Sichtrecht, siehe mayViewPersonalakte) -> { trainerGroupExists, trainers:[...] }
-//     Ein Datensatz je Mitglied der Trainer-Gruppe, zusammengeführt aus nutzer.json + trainerkodex/trainerdaten/
-//     trainercheckliste/personalkosten/kadermanager — inkl. archivierter Trainer (Gruppen werden beim Archivieren
-//     NICHT entzogen). Trainerdaten-Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse — seit 1.1
-//     zusätzlich Führerschein-/Führungszeugnis-Status (migriert aus Fahrtenbuch, siehe [[project-trainerdaten]]).
+//     Seit 1.3: ein Datensatz je Nutzerkonto in nutzer.json, NICHT mehr auf Mitglieder der Trainer-Gruppe
+//     beschränkt (`trainerGroupExists` bleibt aus Client-Kompatibilität immer `true`, ist aber bedeutungslos
+//     geworden). Zusammengeführt aus nutzer.json + trainerkodex/trainerdaten/trainercheckliste/personalkosten/
+//     kadermanager — inkl. archivierter Nutzer (Gruppen werden beim Archivieren NICHT entzogen). Trainerdaten-
+//     Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse — seit 1.1 zusätzlich Führerschein-/
+//     Führungszeugnis-Status (migriert aus Fahrtenbuch, siehe [[project-trainerdaten]]).
 //     Seit 1.2 zusätzlich `trainerId` (Trainerdaten-eigene id, nicht username) -- Personalakte ruft damit
 //     direkt trainerdaten1.michel-brunner.workers.dev an, um die Dokumente selbst zu öffnen.
 //   POST { action: "archive-trainer", username, grund? } (Personalakte-Sichtrecht) -> { ok:true, username, archiviertAm }
@@ -1220,13 +1222,10 @@ async function handlePersonalakteOverview(request, env, authHeader, corsHeaders)
   if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const usersDoc = session.usersDoc;
-  const trainerGroup = Object.values(usersDoc.groups || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
-  if (!trainerGroup) return json({ trainerGroupExists: false, trainers: [] }, 200, corsHeaders);
-
   const sources = await loadPersonalakteSources(env, authHeader);
-  const trainers = (trainerGroup.memberUsernames || [])
-    .map((uname) => getOwn(usersDoc.users, uname))
-    .filter(Boolean)
+  // Seit 1.3: alle Nutzerkonten, nicht mehr nur Mitglieder der Gruppe TRAINER_GROUP_NAME
+  // (Wunsch: Personalakte soll wirklich jeden zeigen, nicht nur wer in der Trainer-Gruppe steckt).
+  const trainers = Object.values(usersDoc.users || {})
     .map((user) => buildTrainerRecord(user, usersDoc, sources));
 
   return json({ trainerGroupExists: true, trainers }, 200, corsHeaders);
