@@ -219,6 +219,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["desktop"]
+  },
+  {
+    id: "vereinswiki",
+    name: "Vereinswiki",
+    description: "Wissens-Assistent für allgemeine Vereinsunterlagen: Dokumente (Satzung, Ordnungen, Konzepte) hinterlegen und in normaler Sprache Fragen dazu stellen – eine KI antwortet auf Basis der Dokumente.",
+    url: "https://tecko1985.github.io/Vereinswiki/",
+    icon: "📚",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -230,6 +240,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-08",
+    type: "neu",
+    title: "Vereinswiki ist online",
+    text: "Neuer Wissens-Assistent: allgemeine Vereinsunterlagen (Satzung, Ordnungen, Konzepte) hinterlegen und in normaler Sprache Fragen dazu stellen – eine KI antwortet auf Basis der Dokumente.",
+    toolId: "vereinswiki",
+  },
   {
     date: "2026-07-08",
     type: "neu",
