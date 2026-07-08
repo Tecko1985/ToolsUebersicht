@@ -83,8 +83,9 @@
 //     Archivierte Trainer zählen NICHT zum Nenner dieser beiden Quoten (siehe archiviert-Feld unten).
 //   POST { action: "personalakte-overview" } (Personalakte-Sichtrecht, siehe mayViewPersonalakte) -> { trainerGroupExists, trainers:[...] }
 //     Ein Datensatz je Mitglied der Trainer-Gruppe, zusammengeführt aus nutzer.json + trainerkodex/trainerdaten/
-//     trainercheckliste/personalkosten/kadermanager/fahrtenbuch — inkl. archivierter Trainer (Gruppen werden beim
-//     Archivieren NICHT entzogen). Trainerdaten-Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse.
+//     trainercheckliste/personalkosten/kadermanager — inkl. archivierter Trainer (Gruppen werden beim Archivieren
+//     NICHT entzogen). Trainerdaten-Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse — seit 1.1
+//     zusätzlich Führerschein-/Führungszeugnis-Status (migriert aus Fahrtenbuch, siehe [[project-trainerdaten]]).
 //   POST { action: "archive-trainer", username, grund? } (Personalakte-Sichtrecht) -> { ok:true, username, archiviertAm }
 //     Schreibt zuerst einen Datenschnappschuss nach personalakte.json, sperrt danach Login+Sessions des Kontos
 //     (Nutzerfelder archiviert/archiviertAm/archiviertGrund/archiviertVon in nutzer.json). Gruppenzugehörigkeit
@@ -177,9 +178,11 @@ const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/
 // die echte serverseitige Abschottung für sensible Dokumente (z. B. Führerschein-Kopien).
 // Die Datei liegt unter <app-ordner>/<subdir>/<eigentuemer-username>, der Nutzername ist
 // zugleich der Zugriffsschlüssel (genau ein Dokument je Nutzer, Re-Upload überschreibt).
-const RESTRICTED_FILE_APPS = {
-  "fahrtenbuch": { subdir: "fuehrerscheine", viewGroupId: "fuehrerschein-einsicht" }
-};
+// Aktuell leer: Fahrtenbuchs Führerschein-Eintrag wurde entfernt (Feature nach
+// Trainerdaten migriert, dort nativ nachgebaut statt über dieses generische Gateway
+// -- Trainerdaten enthält IBAN-Daten und darf bewusst nicht generisch erreichbar
+// sein, siehe PROVISION_ONLY_PATHS). Infrastruktur bleibt für künftige Apps stehen.
+const RESTRICTED_FILE_APPS = {};
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
 const SALT_BYTES = 16;
@@ -1090,7 +1093,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
 // Trainer-Gruppe) als auch für archive-trainer (einmal, frisch, für genau eine
 // Person) verwendet -- ein Join, zwei Aufrufer.
 function buildTrainerRecord(user, usersDoc, sources) {
-  const { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc } = sources;
+  const { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc } = sources;
   const fullName = `${user.vorname || ""} ${user.nachname || ""}`.trim();
   const fullNameReversed = `${user.nachname || ""} ${user.vorname || ""}`.trim();
 
@@ -1112,13 +1115,29 @@ function buildTrainerRecord(user, usersDoc, sources) {
     (t.username && t.username === user.username) ||
     (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
     sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname));
+  // Führerschein-Gültigkeit seit 1.1 hier statt in Fahrtenbuch berechnet (Feature
+  // dorthin migriert, siehe [[project-trainerdaten]]) -- gleiche Formel wie vorher
+  // (hochgeladenAm + 6 Monate). Führungszeugnis hat bewusst keine Ablauflogik (v1).
+  let fuehrerscheinGueltigBis = null, fuehrerscheinGueltig = null;
+  if (td && td.fuehrerscheinHochgeladenAm) {
+    const faellig = new Date(td.fuehrerscheinHochgeladenAm);
+    faellig.setMonth(faellig.getMonth() + 6);
+    fuehrerscheinGueltigBis = faellig.toISOString();
+    fuehrerscheinGueltig = faellig.getTime() > Date.now();
+  }
   const trainerdaten = td ? {
     vorhanden: true,
     unterschriftAm: td.unterschriftAm || null,
     erstelltAm: td.erstelltAm || null,
     vertragsGeneriert: !!td.vertragsGeneriert,
-    status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig"))
-  } : { vorhanden: false, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig" };
+    status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
+    fuehrerscheinHochgeladenAm: td.fuehrerscheinHochgeladenAm || null,
+    fuehrerscheinGueltigBis, fuehrerscheinGueltig,
+    fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null
+  } : {
+    vorhanden: false, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
+    fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null
+  };
 
   // TrainerCheckliste: exakt dieselbe Match-Konvention wie provisionTrainercheckliste
   // ("name" ist in dieser App das Nachname-Feld, nicht der volle Name). Namens-
@@ -1170,17 +1189,6 @@ function buildTrainerRecord(user, usersDoc, sources) {
     });
   });
 
-  // Fahrtenbuch: fuehrerschein[] (NICHT fahrten[]), exakter username-Match,
-  // Gueltigkeit wie fsFaelligAm/fsIstGueltig (fahrtenbuch/app.js) nachgerechnet.
-  // Nur Metadaten -- nie die restricted Foto-Datei selbst anfassen.
-  const fs = (fahrtenbuchDoc.fuehrerschein || []).find((e) => e.username === user.username);
-  let fahrtenbuch = null;
-  if (fs && fs.hochgeladenAm) {
-    const faellig = new Date(fs.hochgeladenAm);
-    faellig.setMonth(faellig.getMonth() + 6);
-    fahrtenbuch = { hochgeladenAm: fs.hochgeladenAm, gueltigBis: faellig.toISOString(), gueltig: faellig.getTime() > Date.now() };
-  }
-
   return {
     username: user.username, vorname: user.vorname || "", nachname: user.nachname || "",
     lizenz: user.lizenz || "", mannschaften: Array.isArray(user.mannschaften) ? user.mannschaften : [],
@@ -1188,20 +1196,19 @@ function buildTrainerRecord(user, usersDoc, sources) {
     mustSetPassword: !!user.mustSetPassword, lastLoginAt: user.lastLoginAt || null,
     archiviert: !!user.archiviert, archiviertAm: user.archiviertAm || null,
     archiviertGrund: user.archiviertGrund || null, archiviertVon: user.archiviertVon || null,
-    trainerkodex, trainerdaten, trainercheckliste, personalkosten, kadermanager, fahrtenbuch
+    trainerkodex, trainerdaten, trainercheckliste, personalkosten, kadermanager
   };
 }
 
 async function loadPersonalakteSources(env, authHeader) {
-  const [trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc] = await Promise.all([
+  const [trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc] = await Promise.all([
     readJson(DAV_APPS.trainerkodex, authHeader, { bestaetigungen: {} }),
     readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
     readJson(DAV_APPS.trainercheckliste, authHeader, { trainerEintraege: [] }),
     readJson(DAV_APPS.personalkosten, authHeader, { meta: {}, seasons: {} }),
-    readJson(DAV_APPS.kadermanager, authHeader, { meta: {}, teams: [] }),
-    readJson(DAV_APPS.fahrtenbuch, authHeader, { meta: {}, fahrten: [], fuehrerschein: [] })
+    readJson(DAV_APPS.kadermanager, authHeader, { meta: {}, teams: [] })
   ]);
-  return { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc };
+  return { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc };
 }
 
 async function handlePersonalakteOverview(request, env, authHeader, corsHeaders) {
