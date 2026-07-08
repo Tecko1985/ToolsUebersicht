@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.7" />
+<link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body>
 
@@ -316,33 +316,45 @@
         Gruppe „Trainer" ist noch nicht angelegt — lege sie im Tab Einstellungen unter „Gruppen" an und ordne die Trainer:innen zu, damit die Trainervertrag-/Trainerkodex-Quote aussagekräftig ist.
       </p>
       <div class="stat-grid">
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-users" role="button" tabindex="0">
           <div class="stat-tile-label">Nutzer-Anmeldequote</div>
           <div class="stat-tile-value" id="stat-users">–</div>
           <div class="stat-tile-sub">haben ihr Passwort gesetzt</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-trainervertrag" role="button" tabindex="0">
           <div class="stat-tile-label">Trainervertrag-Quote</div>
           <div class="stat-tile-value" id="stat-trainervertrag">–</div>
           <div class="stat-tile-sub">eingereicht</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-trainerkodex" role="button" tabindex="0">
           <div class="stat-tile-label">Trainerkodex-Quote</div>
           <div class="stat-tile-value" id="stat-trainerkodex">–</div>
           <div class="stat-tile-sub">bestätigt</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-feedback" role="button" tabindex="0">
           <div class="stat-tile-label">Offene Feedback &amp; Hilfe-Einträge</div>
           <div class="stat-tile-value" id="stat-feedback">–</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-materialbedarf" role="button" tabindex="0">
           <div class="stat-tile-label">Offene Materialbedarf-Meldungen</div>
           <div class="stat-tile-value" id="stat-materialbedarf">–</div>
         </div>
-        <div class="stat-tile">
+        <div class="stat-tile stat-tile-clickable" id="stat-tile-busplan" role="button" tabindex="0">
           <div class="stat-tile-label">Offene/klärungsbedürftige Busplan-Zusagen</div>
           <div class="stat-tile-value" id="stat-busplan">–</div>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <div class="form-field" style="max-width:320px;">
+          <label for="admin-dashboard-recent-select">Zuletzt aktiv</label>
+          <select id="admin-dashboard-recent-select">
+            <option value="logins">Zuletzt angemeldet</option>
+            <option value="trainervertrag">Trainervertrag zuletzt eingereicht</option>
+            <option value="trainerkodex">Trainerkodex zuletzt bestätigt</option>
+          </select>
+        </div>
+        <ol id="admin-dashboard-recent-list" class="recent-activity-list"></ol>
       </div>
     </div>
   </section>
@@ -350,7 +362,7 @@
   </main>
 </div>
 
-<script src="config.js?v=1.17"></script>
-<script src="app.js?v=1.17"></script>
+<script src="config.js?v=1.1"></script>
+<script src="app.js?v=1.1"></script>
 </body>
 </html>

@@ -367,6 +367,13 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
     return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
   }
 
+  // Für die "Zuletzt angemeldet"-Liste im Admin-Dashboard, best-effort — ein
+  // Speicherfehler hier darf den eigentlichen Login nicht verhindern.
+  user.lastLoginAt = new Date().toISOString();
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) { /* siehe Kommentar oben */ }
+
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
   return json({ token, username: user.username, isAdmin: !!user.isAdmin, groupIds: getUserGroupIds(usersDoc, user.username) }, 200, corsHeaders);
 }
@@ -388,6 +395,7 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   user.iterations = iterations;
   user.mustSetPassword = false;
   user.passwordSetAt = new Date().toISOString();
+  user.lastLoginAt = user.passwordSetAt;
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
@@ -952,6 +960,28 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   const meldungen = Array.isArray(materialbedarfDoc.meldungen) ? materialbedarfDoc.meldungen : [];
   const materialbedarfOffen = meldungen.filter((m) => m.status === "offen").length;
 
+  // "Zuletzt aktiv"-Listen für das Dropdown im Admin-Dashboard — dieselben
+  // bereits geladenen Datenquellen, nur nach Datum sortiert statt gezählt.
+  // trainervertragEingereichtAm() spiegelt E:\Trainerdaten\app.js::_eingereichtAm
+  // (unterschriftAm seit 1.5, davor nur erstelltAm als Näherung).
+  const trainervertragEingereichtAm = (t) => t.unterschriftAm || (t.signatureDataUrl ? t.erstelltAm : null);
+  const topRecent = (entries, limit) => entries
+    .filter((e) => e.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, limit)
+    .map((e) => {
+      const u = getOwn(usersDoc.users, e.username);
+      return { username: e.username, vorname: (u && u.vorname) || "", nachname: (u && u.nachname) || "", at: e.at };
+    });
+
+  const recentLogins = topRecent(users.map((u) => ({ username: u.username, at: u.lastLoginAt })), 5);
+  const recentTrainervertrag = topRecent(trainerUsernames.map((uname) => ({
+    username: uname, at: trainerdatenByUsername.has(uname) ? trainervertragEingereichtAm(trainerdatenByUsername.get(uname)) : null
+  })), 5);
+  const recentTrainerkodex = topRecent(trainerUsernames.map((uname) => ({
+    username: uname, at: bestaetigungen[uname] ? bestaetigungen[uname].datum : null
+  })), 5);
+
   const feedbackEntries = Array.isArray(feedbackDoc.entries) ? feedbackDoc.entries : [];
   const feedbackOffen = feedbackEntries.filter((f) => !f.done).length;
 
@@ -980,7 +1010,10 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     trainerkodex: { confirmed: trainerkodexBestaetigt, total: trainerUsernames.length },
     feedbackOpen: feedbackOffen,
     materialbedarfOpen: materialbedarfOffen,
-    busplanOpen: busplanOffen
+    busplanOpen: busplanOffen,
+    recentLogins,
+    recentTrainervertrag,
+    recentTrainerkodex
   }, 200, corsHeaders);
 }
 

@@ -1311,6 +1311,8 @@ function setupWhatsappLink() {
 // btn-admin-dashboard-refresh) statt in init()/afterAuthChange() wie die
 // immer sichtbaren Einstellungen-Panels — spart den Worker-Call für Admins,
 // die die Ansicht nie öffnen.
+let adminStatsState = null; // letzte get-admin-stats-Antwort, für den Dropdown-Wechsel ohne Refetch
+
 async function loadAndRenderAdminStats() {
   const errorEl = document.getElementById("admin-dashboard-error");
   const contentEl = document.getElementById("admin-dashboard-content");
@@ -1318,6 +1320,7 @@ async function loadAndRenderAdminStats() {
   contentEl.style.display = "none";
   try {
     const data = await callWorker("get-admin-stats", {});
+    adminStatsState = data;
     renderAdminStats(data);
     contentEl.style.display = "block";
   } catch (e) {
@@ -1343,6 +1346,32 @@ function renderAdminStats(data) {
   document.getElementById("stat-feedback").textContent = String(data.feedbackOpen);
   document.getElementById("stat-materialbedarf").textContent = String(data.materialbedarfOpen);
   document.getElementById("stat-busplan").textContent = String(data.busplanOpen);
+
+  renderRecentActivity();
+}
+
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderRecentActivity() {
+  const list = document.getElementById("admin-dashboard-recent-list");
+  if (!list) return;
+  const select = document.getElementById("admin-dashboard-recent-select");
+  const kind = select ? select.value : "logins";
+  const key = kind === "trainervertrag" ? "recentTrainervertrag" : kind === "trainerkodex" ? "recentTrainerkodex" : "recentLogins";
+  const entries = (adminStatsState && Array.isArray(adminStatsState[key])) ? adminStatsState[key] : [];
+  if (entries.length === 0) {
+    list.innerHTML = '<li class="muted">Keine Daten vorhanden.</li>';
+    return;
+  }
+  list.innerHTML = entries.map((e) => {
+    const name = (e.vorname && e.nachname) ? `${e.vorname} ${e.nachname}` : e.username;
+    return `<li><span>${escapeHtml(name)}</span><span class="recent-activity-when">${escapeHtml(fmtDateTime(e.at))}</span></li>`;
+  }).join("");
 }
 
 async function loadAndRenderFeedback() {
@@ -1467,6 +1496,35 @@ function setupTabs() {
     activateTab("admin-dashboard");
     loadAndRenderAdminStats();
   });
+
+  const jumpToAdminPanel = (panelId) => {
+    activateTab("admin");
+    const panel = document.getElementById(panelId);
+    if (panel) { panel.open = true; panel.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  };
+  const openTool = (toolId) => {
+    const tool = toolById(toolId);
+    if (tool) window.open(tool.url, "_blank", "noopener");
+  };
+  const statTileActions = {
+    "stat-tile-users": () => jumpToAdminPanel("admin-users-panel"),
+    "stat-tile-feedback": () => jumpToAdminPanel("admin-feedback-panel"),
+    "stat-tile-trainervertrag": () => openTool("trainerdaten"),
+    "stat-tile-trainerkodex": () => openTool("trainerkodex"),
+    "stat-tile-materialbedarf": () => openTool("materialbedarf"),
+    "stat-tile-busplan": () => openTool("busplan")
+  };
+  Object.keys(statTileActions).forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", statTileActions[id]);
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); statTileActions[id](); }
+    });
+  });
+
+  const recentSelect = document.getElementById("admin-dashboard-recent-select");
+  if (recentSelect) recentSelect.addEventListener("change", renderRecentActivity);
 }
 
 function renderHeaderUser() {

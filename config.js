@@ -1,4 +1,4 @@
-const APP_VERSION = "1.17";
+const APP_VERSION = "1.1";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -17,7 +17,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
-    version: "1.6",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -27,7 +27,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -37,7 +37,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -87,7 +87,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielertool-test/",
     icon: "⚽",
     category: "Verein",
-    version: "1.3",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -97,7 +97,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -107,7 +107,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -117,7 +117,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    version: "1.2",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -127,7 +127,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/trainerkodex/",
     icon: "📜",
     category: "Verein",
-    version: "1.3",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -137,7 +137,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Personalkosten/",
     icon: "💶",
     category: "Verein",
-    version: "1.2",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -147,7 +147,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
-    version: "1.3",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -157,7 +157,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/busplan/",
     icon: "🚌",
     category: "Verein",
-    version: "1.4",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -167,7 +167,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/digitaler-stempel/",
     icon: "🖋️",
     category: "Verein",
-    version: "1.2",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -177,7 +177,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/kleiderbestellung/",
     icon: "👕",
     category: "Verein",
-    version: "1.2",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -187,13 +187,13 @@ const TOOLS = [
     url: "https://tecko1985.github.io/fahrtenbuch/",
     icon: "🚐",
     category: "Verein",
-    version: "1.6",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
     id: "spiele",
     name: "Spiele",
-    description: "Mini-Spiele-Sammlung fürs Team — den Anfang macht Auto-Quartett, ideal für die Busfahrt zur Auswärtsfahrt.",
+    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett sowie Elfmeterschießen als Echtzeit-Duell (auch solo gegen eine KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
     url: "https://tecko1985.github.io/spiele/",
     icon: "🎮",
     category: "Verein",
@@ -207,7 +207,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/materialbedarf/",
     icon: "🛒",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   }
 ];
@@ -293,57 +293,13 @@ const NEWS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.17",
-    groups: [
-      {
-        title: "Versionsbadge",
-        items: [
-          "Der Versionshinweis oben neben dem Titel ist jetzt anklickbar und führt direkt zur aufgeklappten Versionshistorie in den Einstellungen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.16",
+    version: "1.1",
     groups: [
       {
         title: "Admin-Dashboard",
         items: [
-          "Einstieg ins Admin-Dashboard von einer Kachel auf der Übersicht in einen zentrierten Button in der Kopfzeile umgestellt (nur für Admins sichtbar)."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.15",
-    groups: [
-      {
-        title: "Admin-Dashboard",
-        items: [
-          "Neue Kachel „Admin-Dashboard“ oben auf der Übersicht (nur für Admins sichtbar) führt in eine eigene Ansicht mit sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe „Trainer“), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison.",
-          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.14",
-    groups: [
-      {
-        title: "Neues Tool",
-        items: [
-          "Materialbedarf: Trainer:innen melden Materialbedarf mit mehreren Positionen, Grund und Dringlichkeit; Admin entscheidet über Annahme/Ablehnung und markiert den Kauf, mit Text-/PDF-Export."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.13",
-    groups: [
-      {
-        title: "Neues Tool",
-        items: [
-          "Spiele: Mini-Spiele-Sammlung fürs Team, startet mit Auto-Quartett als digitalem Multiplayer-Kartenspiel für die Busfahrt zur Auswärtsfahrt."
+          "Die sechs Kennzahlen-Kacheln sind jetzt anklickbar und springen direkt zum jeweiligen Bereich (Nutzerverwaltung, Feedback & Wünsche in den Einstellungen, bzw. das jeweilige Tool bei Trainervertrag/Trainerkodex/Materialbedarf/Busplan).",
+          "Neues Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen oder Trainerkodex-Bestätigungen mit Name und Zeitpunkt."
         ]
       }
     ]
@@ -401,10 +357,18 @@ const APP_CHANGELOG = [
         ]
       },
       {
+        title: "Admin-Dashboard",
+        items: [
+          "Eigene Dashboard-Ansicht (Zugang über einen zentrierten Button in der Kopfzeile, nur für Admins sichtbar) zeigt sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe „Trainer“), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison.",
+          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote."
+        ]
+      },
+      {
         title: "Admin-Tab & Bedienung",
         items: [
           "Alle Admin-Bereiche (Nutzer, Massenimport, Gruppen, Sichtbarkeit, Versionshistorie) sind einzeln auf-/zuklappbar und standardmäßig eingeklappt.",
-          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in allen Formularen korrekt maskiert."
+          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in allen Formularen korrekt maskiert.",
+          "Der Versionshinweis oben neben dem Titel ist anklickbar und führt direkt zur aufgeklappten Versionshistorie in den Einstellungen."
         ]
       },
       {
