@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.4" />
+<link rel="stylesheet" href="style.css?v=1.5" />
 </head>
 <body>
 
@@ -298,10 +298,58 @@
 
   </section>
 
+  <!-- Admin-Dashboard: eigene Ansicht, nur über die Admin-Kachel auf dem Dashboard erreichbar -->
+  <section class="tab-section" id="tab-admin-dashboard">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+      <h2 style="color:var(--blue); margin:0;">📊 Admin-Dashboard</h2>
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn secondary small" id="btn-admin-dashboard-refresh">Aktualisieren</button>
+        <button type="button" class="btn secondary small" id="btn-admin-dashboard-back">← Zurück zum Dashboard</button>
+      </div>
+    </div>
+
+    <p class="muted" id="admin-dashboard-error" style="display:none; color:#c0392b; margin-bottom:14px;"></p>
+
+    <div id="admin-dashboard-content" style="display:none;">
+      <p class="muted" id="admin-dashboard-trainer-note" style="display:none; color:#c0392b; margin-bottom:14px;">
+        Gruppe „Trainer" ist noch nicht angelegt — lege sie im Tab Einstellungen unter „Gruppen" an und ordne die Trainer:innen zu, damit die Trainervertrag-/Trainerkodex-Quote aussagekräftig ist.
+      </p>
+      <div class="stat-grid">
+        <div class="stat-tile">
+          <div class="stat-tile-label">Nutzer-Anmeldequote</div>
+          <div class="stat-tile-value" id="stat-users">–</div>
+          <div class="stat-tile-sub">haben ihr Passwort gesetzt</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-tile-label">Trainervertrag-Quote</div>
+          <div class="stat-tile-value" id="stat-trainervertrag">–</div>
+          <div class="stat-tile-sub">eingereicht</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-tile-label">Trainerkodex-Quote</div>
+          <div class="stat-tile-value" id="stat-trainerkodex">–</div>
+          <div class="stat-tile-sub">bestätigt</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-tile-label">Offene Feedback &amp; Hilfe-Einträge</div>
+          <div class="stat-tile-value" id="stat-feedback">–</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-tile-label">Offene Materialbedarf-Meldungen</div>
+          <div class="stat-tile-value" id="stat-materialbedarf">–</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-tile-label">Offene/klärungsbedürftige Busplan-Zusagen</div>
+          <div class="stat-tile-value" id="stat-busplan">–</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   </main>
 </div>
 
-<script src="config.js?v=1.14"></script>
-<script src="app.js?v=1.14"></script>
+<script src="config.js?v=1.15"></script>
+<script src="app.js?v=1.15"></script>
 </body>
 </html>

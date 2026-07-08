@@ -1,4 +1,4 @@
-const APP_VERSION = "1.14";
+const APP_VERSION = "1.15";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -292,6 +292,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.15",
+    groups: [
+      {
+        title: "Admin-Dashboard",
+        items: [
+          "Neue Kachel „Admin-Dashboard“ oben auf der Übersicht (nur für Admins sichtbar) führt in eine eigene Ansicht mit sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe „Trainer“), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison.",
+          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote."
+        ]
+      }
+    ]
+  },
   {
     version: "1.14",
     groups: [

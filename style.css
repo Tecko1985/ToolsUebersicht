@@ -358,6 +358,37 @@ main { flex: 1; min-width: 0; }
   padding: 3px 10px;
 }
 
+/* ---------- Admin-Dashboard-Kachel (Übersicht) ---------- */
+
+.admin-dashboard-entry { display: flex; justify-content: center; margin-bottom: 26px; }
+button.admin-dashboard-card {
+  max-width: 420px;
+  width: 100%;
+  border: 2px solid var(--gold);
+  align-items: center;
+  text-align: center;
+  font: inherit;
+  cursor: pointer;
+}
+.admin-dashboard-card .tool-icon { font-size: 32px; }
+
+/* ---------- Admin-Dashboard (eigene Ansicht) ---------- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.stat-tile {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.stat-tile-label { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 8px; }
+.stat-tile-value { font-size: 28px; font-weight: 700; color: var(--blue); }
+.stat-tile-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
 /* ---------- Admin: Sichtbarkeits-Liste ---------- */
 
 .visibility-row {

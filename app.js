@@ -859,9 +859,36 @@ function deviceIcons(devices) {
   return `<span class="tool-devices" title="Geeignet für: ${title}">${symbols}</span>`;
 }
 
+// Admin-only Einstiegskachel oben auf der Übersicht, kein echtes TOOLS-Item
+// (kein href, keine Kategorie, keine Drag-Sortierung, keine
+// sichtbarkeit.json-Prüfung) — Klick navigiert per activateTab() in die
+// eigene Ansicht #tab-admin-dashboard statt eine externe Seite zu öffnen.
+function buildAdminDashboardCard() {
+  const wrap = document.createElement("div");
+  wrap.className = "admin-dashboard-entry";
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "tool-card admin-dashboard-card";
+  card.innerHTML = `
+    <div class="tool-icon">📊</div>
+    <h3>Admin-Dashboard</h3>
+    <p>Anmeldequote, Trainervertrag/-kodex, offene Meldungen &amp; Zusagen auf einen Blick.</p>
+  `;
+  card.addEventListener("click", () => {
+    activateTab("admin-dashboard");
+    loadAndRenderAdminStats();
+  });
+  wrap.appendChild(card);
+  return wrap;
+}
+
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   container.innerHTML = "";
+
+  if (currentUser && currentUser.isAdmin) {
+    container.appendChild(buildAdminDashboardCard());
+  }
 
   const categories = [...new Set(TOOLS.map((t) => t.category))];
   let anyVisible = false;
@@ -1307,6 +1334,44 @@ function setupWhatsappLink() {
   link.href = "https://wa.me/" + WHATSAPP_CONTACT + "?text=" + encodeURIComponent(text);
 }
 
+// Lazy geladen (nur beim Kachel-Klick, siehe buildAdminDashboardCard und
+// btn-admin-dashboard-refresh) statt in init()/afterAuthChange() wie die
+// immer sichtbaren Einstellungen-Panels — spart den Worker-Call für Admins,
+// die die Ansicht nie öffnen.
+async function loadAndRenderAdminStats() {
+  const errorEl = document.getElementById("admin-dashboard-error");
+  const contentEl = document.getElementById("admin-dashboard-content");
+  errorEl.style.display = "none";
+  contentEl.style.display = "none";
+  try {
+    const data = await callWorker("get-admin-stats", {});
+    renderAdminStats(data);
+    contentEl.style.display = "block";
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderAdminStats(data) {
+  document.getElementById("stat-users").textContent = `${data.users.passwordSet} von ${data.users.total}`;
+
+  const trainerNote = document.getElementById("admin-dashboard-trainer-note");
+  if (!data.trainerGroup.exists) {
+    trainerNote.style.display = "block";
+    document.getElementById("stat-trainervertrag").textContent = "–";
+    document.getElementById("stat-trainerkodex").textContent = "–";
+  } else {
+    trainerNote.style.display = "none";
+    document.getElementById("stat-trainervertrag").textContent = `${data.trainervertrag.submitted} von ${data.trainervertrag.total}`;
+    document.getElementById("stat-trainerkodex").textContent = `${data.trainerkodex.confirmed} von ${data.trainerkodex.total}`;
+  }
+
+  document.getElementById("stat-feedback").textContent = String(data.feedbackOpen);
+  document.getElementById("stat-materialbedarf").textContent = String(data.materialbedarfOpen);
+  document.getElementById("stat-busplan").textContent = String(data.busplanOpen);
+}
+
 async function loadAndRenderFeedback() {
   const errorEl = document.getElementById("feedback-admin-error");
   errorEl.style.display = "none";
@@ -1411,6 +1476,8 @@ function setupTabs() {
   });
   document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
   document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("admin"));
+  document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
+  document.getElementById("btn-admin-dashboard-refresh").addEventListener("click", () => loadAndRenderAdminStats());
 }
 
 function renderHeaderUser() {

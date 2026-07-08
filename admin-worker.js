@@ -75,6 +75,11 @@
 //   POST { action: "list-feedback" } (admin)                     -> { entries } (alle Feedback-/Wunsch-Einträge)
 //   POST { action: "save-feedback", entries } (admin)            -> ersetzt alle Feedback-Einträge (Array, serverseitig
 //     validiert) — für "erledigt"-Status togglen und Einträge löschen (kompletter Array-Ersatz wie save-news)
+//   POST { action: "get-admin-stats" } (admin)                   -> { users, trainerGroup, trainervertrag, trainerkodex,
+//     feedbackOpen, materialbedarfOpen, busplanOpen } — sechs Kennzahlen fürs Admin-Dashboard, aus bestehenden
+//     Datenquellen berechnet (nutzer.json, feedback.json, trainerdaten/trainerkodex/materialbedarf/busplan via
+//     DAV_APPS/PROVISION_ONLY_PATHS). Trainervertrag-/Trainerkodex-Quote beziehen sich auf Mitglieder der Gruppe
+//     TRAINER_GROUP_NAME ("Trainer") — existiert diese Gruppe noch nicht, liefert trainerGroup.exists:false.
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
@@ -174,6 +179,14 @@ const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 // dupliziert. Werte übernommen aus Personalkosten config.js DEFAULT_PARAMETER.lizenzen.
 const LIZENZ_OPTIONEN = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
 
+// Name der Gruppe, deren Mitglieder für Trainervertrag-/Trainerkodex-Quote im
+// Admin-Dashboard zählen. Lookup nach Namen (nicht Id), da die Id nur beim
+// Anlegen aus dem Namen slugifiziert wird und bei Umbenennung nicht
+// automatisch nachzieht — der Name ist die stabile, für den Admin sichtbare
+// Referenz. Muss einmalig manuell über das Gruppen-Panel (Einstellungen)
+// angelegt werden.
+const TRAINER_GROUP_NAME = "Trainer";
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -266,6 +279,8 @@ export default {
         return handleListFeedback(request, env, authHeader, corsHeaders);
       case "save-feedback":
         return handleSaveFeedback(request, body, env, authHeader, corsHeaders);
+      case "get-admin-stats":
+        return handleGetAdminStats(request, env, authHeader, corsHeaders);
       case "verify-action-password":
         return handleVerifyActionPassword(body, env, corsHeaders);
       case "dav-load":
@@ -884,6 +899,89 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ entries: doc.entries }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Admin-Dashboard-Statistik ----------
+
+// Liefert sechs Kennzahlen für die Admin-Dashboard-Kachel, alle serverseitig
+// aus bereits bestehenden Datenquellen berechnet (kein neues Speicherformat).
+// Trainervertrag-/Trainerkodex-Quote beziehen sich auf die Mitglieder der
+// Gruppe TRAINER_GROUP_NAME — existiert die Gruppe noch nicht, liefert diese
+// Aktion trainerGroup.exists:false statt einer irreführenden 0-von-0-Quote.
+async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const users = Object.values(usersDoc.users);
+  const usersTotal = users.length;
+  const usersPasswordSet = users.filter((u) => u.mustSetPassword === false).length;
+
+  const trainerGroup = Object.values(usersDoc.groups || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
+  const trainerUsernames = trainerGroup ? (trainerGroup.memberUsernames || []) : [];
+
+  const [feedbackDoc, trainerdatenDoc, trainerkodexDoc, materialbedarfDoc, busplanDoc] = await Promise.all([
+    readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] }),
+    readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
+    readJson(DAV_APPS.trainerkodex, authHeader, { bestaetigungen: {} }),
+    readJson(DAV_APPS.materialbedarf, authHeader, { meldungen: [] }),
+    readJson(DAV_APPS.busplan, authHeader, { meta: {}, seasons: {} })
+  ]);
+
+  // Trainervertrag "eingereicht" = hat Account UND hat unterschrieben (nicht
+  // bloß ein automatisch angelegter Stub-Datensatz ohne Konto) — Ableitung
+  // wie E:\Trainerdaten\app.js::_eingereichtAm, hier nur als Boolean.
+  const trainerdatenByUsername = new Map();
+  (Array.isArray(trainerdatenDoc.trainer) ? trainerdatenDoc.trainer : []).forEach((t) => {
+    if (t.username) trainerdatenByUsername.set(t.username, t);
+  });
+  const trainervertragEingereicht = trainerUsernames.filter((uname) => {
+    const t = trainerdatenByUsername.get(uname);
+    return !!(t && (t.unterschriftAm || t.signatureDataUrl));
+  }).length;
+
+  // Trainerkodex: bestaetigungen ist ein Objekt keyed by username; ein
+  // bestätigter Eintrag hat "datum" gesetzt (unbestätigte Provisioning-
+  // Platzhalter haben kein datum).
+  const bestaetigungen = trainerkodexDoc.bestaetigungen || {};
+  const trainerkodexBestaetigt = trainerUsernames.filter((uname) => {
+    const b = bestaetigungen[uname];
+    return !!(b && b.datum);
+  }).length;
+
+  const meldungen = Array.isArray(materialbedarfDoc.meldungen) ? materialbedarfDoc.meldungen : [];
+  const materialbedarfOffen = meldungen.filter((m) => m.status === "offen").length;
+
+  const feedbackEntries = Array.isArray(feedbackDoc.entries) ? feedbackDoc.entries : [];
+  const feedbackOffen = feedbackEntries.filter((f) => !f.done).length;
+
+  // Busplan: nur aktuelle Saison zählen (wie E:\Busplan\app.js, Anzeige der
+  // Übersicht) — offene/klärungsbedürftige Zusagen über alle Mannschaften,
+  // Spiele und deren Bus-Optionen.
+  const currentSeasonKey = busplanDoc.meta && busplanDoc.meta.currentSeason;
+  const season = currentSeasonKey ? (busplanDoc.seasons || {})[currentSeasonKey] : null;
+  let busplanOffen = 0;
+  if (season && Array.isArray(season.teams)) {
+    season.teams.forEach((t) => {
+      const busOptionIds = Array.isArray(t.busOptionIds) ? t.busOptionIds : [];
+      (t.spiele || []).forEach((sp) => {
+        busOptionIds.forEach((oid) => {
+          const wert = (sp.status && sp.status[oid]) ? sp.status[oid].wert : "";
+          if (wert === "offen" || wert === "klaerung") busplanOffen++;
+        });
+      });
+    });
+  }
+
+  return json({
+    users: { total: usersTotal, passwordSet: usersPasswordSet },
+    trainerGroup: { exists: !!trainerGroup, memberCount: trainerUsernames.length },
+    trainervertrag: { submitted: trainervertragEingereicht, total: trainerUsernames.length },
+    trainerkodex: { confirmed: trainerkodexBestaetigt, total: trainerUsernames.length },
+    feedbackOpen: feedbackOffen,
+    materialbedarfOpen: materialbedarfOffen,
+    busplanOpen: busplanOffen
+  }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------
