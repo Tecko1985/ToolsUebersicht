@@ -1106,11 +1106,12 @@ function buildTrainerRecord(user, usersDoc, sources) {
   // Trainerdaten: NUR Datum/Bool/Status -- niemals iban/adresse/telefon
   // (PROVISION_ONLY_PATHS ist bewusst dafuer da, diese Felder abzuschotten).
   // Match-Reihenfolge: echter username (reale Einreichung) > linkedUsername
-  // (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback.
+  // (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback
+  // (sameNamePair reihenfolge-tolerant, gleicher Grund wie TrainerCheckliste).
   const td = (trainerdatenDoc.trainer || []).find((t) =>
     (t.username && t.username === user.username) ||
     (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
-    (sameText(t.vorname, user.vorname) && sameText(t.nachname, user.nachname)));
+    sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname));
   const trainerdaten = td ? {
     vorhanden: true,
     unterschriftAm: td.unterschriftAm || null,
@@ -1870,8 +1871,10 @@ function provisionPersonalkosten(data, p) {
   const season = data.seasons[seasonKey];
   if (!Array.isArray(season.trainer)) season.trainer = [];
   const fullName = `${p.vorname} ${p.nachname}`.trim();
+  const fullNameReversed = `${p.nachname} ${p.vorname}`.trim();
   const exists = season.trainer.some((t) =>
-    (t.linkedUsername && sameText(t.linkedUsername, p.username)) || sameText(t.name, fullName));
+    (t.linkedUsername && sameText(t.linkedUsername, p.username)) ||
+    sameText(t.name, fullName) || sameText(t.name, fullNameReversed));
   if (exists) return "exists";
   season.trainer.push({
     id: crypto.randomUUID(),
@@ -1893,7 +1896,7 @@ function provisionTrainercheckliste(data, p) {
   if (!Array.isArray(data.trainerEintraege)) data.trainerEintraege = [];
   const exists = data.trainerEintraege.some((e) =>
     (e.linkedUsername && sameText(e.linkedUsername, p.username)) ||
-    (sameText(e.vorname, p.vorname) && sameText(e.name, p.nachname)));
+    sameNamePair(e.vorname, e.name, p.vorname, p.nachname));
   if (exists) return "exists";
   // Minimal-Stub: die Client-migrateData ergänzt zugang/abgang beim Laden selbst.
   data.trainerEintraege.push({
@@ -1935,7 +1938,7 @@ function provisionTrainerdaten(data, p) {
   // "Unvollständig"; ein späteres Self-Submit merged per exaktem Namensabgleich).
   const exists = data.trainer.some((t) =>
     (t.linkedUsername && sameText(t.linkedUsername, p.username)) ||
-    (sameText(t.vorname, p.vorname) && sameText(t.nachname, p.nachname)));
+    sameNamePair(t.vorname, t.nachname, p.vorname, p.nachname));
   if (exists) return "exists";
   data.trainer.push({
     id: crypto.randomUUID(),
