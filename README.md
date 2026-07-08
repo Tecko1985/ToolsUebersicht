@@ -40,9 +40,13 @@ Solange `admin-worker.js` noch nicht mit den unten genannten Secrets deployed is
 - Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt, damit kein Tool versehentlich für alle unsichtbar bleibt.
 - Kein zusätzliches Worker-Secret nötig: Gruppen werden zusammen mit den Nutzerkonten in derselben `nutzer.json` gespeichert.
 
+## Admin-Dashboard
+
+Ein zentrierter Button "📊 Admin-Dashboard" in der Kopfzeile (nur für Admins sichtbar) führt zu einer eigenen Ansicht mit sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe "Trainer"), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison. Ist die Gruppe "Trainer" noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.
+
 ## WebDAV-Login-Gateway für andere Apps
 
-Mehrere Vereins-Tools (Materialliste, TrainerCheckliste, Spielertool, Trainerkodex, Platzbelegung, Spielersichtung, Personalkosten) speichern ihre eigenen Daten per WebDAV in derselben Nextcloud. Statt dort ein eigenes Formular mit WebDAV-Adresse, Benutzername und App-Passwort zu verlangen, nutzen sie dieselbe Anmeldung wie diese Übersicht:
+Mehrere Vereins-Tools (Materialliste, TrainerCheckliste, Spielertool, Trainerkodex, Spielersichtung, Platzbelegung, Personalkosten, Vereinskalender, Busplan, Kadermanager, Digitaler Stempel, Kleiderbestellung, Fahrtenbuch, Materialbedarf) speichern ihre eigenen Daten per WebDAV in derselben Nextcloud. Statt dort ein eigenes Formular mit WebDAV-Adresse, Benutzername und App-Passwort zu verlangen, nutzen sie dieselbe Anmeldung wie diese Übersicht:
 
 - Die Apps lesen das Login-Token aus `localStorage["tu_session_token"]` (funktioniert, weil alle Apps auf derselben Origin `tecko1985.github.io` liegen) und rufen den Worker mit `{ action: "dav-load" | "dav-save", app: "<tool-id>" }` auf.
 - Der Worker prüft das Token **und** die Gruppen-Sichtbarkeit des jeweiligen Tools (identische Regeln wie oben), bevor er serverseitig mit den eigenen Nextcloud-Zugangsdaten auf die passende Datei zugreift. Der Client bekommt nie ein Passwort zu Gesicht.
