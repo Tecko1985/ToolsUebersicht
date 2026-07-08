@@ -859,36 +859,9 @@ function deviceIcons(devices) {
   return `<span class="tool-devices" title="Geeignet für: ${title}">${symbols}</span>`;
 }
 
-// Admin-only Einstiegskachel oben auf der Übersicht, kein echtes TOOLS-Item
-// (kein href, keine Kategorie, keine Drag-Sortierung, keine
-// sichtbarkeit.json-Prüfung) — Klick navigiert per activateTab() in die
-// eigene Ansicht #tab-admin-dashboard statt eine externe Seite zu öffnen.
-function buildAdminDashboardCard() {
-  const wrap = document.createElement("div");
-  wrap.className = "admin-dashboard-entry";
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "tool-card admin-dashboard-card";
-  card.innerHTML = `
-    <div class="tool-icon">📊</div>
-    <h3>Admin-Dashboard</h3>
-    <p>Anmeldequote, Trainervertrag/-kodex, offene Meldungen &amp; Zusagen auf einen Blick.</p>
-  `;
-  card.addEventListener("click", () => {
-    activateTab("admin-dashboard");
-    loadAndRenderAdminStats();
-  });
-  wrap.appendChild(card);
-  return wrap;
-}
-
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
   container.innerHTML = "";
-
-  if (currentUser && currentUser.isAdmin) {
-    container.appendChild(buildAdminDashboardCard());
-  }
 
   const categories = [...new Set(TOOLS.map((t) => t.category))];
   let anyVisible = false;
@@ -1478,6 +1451,10 @@ function setupTabs() {
   document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("admin"));
   document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
   document.getElementById("btn-admin-dashboard-refresh").addEventListener("click", () => loadAndRenderAdminStats());
+  document.getElementById("btn-admin-dashboard-open").addEventListener("click", () => {
+    activateTab("admin-dashboard");
+    loadAndRenderAdminStats();
+  });
 }
 
 function renderHeaderUser() {
@@ -1503,6 +1480,7 @@ function renderAdminPanels() {
   document.getElementById("admin-visibility-panel").style.display = "none";
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
+  document.getElementById("btn-admin-dashboard-open").style.display = "none";
 
   if (currentUser) {
     document.getElementById("logged-in-username").textContent = currentUser.username;
@@ -1513,6 +1491,7 @@ function renderAdminPanels() {
       document.getElementById("admin-visibility-panel").style.display = "block";
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
+      document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
     return;
   }

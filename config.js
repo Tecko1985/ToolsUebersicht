@@ -1,4 +1,4 @@
-const APP_VERSION = "1.15";
+const APP_VERSION = "1.16";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -292,6 +292,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.16",
+    groups: [
+      {
+        title: "Admin-Dashboard",
+        items: [
+          "Einstieg ins Admin-Dashboard von einer Kachel auf der Übersicht in einen zentrierten Button in der Kopfzeile umgestellt (nur für Admins sichtbar)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.15",
     groups: [

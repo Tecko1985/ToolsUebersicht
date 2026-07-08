@@ -23,6 +23,7 @@ body {
   min-height: 100vh;
 }
 header {
+  position: relative;
   background: var(--blue);
   color: white;
   padding: 16px 28px;
@@ -48,6 +49,25 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   border-radius: 999px;
   padding: 6px 14px;
 }
+.header-admin-btn {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2b2107;
+  background: var(--gold);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-admin-btn:hover { opacity: 0.9; }
 
 nav {
   display: flex;
@@ -357,20 +377,6 @@ main { flex: 1; min-width: 0; }
   border-radius: 999px;
   padding: 3px 10px;
 }
-
-/* ---------- Admin-Dashboard-Kachel (Übersicht) ---------- */
-
-.admin-dashboard-entry { display: flex; justify-content: center; margin-bottom: 26px; }
-button.admin-dashboard-card {
-  max-width: 420px;
-  width: 100%;
-  border: 2px solid var(--gold);
-  align-items: center;
-  text-align: center;
-  font: inherit;
-  cursor: pointer;
-}
-.admin-dashboard-card .tool-icon { font-size: 32px; }
 
 /* ---------- Admin-Dashboard (eigene Ansicht) ---------- */
 
