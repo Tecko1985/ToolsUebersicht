@@ -86,6 +86,8 @@
 //     trainercheckliste/personalkosten/kadermanager — inkl. archivierter Trainer (Gruppen werden beim Archivieren
 //     NICHT entzogen). Trainerdaten-Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse — seit 1.1
 //     zusätzlich Führerschein-/Führungszeugnis-Status (migriert aus Fahrtenbuch, siehe [[project-trainerdaten]]).
+//     Seit 1.2 zusätzlich `trainerId` (Trainerdaten-eigene id, nicht username) -- Personalakte ruft damit
+//     direkt trainerdaten1.michel-brunner.workers.dev an, um die Dokumente selbst zu öffnen.
 //   POST { action: "archive-trainer", username, grund? } (Personalakte-Sichtrecht) -> { ok:true, username, archiviertAm }
 //     Schreibt zuerst einen Datenschnappschuss nach personalakte.json, sperrt danach Login+Sessions des Kontos
 //     (Nutzerfelder archiviert/archiviertAm/archiviertGrund/archiviertVon in nutzer.json). Gruppenzugehörigkeit
@@ -1127,6 +1129,7 @@ function buildTrainerRecord(user, usersDoc, sources) {
   }
   const trainerdaten = td ? {
     vorhanden: true,
+    trainerId: td.id || null,
     unterschriftAm: td.unterschriftAm || null,
     erstelltAm: td.erstelltAm || null,
     vertragsGeneriert: !!td.vertragsGeneriert,
@@ -1135,7 +1138,7 @@ function buildTrainerRecord(user, usersDoc, sources) {
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
     fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null
   } : {
-    vorhanden: false, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
+    vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
     fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null
   };
 
