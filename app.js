@@ -268,11 +268,26 @@ function renderUsersList(users) {
         const errorEl = document.getElementById("users-error");
         errorEl.style.display = "none";
         try {
-          await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften });
-          await applyUserGroupMembership(username, desiredGroupIds);
+          const result = await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften });
+          // Bei Namensänderung zieht der Worker den Login-Nutzernamen automatisch mit
+          // (usernameRename.applied) — die Gruppenmitgliedschaft muss dann unter dem
+          // NEUEN Nutzernamen gepflegt werden, sonst fällt der Nutzer beim folgenden
+          // update-group-members-Aufruf aus jeder Gruppe raus (unbekannter alter Key,
+          // siehe handleUpdateGroupMembers-Filter im Worker).
+          const rename = result.usernameRename;
+          const effectiveUsername = (rename && rename.applied) ? rename.to : username;
+          await applyUserGroupMembership(effectiveUsername, desiredGroupIds);
           await loadAndRenderGroups();
           await loadAndRenderUsers();
+          if (rename) {
+            errorEl.style.color = rename.applied ? "#2c5e2e" : "#c0392b";
+            errorEl.textContent = rename.applied
+              ? `Hinweis: Login-Nutzername wurde von „${rename.from}“ zu „${rename.to}“ angepasst (Namensänderung).`
+              : `Name gespeichert, aber der Login-Nutzername „${rename.to}“ ist bereits durch ein anderes Konto belegt und konnte nicht automatisch angepasst werden — bitte das andere Konto prüfen.`;
+            errorEl.style.display = "block";
+          }
         } catch (e) {
+          errorEl.style.color = "#c0392b";
           errorEl.textContent = e.message;
           errorEl.style.display = "block";
         }

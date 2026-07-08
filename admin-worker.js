@@ -50,7 +50,7 @@
 //   POST { action: "create-user", vorname, nachname, isAdmin, groupIds } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
-//   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden)
+//   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden); zieht bei Namensänderung den Login-Nutzernamen automatisch mit um (Response-Feld usernameRename), außer die Zielkennung ist durch ein anderes Konto belegt
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
@@ -539,13 +539,43 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   user.lizenz = normalizeLizenz(body.lizenz);
   user.mannschaften = normalizeMannschaften(body.mannschaften);
 
+  // Der Login-Nutzername wird beim Anlegen einmalig aus Vorname/Nachname generiert
+  // (generateUsername) und danach nie mehr angefasst. Ohne diesen Abgleich bleibt
+  // eine spätere Namenskorrektur (z. B. Tippfehler im Vornamen) rein kosmetisch: die
+  // Liste zeigt den neuen Namen, aber das Konto ist weiterhin nur unter dem alten
+  // Nutzernamen erreichbar, und der Nutzer kann sich mit seinem (jetzt korrekten)
+  // Namen nicht mehr anmelden. Nur bei freier Ziel-Kennung umbenennen; kollidiert sie
+  // mit einem ANDEREN Konto, lieber gar nicht anfassen und den Konflikt zurückmelden,
+  // statt eine "-2"-Variante zu erzeugen, die der Nutzer beim Anmelden nie eingeben würde.
+  const desiredUsername = baseUsernameFor(vorname, nachname);
+  let usernameRename = null;
+  if (desiredUsername !== username) {
+    if (getOwn(usersDoc.users, desiredUsername)) {
+      usernameRename = { from: username, to: desiredUsername, applied: false };
+    } else {
+      delete usersDoc.users[username];
+      user.username = desiredUsername;
+      usersDoc.users[desiredUsername] = user;
+      Object.values(usersDoc.groups || {}).forEach((g) => {
+        if (!Array.isArray(g.memberUsernames)) return;
+        const idx = g.memberUsernames.indexOf(username);
+        if (idx !== -1) g.memberUsernames[idx] = desiredUsername;
+      });
+      usernameRename = { from: username, to: desiredUsername, applied: true };
+    }
+  }
+  const finalUsername = (usernameRename && usernameRename.applied) ? desiredUsername : username;
+
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
   } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ username, vorname, nachname, isAdmin, lizenz: user.lizenz, mannschaften: user.mannschaften }, 200, corsHeaders);
+  return json({
+    username: finalUsername, vorname, nachname, isAdmin,
+    lizenz: user.lizenz, mannschaften: user.mannschaften, usernameRename
+  }, 200, corsHeaders);
 }
 
 async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
@@ -1736,13 +1766,16 @@ function slugifyNamePart(str) {
     .replace(/[^a-z0-9]+/g, "");
 }
 
-function generateUsername(vorname, nachname, existingUsernames) {
+function baseUsernameFor(vorname, nachname) {
   const vornamePart = slugifyNamePart(vorname);
   const nachnamePart = slugifyNamePart(nachname);
   let base = [vornamePart, nachnamePart].filter(Boolean).join(".");
   if (base.length < 3) base = (base + "nutzer").slice(0, 32);
-  base = base.slice(0, 32);
+  return base.slice(0, 32);
+}
 
+function generateUsername(vorname, nachname, existingUsernames) {
+  const base = baseUsernameFor(vorname, nachname);
   let candidate = base;
   let suffix = 1;
   while (existingUsernames.has(candidate) || !USERNAME_RE.test(candidate)) {

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -292,6 +292,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.2",
+    groups: [
+      {
+        title: "Nutzerverwaltung",
+        items: [
+          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Worker den Login-Nutzernamen jetzt automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Vorher blieb das Konto nach einer Namenskorrektur unter dem alten Nutzernamen hängen, und die Anmeldung mit dem jetzt korrekten Namen schlug fehl. Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint statt einer stillen Zufallsvariante."
+        ]
+      }
+    ]
+  },
   {
     version: "1.1",
     groups: [
