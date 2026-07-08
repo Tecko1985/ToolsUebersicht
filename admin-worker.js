@@ -1110,8 +1110,10 @@ function buildTrainerRecord(user, usersDoc, sources) {
     kodexVersion: (kodex && kodex.kodexVersion) || null
   };
 
-  // Trainerdaten: NUR Datum/Bool/Status -- niemals iban/adresse/telefon
-  // (PROVISION_ONLY_PATHS ist bewusst dafuer da, diese Felder abzuschotten).
+  // Trainerdaten: Status/Verlaufsfelder plus seit 2026-07-08 zusaetzlich
+  // Geburtsdatum/Adresse/Telefon/E-Mail (expliziter User-Wunsch, damit die
+  // Personalakte diese Basisdaten zeigen kann) -- IBAN/Bankverbindung bleiben
+  // weiterhin ausgeschlossen, dafuer gibt es PROVISION_ONLY_PATHS ueberhaupt.
   // Match-Reihenfolge: echter username (reale Einreichung) > linkedUsername
   // (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback
   // (sameNamePair reihenfolge-tolerant, gleicher Grund wie TrainerCheckliste).
@@ -1138,10 +1140,17 @@ function buildTrainerRecord(user, usersDoc, sources) {
     status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
     fuehrerscheinHochgeladenAm: td.fuehrerscheinHochgeladenAm || null,
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
-    fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null
+    fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null,
+    geburtsdatum: td.geburtsdatum || null,
+    strasse: td.strasse || null,
+    plz: td.plz || null,
+    ort: td.ort || null,
+    telefon: td.telefon || null,
+    email: td.email || null
   } : {
     vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
-    fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null
+    fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null,
+    geburtsdatum: null, strasse: null, plz: null, ort: null, telefon: null, email: null
   };
 
   // TrainerCheckliste: exakt dieselbe Match-Konvention wie provisionTrainercheckliste
