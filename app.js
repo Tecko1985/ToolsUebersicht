@@ -1106,6 +1106,21 @@ function isUebersichtTabActive() {
   return !!(section && section.classList.contains("active"));
 }
 
+// Liefert die Namen aller Trainer, die laut Trainerdaten HEUTE Geburtstag haben
+// (list-birthdays-today, siehe admin-worker.js) -- kein Geburtsjahr, keine
+// anderen Felder. Scheitert die Abfrage, wird das Widget dadurch NICHT
+// ausgeblendet (anders als ein Fehler bei dav-load) -- Geburtstage sind reine
+// Zusatzinfo, kein Grund die Termine selbst zu verstecken.
+async function loadBirthdaysToday() {
+  try {
+    const res = await callWorker("list-birthdays-today", {});
+    return Array.isArray(res && res.namen) ? res.namen : [];
+  } catch (e) {
+    console.warn("Geburtstage nicht ladbar:", e);
+    return [];
+  }
+}
+
 async function loadCalendarWidget() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
@@ -1116,7 +1131,10 @@ async function loadCalendarWidget() {
     return;
   }
   try {
-    const res = await callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID });
+    const [res, geburtstage] = await Promise.all([
+      callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID }),
+      loadBirthdaysToday()
+    ]);
     const data = res && res.data && typeof res.data === "object" ? res.data : {};
     const termine = Array.isArray(data.termine) ? data.termine : [];
     const kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
@@ -1127,7 +1145,7 @@ async function loadCalendarWidget() {
       .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
     const oeffentlich = upcoming.filter((t) => !t.privat).slice(0, CALENDAR_WIDGET_COUNT);
     const privat = upcoming.filter((t) => t.privat).slice(0, CALENDAR_WIDGET_COUNT);
-    renderCalendarWidget(widget, oeffentlich, privat, kategorien);
+    renderCalendarWidget(widget, oeffentlich, privat, kategorien, geburtstage);
   } catch (e) {
     console.warn("Vereinskalender-Widget nicht ladbar:", e);
     widget.dataset.hasContent = "0";
@@ -1136,7 +1154,7 @@ async function loadCalendarWidget() {
   }
 }
 
-function renderCalendarWidget(widget, termine, privatTermine, kategorien) {
+function renderCalendarWidget(widget, termine, privatTermine, kategorien, geburtstage) {
   const tool = toolById(CALENDAR_WIDGET_APP_ID);
   const url = tool ? tool.url : "#";
   const katFarbe = (id) => {
@@ -1150,8 +1168,18 @@ function renderCalendarWidget(widget, termine, privatTermine, kategorien) {
           <span class="cw-title">${escapeHtml(t.titel || "")}</span>
         </a>
       `;
-  const rows = termine.length
-    ? termine.map(rowHtml).join("")
+  // Geburtstage (immer nur die von HEUTE, siehe list-birthdays-today) stehen
+  // als eigene, nicht verlinkte Zeilen ganz oben -- kein Termin-Objekt aus dem
+  // Vereinskalender, daher kein href dorthin.
+  const birthdayRowHtml = (name) => `
+        <div class="calendar-widget-item calendar-widget-birthday">
+          <span class="cw-date">Heute</span>
+          <span class="cw-emoji">🎂</span>
+          <span class="cw-title">${escapeHtml(name)} hat Geburtstag</span>
+        </div>
+      `;
+  const rows = (geburtstage.length || termine.length)
+    ? geburtstage.map(birthdayRowHtml).join("") + termine.map(rowHtml).join("")
     : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
   // Private Termine (nur für den eingeloggten Nutzer sichtbar, siehe
   // calendarTerminVisibleFor) stehen als eigener Abschnitt UNTER den normalen

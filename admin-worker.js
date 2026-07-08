@@ -60,6 +60,10 @@
 //     für alle Nutzer mit gesetztem Vor-/Nachnamen — zentrales Trainerprofil (Lizenz + betreute Mannschaft(en)),
 //     damit Gateway-Apps (Personalkosten, Trainerdaten, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
 //     me()-Profil, sondern auch das anderer Nutzer nachschlagen können (Namensabgleich bzw. linkedUsername-Join).
+//   POST { action: "list-birthdays-today" } (jeder eingeloggte Nutzer) -> { namen:["Vorname Nachname", ...] }
+//     wer laut Trainerdaten (PROVISION_ONLY_PATHS, Tag+Monat, Europe/Berlin) heute Geburtstag hat — nur der
+//     Name, nie das Geburtsjahr oder andere Trainerdaten-Felder (die bleiben exklusiv personalakte-overview
+//     vorbehalten). Fürs "Nächste Termine"-Widget in app.js.
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -283,6 +287,8 @@ export default {
         return handleListDirectory(request, env, authHeader, corsHeaders);
       case "list-trainer-profiles":
         return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
+      case "list-birthdays-today":
+        return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "provision-group":
@@ -709,6 +715,30 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
       mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : []
     }));
   return json({ profiles }, 200, corsHeaders);
+}
+
+// Wer heute (Tag+Monat) laut Trainerdaten Geburtstag hat -- nur Vor-/Nachname,
+// nie das Geburtsjahr oder andere Trainerdaten-Felder. Anders als
+// personalakte-overview (siehe mayViewPersonalakte) bewusst für JEDEN
+// eingeloggten Nutzer offen: dass heute jemandes Geburtstag ist, ist ein
+// öffentlicher Anlass fürs Dashboard, das Geburtsjahr bleibt trotzdem exklusiv
+// der Personalakte vorbehalten. Trainerdaten selbst bleibt PROVISION_ONLY
+// (IBAN etc.) -- hier wird nur serverseitig gelesen und stark gefiltert.
+async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  // "Heute" serverseitig ist ohne Zeitzonen-Bezug reines UTC -- Europe/Berlin
+  // wird deshalb erzwungen, sonst wäre der Treffer in den ersten Stunden nach
+  // Mitternacht MESZ/MEZ (UTC-Tageswechsel liegt davor) um bis zu zwei Stunden
+  // verschoben.
+  const heuteMD = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" }).slice(5, 10);
+  const namen = (trainerdatenDoc.trainer || [])
+    .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.geburtsdatum || "") && t.geburtsdatum.slice(5, 10) === heuteMD)
+    .map((t) => `${t.vorname || ""} ${t.nachname || ""}`.trim())
+    .filter(Boolean);
+  return json({ namen }, 200, corsHeaders);
 }
 
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {

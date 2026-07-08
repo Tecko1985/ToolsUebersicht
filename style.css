@@ -283,6 +283,7 @@ main { flex: 1; min-width: 0; }
 .calendar-widget-item:hover { background: var(--blue-light); }
 .calendar-widget-item .cw-date { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 40px; }
 .calendar-widget-item .cw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.calendar-widget-item .cw-emoji { flex-shrink: 0; font-size: 13px; line-height: 1; }
 .calendar-widget-item .cw-title {
   font-size: 13px;
   font-weight: 600;
@@ -291,6 +292,9 @@ main { flex: 1; min-width: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.calendar-widget-birthday { cursor: default; }
+.calendar-widget-birthday:hover { background: none; }
+.calendar-widget-birthday .cw-title { color: #b8860b; }
 .calendar-widget-sub-heading {
   font-size: 13px;
   font-weight: 700;
