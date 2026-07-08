@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.0";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -310,51 +310,6 @@ const NEWS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.4",
-    groups: [
-      {
-        title: "Admin-Testansicht",
-        items: [
-          "Neuer Umschalter oben rechts im Header (nur für Admins): eine Gruppe wählen, um Dashboard UND alle verlinkten Apps genau so zu sehen, wie ein echtes Mitglied dieser Gruppe sie sehen würde — inklusive echter Zugriffsbeschränkungen (z. B. Personalakte, Bearbeiten-Rechte). Spart das ständige Aus- und Wieder-Einloggen mit einem Test-Account. Ein zweiter, deutlich sichtbarer Badge („🎭 Testansicht“) erinnert daran, dass gerade eine simulierte Rolle aktiv ist; „👑 Admin (echt)“ schaltet jederzeit zurück."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
-      {
-        title: "Nächste Termine",
-        items: [
-          "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, nicht vorab, und ohne Geburtsjahr."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Nutzerverwaltung",
-        items: [
-          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Worker den Login-Nutzernamen jetzt automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Vorher blieb das Konto nach einer Namenskorrektur unter dem alten Nutzernamen hängen, und die Anmeldung mit dem jetzt korrekten Namen schlug fehl. Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint statt einer stillen Zufallsvariante."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Admin-Dashboard",
-        items: [
-          "Die sechs Kennzahlen-Kacheln sind jetzt anklickbar und springen direkt zum jeweiligen Bereich (Nutzerverwaltung, Feedback & Wünsche in den Einstellungen, bzw. das jeweilige Tool bei Trainervertrag/Trainerkodex/Materialbedarf/Busplan).",
-          "Neues Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen oder Trainerkodex-Bestätigungen mit Name und Zeitpunkt."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
       {
@@ -372,7 +327,8 @@ const APP_CHANGELOG = [
         title: "Dashboard: Neuigkeiten & Termine",
         items: [
           "Neuigkeiten-Bereich über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. '2 / 5'), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten direkt im Einstellungen-Tab (anlegen, bearbeiten, löschen — Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Tool-Verknüpfung), zentral in Nextcloud gespeichert und sofort für alle sichtbar.",
-          "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt."
+          "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
+          "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr."
         ]
       },
       {
@@ -384,7 +340,8 @@ const APP_CHANGELOG = [
           "Passwörter werden mit PBKDF2 (Web Crypto, 100.000 Iterationen, Salt pro Nutzer) gehasht, niemals im Klartext gespeichert. Sessions sind signierte Bearer-Token (30 Tage gültig).",
           "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
           "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
-          "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt."
+          "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt.",
+          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint."
         ]
       },
       {
@@ -410,7 +367,15 @@ const APP_CHANGELOG = [
         title: "Admin-Dashboard",
         items: [
           "Eigene Dashboard-Ansicht (Zugang über einen zentrierten Button in der Kopfzeile, nur für Admins sichtbar) zeigt sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe „Trainer“), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison.",
-          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote."
+          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.",
+          "Die sechs Kennzahlen-Kacheln sind anklickbar und springen direkt zum jeweiligen Bereich (Nutzerverwaltung, Feedback & Wünsche in den Einstellungen, bzw. das jeweilige Tool bei Trainervertrag/Trainerkodex/Materialbedarf/Busplan).",
+          "Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen oder Trainerkodex-Bestätigungen mit Name und Zeitpunkt."
+        ]
+      },
+      {
+        title: "Admin-Testansicht",
+        items: [
+          "Umschalter oben rechts im Header (nur für Admins): eine Gruppe wählen, um Dashboard UND alle verlinkten Apps genau so zu sehen, wie ein echtes Mitglied dieser Gruppe sie sehen würde — inklusive echter Zugriffsbeschränkungen (z. B. Personalakte, Bearbeiten-Rechte). Spart das ständige Aus- und Wieder-Einloggen mit einem Test-Account. Ein deutlich sichtbarer Badge („🎭 Testansicht“) erinnert daran, dass gerade eine simulierte Rolle aktiv ist; „👑 Admin (echt)“ schaltet jederzeit zurück."
         ]
       },
       {

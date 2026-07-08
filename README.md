@@ -44,6 +44,10 @@ Solange `admin-worker.js` noch nicht mit den unten genannten Secrets deployed is
 
 Ein zentrierter Button "📊 Admin-Dashboard" in der Kopfzeile (nur für Admins sichtbar) führt zu einer eigenen Ansicht mit sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe "Trainer"), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison. Ist die Gruppe "Trainer" noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.
 
+## Admin-Testansicht
+
+Über einen Umschalter oben rechts im Header (nur für Admins) kann ein Admin eine Gruppe wählen und Dashboard sowie alle verlinkten Apps genau so sehen, wie ein echtes Mitglied dieser Gruppe sie sieht — inklusive echter Zugriffsbeschränkungen (Personalakte, Bearbeiten-Rechte). Das spart das Aus- und Wieder-Einloggen mit einem Test-Account. Ein deutlich sichtbarer Badge "🎭 Testansicht" erinnert an die aktive simulierte Rolle; "👑 Admin (echt)" schaltet zurück. Die Simulation wird zentral im Worker gelöst (`deriveIdentity`/`set-view-as`, `realIsAdmin` bleibt vom simulierten `isAdmin` getrennt) und wirkt dadurch in jeder Gateway-App, nicht nur in der Übersicht selbst.
+
 ## WebDAV-Login-Gateway für andere Apps
 
 Mehrere Vereins-Tools (Materialliste, TrainerCheckliste, Spielertool, Trainerkodex, Spielersichtung, Platzbelegung, Personalkosten, Vereinskalender, Busplan, Kadermanager, Digitaler Stempel, Kleiderbestellung, Fahrtenbuch, Materialbedarf) speichern ihre eigenen Daten per WebDAV in derselben Nextcloud. Statt dort ein eigenes Formular mit WebDAV-Adresse, Benutzername und App-Passwort zu verlangen, nutzen sie dieselbe Anmeldung wie diese Übersicht:
