@@ -80,6 +80,17 @@
 //     Datenquellen berechnet (nutzer.json, feedback.json, trainerdaten/trainerkodex/materialbedarf/busplan via
 //     DAV_APPS/PROVISION_ONLY_PATHS). Trainervertrag-/Trainerkodex-Quote beziehen sich auf Mitglieder der Gruppe
 //     TRAINER_GROUP_NAME ("Trainer") — existiert diese Gruppe noch nicht, liefert trainerGroup.exists:false.
+//     Archivierte Trainer zählen NICHT zum Nenner dieser beiden Quoten (siehe archiviert-Feld unten).
+//   POST { action: "personalakte-overview" } (Personalakte-Sichtrecht, siehe mayViewPersonalakte) -> { trainerGroupExists, trainers:[...] }
+//     Ein Datensatz je Mitglied der Trainer-Gruppe, zusammengeführt aus nutzer.json + trainerkodex/trainerdaten/
+//     trainercheckliste/personalkosten/kadermanager/fahrtenbuch — inkl. archivierter Trainer (Gruppen werden beim
+//     Archivieren NICHT entzogen). Trainerdaten-Anteil liefert ausschließlich Datum/Status-Felder, nie IBAN/Adresse.
+//   POST { action: "archive-trainer", username, grund? } (Personalakte-Sichtrecht) -> { ok:true, username, archiviertAm }
+//     Schreibt zuerst einen Datenschnappschuss nach personalakte.json, sperrt danach Login+Sessions des Kontos
+//     (Nutzerfelder archiviert/archiviertAm/archiviertGrund/archiviertVon in nutzer.json). Gruppenzugehörigkeit
+//     bleibt unangetastet. Letzter Admin kann nicht archiviert werden.
+//   POST { action: "reactivate-trainer", username } (Personalakte-Sichtrecht) -> { ok:true, username }
+//     Hebt die Login-Sperre wieder auf, ergänzt den Snapshot in personalakte.json um reaktiviertAm/reaktiviertVon.
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
@@ -117,6 +128,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8796", // Fahrtenbuch (Dev-Server)
   "http://localhost:8782", // Spiele (Dev-Server)
   "http://localhost:8798", // Materialbedarf (Dev-Server)
+  "http://localhost:8783", // Personalakte (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -138,7 +150,8 @@ const DAV_APPS = {
   "digitaler-stempel": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/DigitalerStempel/digitaler-stempel.json",
   "kleiderbestellung": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Kleiderbestellung/kleiderbestellung.json",
   "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json",
-  "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json"
+  "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json",
+  "personalakte":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalakte/personalakte.json"
 };
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
@@ -281,6 +294,12 @@ export default {
         return handleSaveFeedback(request, body, env, authHeader, corsHeaders);
       case "get-admin-stats":
         return handleGetAdminStats(request, env, authHeader, corsHeaders);
+      case "personalakte-overview":
+        return handlePersonalakteOverview(request, env, authHeader, corsHeaders);
+      case "archive-trainer":
+        return handleArchiveTrainer(request, body, env, authHeader, corsHeaders);
+      case "reactivate-trainer":
+        return handleReactivateTrainer(request, body, env, authHeader, corsHeaders);
       case "verify-action-password":
         return handleVerifyActionPassword(body, env, corsHeaders);
       case "dav-load":
@@ -353,6 +372,15 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
   const user = getOwn(usersDoc.users, username);
 
   if (!user) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
+  // Archivierte Konten (Personalakte) werden VOR der Passwortprüfung abgefangen:
+  // der zweistufige Login-Flow ruft login(username, "") zuerst mit leerem
+  // Passwort auf, um zu entscheiden, welcher Screen als nächstes kommt — läge
+  // dieser Check dahinter, würde dieser erste Aufruf in den generischen
+  // 401-Zweig fallen und faelschlich das Passwort-Feld zeigen statt sofort
+  // "archiviert" zu melden.
+  if (user.archiviert) {
+    return json({ error: "Dieses Konto wurde archiviert.", archived: true }, 403, corsHeaders);
+  }
   if (user.mustSetPassword || !user.passwordHash) {
     return json({ needsPasswordSetup: true }, 200, corsHeaders);
   }
@@ -956,7 +984,15 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   const usersPasswordSet = users.filter((u) => u.mustSetPassword === false).length;
 
   const trainerGroup = Object.values(usersDoc.groups || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
-  const trainerUsernames = trainerGroup ? (trainerGroup.memberUsernames || []) : [];
+  // Archivierte Trainer (Personalakte) werden hier ausgeklammert: sie reichen
+  // per Definition nie wieder Trainerdaten ein/bestätigen nie wieder den Kodex
+  // und würden die beiden Quoten sonst dauerhaft künstlich nach unten ziehen.
+  const trainerUsernames = trainerGroup
+    ? (trainerGroup.memberUsernames || []).filter((uname) => {
+        const u = getOwn(usersDoc.users, uname);
+        return !(u && u.archiviert);
+      })
+    : [];
 
   const [feedbackDoc, trainerdatenDoc, trainerkodexDoc, materialbedarfDoc, busplanDoc] = await Promise.all([
     readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] }),
@@ -1047,6 +1083,228 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   }, 200, corsHeaders);
 }
 
+// ---------- Aktionen: Personalakte ----------
+
+// Baut EINEN zusammengeführten Trainer-Datensatz aus nutzer.json + sechs parallel
+// gelesenen App-Dateien. Wird sowohl für die Übersicht (einmal je Mitglied der
+// Trainer-Gruppe) als auch für archive-trainer (einmal, frisch, für genau eine
+// Person) verwendet -- ein Join, zwei Aufrufer.
+function buildTrainerRecord(user, usersDoc, sources) {
+  const { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc } = sources;
+  const fullName = `${user.vorname || ""} ${user.nachname || ""}`.trim();
+
+  // Trainerkodex: bestaetigungen[username] -- Platzhalter (soll:true, kein datum)
+  // zaehlt als nicht bestaetigt, wie schon in handleGetAdminStats.
+  const kodex = (trainerkodexDoc.bestaetigungen || {})[user.username];
+  const trainerkodex = {
+    bestaetigt: !!(kodex && kodex.datum),
+    datum: (kodex && kodex.datum) || null,
+    kodexVersion: (kodex && kodex.kodexVersion) || null
+  };
+
+  // Trainerdaten: NUR Datum/Bool/Status -- niemals iban/adresse/telefon
+  // (PROVISION_ONLY_PATHS ist bewusst dafuer da, diese Felder abzuschotten).
+  // Match-Reihenfolge: echter username (reale Einreichung) > linkedUsername
+  // (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback.
+  const td = (trainerdatenDoc.trainer || []).find((t) =>
+    (t.username && t.username === user.username) ||
+    (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
+    (sameText(t.vorname, user.vorname) && sameText(t.nachname, user.nachname)));
+  const trainerdaten = td ? {
+    vorhanden: true,
+    unterschriftAm: td.unterschriftAm || null,
+    erstelltAm: td.erstelltAm || null,
+    vertragsGeneriert: !!td.vertragsGeneriert,
+    status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig"))
+  } : { vorhanden: false, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig" };
+
+  // TrainerCheckliste: exakt dieselbe Match-Konvention wie provisionTrainercheckliste
+  // ("name" ist in dieser App das Nachname-Feld, nicht der volle Name).
+  const eintrag = (checklisteDoc.trainerEintraege || []).find((e) =>
+    (e.linkedUsername && sameText(e.linkedUsername, user.username)) ||
+    (sameText(e.vorname, user.vorname) && sameText(e.name, user.nachname)));
+  const sectionSummary = (s) => s
+    ? { abgeschlossen: !!s.abgeschlossen, datum: s.datum || s.headerDatum || null }
+    : { abgeschlossen: false, datum: null };
+  const trainercheckliste = {
+    zugang: sectionSummary(eintrag && eintrag.zugang),
+    abgang: sectionSummary(eintrag && eintrag.abgang)
+  };
+
+  // Personalkosten: aktuelle Saison, "name" ist dort der VOLLE Name (siehe
+  // provisionPersonalkosten) -- Rohfelder, keine AE-Euro-Formel neu berechnen
+  // (drittes Duplikat dieser Formel wäre ein Drift-Risiko, siehe Trainerdaten-
+  // CLAUDE.md-Warnung zur selben Formel).
+  let personalkosten = null;
+  const pkSeasonKey = personalkostenDoc.meta && personalkostenDoc.meta.currentSeason;
+  const pkSeason = pkSeasonKey ? (personalkostenDoc.seasons || {})[pkSeasonKey] : null;
+  if (pkSeason && Array.isArray(pkSeason.trainer)) {
+    const t = pkSeason.trainer.find((x) =>
+      (x.linkedUsername && sameText(x.linkedUsername, user.username)) || sameText(x.name, fullName));
+    if (t) {
+      personalkosten = {
+        mannschaft: t.mannschaft || "", position: t.position || "",
+        stelle: t.stelle ?? null, manuellAE: t.manuellAE ?? null, besonderheit: t.besonderheit || ""
+      };
+    }
+  }
+
+  // Kadermanager: NUR linkedUsername (kein Namensfallback -- kein Praezedenzfall
+  // in dieser App). Eine Person kann in mehreren Teams stehen.
+  const kadermanager = [];
+  (kadermanagerDoc.teams || []).forEach((team) => {
+    (team.kader || []).forEach((s) => {
+      if (s.linkedUsername && sameText(s.linkedUsername, user.username)) {
+        kadermanager.push({
+          team: team.name || "", position: s.position || "", nummer: s.nummer || "",
+          rollen: Array.isArray(s.rollen) ? s.rollen : [],
+          inaktiv: Array.isArray(s.rollen) && s.rollen.includes("inaktiv")
+        });
+      }
+    });
+  });
+
+  // Fahrtenbuch: fuehrerschein[] (NICHT fahrten[]), exakter username-Match,
+  // Gueltigkeit wie fsFaelligAm/fsIstGueltig (fahrtenbuch/app.js) nachgerechnet.
+  // Nur Metadaten -- nie die restricted Foto-Datei selbst anfassen.
+  const fs = (fahrtenbuchDoc.fuehrerschein || []).find((e) => e.username === user.username);
+  let fahrtenbuch = null;
+  if (fs && fs.hochgeladenAm) {
+    const faellig = new Date(fs.hochgeladenAm);
+    faellig.setMonth(faellig.getMonth() + 6);
+    fahrtenbuch = { hochgeladenAm: fs.hochgeladenAm, gueltigBis: faellig.toISOString(), gueltig: faellig.getTime() > Date.now() };
+  }
+
+  return {
+    username: user.username, vorname: user.vorname || "", nachname: user.nachname || "",
+    lizenz: user.lizenz || "", mannschaften: Array.isArray(user.mannschaften) ? user.mannschaften : [],
+    groupIds: getUserGroupIds(usersDoc, user.username),
+    mustSetPassword: !!user.mustSetPassword, lastLoginAt: user.lastLoginAt || null,
+    archiviert: !!user.archiviert, archiviertAm: user.archiviertAm || null,
+    archiviertGrund: user.archiviertGrund || null, archiviertVon: user.archiviertVon || null,
+    trainerkodex, trainerdaten, trainercheckliste, personalkosten, kadermanager, fahrtenbuch
+  };
+}
+
+async function loadPersonalakteSources(env, authHeader) {
+  const [trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc] = await Promise.all([
+    readJson(DAV_APPS.trainerkodex, authHeader, { bestaetigungen: {} }),
+    readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
+    readJson(DAV_APPS.trainercheckliste, authHeader, { trainerEintraege: [] }),
+    readJson(DAV_APPS.personalkosten, authHeader, { meta: {}, seasons: {} }),
+    readJson(DAV_APPS.kadermanager, authHeader, { meta: {}, teams: [] }),
+    readJson(DAV_APPS.fahrtenbuch, authHeader, { meta: {}, fahrten: [], fuehrerschein: [] })
+  ]);
+  return { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc, fahrtenbuchDoc };
+}
+
+async function handlePersonalakteOverview(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const trainerGroup = Object.values(usersDoc.groups || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
+  if (!trainerGroup) return json({ trainerGroupExists: false, trainers: [] }, 200, corsHeaders);
+
+  const sources = await loadPersonalakteSources(env, authHeader);
+  const trainers = (trainerGroup.memberUsernames || [])
+    .map((uname) => getOwn(usersDoc.users, uname))
+    .filter(Boolean)
+    .map((user) => buildTrainerRecord(user, usersDoc, sources));
+
+  return json({ trainerGroupExists: true, trainers }, 200, corsHeaders);
+}
+
+async function handleArchiveTrainer(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+  if (user.archiviert) return json({ error: "Nutzer ist bereits archiviert" }, 409, corsHeaders);
+  if (user.isAdmin) {
+    const adminCount = Object.values(usersDoc.users).filter((u) => u.isAdmin).length;
+    if (adminCount <= 1) return json({ error: "Letzter Admin kann nicht archiviert werden" }, 400, corsHeaders);
+  }
+
+  const sources = await loadPersonalakteSources(env, authHeader);
+  const record = buildTrainerRecord(user, usersDoc, sources);
+  const now = new Date().toISOString();
+  const grund = String(body.grund || "").trim().slice(0, 500) || null;
+
+  // Reihenfolge bewusst: Snapshot ZUERST schreiben. Schlaegt Schritt 2 fehl, ist
+  // der Trainer noch nicht gesperrt (sicherer Fehlschlag), nicht gesperrt-ohne-
+  // Datensatz.
+  const { data: paDocRaw, rev } = await readJsonWithRev(DAV_APPS.personalakte, authHeader, { version: 1, archiv: [] });
+  const paDoc = (paDocRaw && typeof paDocRaw === "object") ? paDocRaw : { version: 1, archiv: [] };
+  if (!Array.isArray(paDoc.archiv)) paDoc.archiv = [];
+  const idx = paDoc.archiv.findIndex((e) => e.username === username);
+  const snapshotEntry = { username, archiviertAm: now, archiviertGrund: grund, archiviertVon: session.username, snapshot: record };
+  if (idx === -1) paDoc.archiv.push(snapshotEntry); else paDoc.archiv[idx] = snapshotEntry;
+
+  try {
+    await writeJson(DAV_APPS.personalakte, authHeader, paDoc, rev || undefined);
+  } catch (e) {
+    return json({ error: "Snapshot konnte nicht gespeichert werden: " + e.message }, 502, corsHeaders);
+  }
+
+  user.archiviert = true;
+  user.archiviertAm = now;
+  user.archiviertGrund = grund;
+  user.archiviertVon = session.username;
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    // Snapshot ist bereits gespeichert (idempotent per username) -- ein Retry
+    // von archive-trainer ist sicher, er ueberschreibt nur denselben Snapshot.
+    return json({ error: "Snapshot gespeichert, aber Login-Sperre fehlgeschlagen: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, username, archiviertAm: now }, 200, corsHeaders);
+}
+
+async function handleReactivateTrainer(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const username = normalizeUsername(body.username);
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+  if (!user.archiviert) return json({ error: "Nutzer ist nicht archiviert" }, 409, corsHeaders);
+
+  // Reihenfolge umgekehrt zu archive-trainer: hier zaehlt zuerst die
+  // Login-Freigabe, die Snapshot-Annotation ist reine Historie/best effort.
+  user.archiviert = false;
+  user.archiviertAm = null;
+  user.archiviertGrund = null;
+  user.archiviertVon = null;
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  try {
+    const { data: paDoc, rev } = await readJsonWithRev(DAV_APPS.personalakte, authHeader, { version: 1, archiv: [] });
+    const entry = (paDoc && Array.isArray(paDoc.archiv)) ? paDoc.archiv.find((e) => e.username === username) : null;
+    if (entry) {
+      entry.reaktiviertAm = new Date().toISOString();
+      entry.reaktiviertVon = session.username;
+      await writeJson(DAV_APPS.personalakte, authHeader, paDoc, rev || undefined);
+    }
+  } catch (_e) {
+    // best effort -- Login funktioniert bereits wieder, Historie ist nur Komfort
+  }
+
+  return json({ ok: true, username }, 200, corsHeaders);
+}
+
 // ---------- Aktionen: Aktions-Passwörter der Tool-Apps ----------
 
 // Serverseitige Prüfung der früher im Client hartkodierten Aktions-Passwörter
@@ -1122,6 +1380,23 @@ async function resolveEditPermission(app, session, env, authHeader) {
   if (editGroupIds.length === 0) return false;
   const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
   return editGroupIds.some((g) => userGroupIds.includes(g));
+}
+
+// Sichtrecht fuer die GESAMTE Personalakte-App (Uebersicht + Archiv +
+// Archivieren/Reaktivieren) -- bewusst wie resolveEditPermission (leeres
+// groupIds = NIEMAND), nicht wie userMayAccessTool (leeres groupIds = jeder
+// Eingeloggte). Liest dasselbe Feld, das auch die Kachel-Sichtbarkeit steuert
+// (config.tools.personalakte.groupIds in sichtbarkeit.json) -- kein neuer
+// Config-Schluessel noetig, der Admin nutzt das bestehende Sichtbarkeits-Panel.
+async function mayViewPersonalakte(session, env, authHeader) {
+  if (session.isAdmin) return true;
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, "personalakte");
+  if (!entry) return false;
+  const groupIds = Array.isArray(entry.groupIds) ? entry.groupIds : [];
+  if (groupIds.length === 0) return false;
+  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
+  return groupIds.some((g) => userGroupIds.includes(g));
 }
 
 async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
@@ -1913,6 +2188,10 @@ async function getVerifiedSession(request, env, authHeader) {
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = getOwn(usersDoc.users, String(payload.username || ""));
   if (!user || user.mustSetPassword || !user.passwordHash) return null;
+  // Archivierte Konten (Personalakte) verlieren jede Session sofort, nicht nur
+  // künftige Logins — usersDoc wird oben ohnehin bei jedem Request frisch
+  // gelesen, also reicht ein einzelner Check hier.
+  if (user.archiviert) return null;
   if (user.passwordSetAt) {
     const setAt = Math.floor(Date.parse(user.passwordSetAt) / 1000);
     if (Number.isFinite(setAt) && (Number(payload.iat) || 0) < setAt) return null;

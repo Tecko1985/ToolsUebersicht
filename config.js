@@ -209,6 +209,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "personalakte",
+    name: "Personalakte",
+    description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten und Lizenzen auf einen Blick, inkl. Archivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
+    url: "https://tecko1985.github.io/personalakte/",
+    icon: "🗂️",
+    category: "Verein",
+    version: "1.0",
+    devices: ["desktop"]
   }
 ];
 
@@ -220,6 +230,13 @@ const TOOLS = [
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
+  {
+    date: "2026-07-08",
+    type: "neu",
+    title: "Personalakte ist online",
+    text: "Neue Übersicht für die Geschäftsstelle: Stammdaten, Trainerkodex-/Trainerdaten-Status, Checkliste, Personalkosten, Kader und Führerschein je Trainer auf einen Blick, inkl. Archivieren/Reaktivieren bei Vereinsaustritt.",
+    toolId: "personalakte",
+  },
   {
     date: "2026-07-07",
     type: "neu",
