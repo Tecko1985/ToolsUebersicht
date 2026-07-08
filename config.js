@@ -1,4 +1,4 @@
-const APP_VERSION = "1.16";
+const APP_VERSION = "1.17";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -292,6 +292,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.17",
+    groups: [
+      {
+        title: "Versionsbadge",
+        items: [
+          "Der Versionshinweis oben neben dem Titel ist jetzt anklickbar und führt direkt zur aufgeklappten Versionshistorie in den Einstellungen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.16",
     groups: [

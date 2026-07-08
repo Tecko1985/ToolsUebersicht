@@ -155,6 +155,8 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   vertical-align: middle;
   margin-left: 4px;
 }
+.version-badge-link { cursor: pointer; }
+.version-badge-link:hover, .version-badge-link:focus-visible { background: rgba(255, 255, 255, 0.32); }
 
 #changelog-list { display: flex; flex-direction: column; gap: 8px; }
 .changelog-entry { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }

@@ -1447,6 +1447,18 @@ function setupTabs() {
   document.querySelectorAll("nav button[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
+
+  const versionBadgeHeader = document.getElementById("version-badge");
+  const openVersionHistory = () => {
+    activateTab("admin");
+    const panel = document.getElementById("changelog-panel");
+    if (panel) { panel.open = true; panel.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  };
+  versionBadgeHeader.addEventListener("click", openVersionHistory);
+  versionBadgeHeader.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVersionHistory(); }
+  });
+
   document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
   document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("admin"));
   document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
