@@ -46,7 +46,16 @@
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
 //   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true } | 401
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
-//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds } (+ canEdit, wenn app übergeben und bekannt)
+//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } (+ canEdit, wenn app übergeben und bekannt)
+//     isAdmin/groupIds sind die EFFEKTIVE Identität (siehe set-view-as); realIsAdmin ist immer der echte
+//     Admin-Status aus nutzer.json, unabhängig von einer aktiven Testansicht — die Testansicht-Umschaltung
+//     selbst muss also realIsAdmin prüfen, nicht isAdmin, sonst kann ein Admin sich nicht zurückschalten.
+//   POST { action: "set-view-as", groupId } (nur wenn realIsAdmin) -> { ok:true, isAdmin, groupIds, realIsAdmin, viewAsGroupId }
+//     Admin-Testansicht: ein echter Admin kann sich testweise als Mitglied einer Gruppe ausgeben (groupId:null
+//     zum Zurückschalten). Wirkt zentral über getVerifiedSession() auf JEDE Aktion jeder Gateway-App (dav-load/
+//     -save, canEdit, Personalakte-Sicht, ...), nicht nur auf die Landingpage selbst — kein Redeploy der
+//     einzelnen Apps nötig, die lesen ohnehin nur isAdmin/groupIds aus der me()-Antwort. Persistiert je Nutzer
+//     als viewAsGroupId in nutzer.json (überlebt also auch einen Reload/Gerätewechsel, bis explizit zurückgesetzt).
 //   POST { action: "create-user", vorname, nachname, isAdmin, groupIds } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
@@ -269,6 +278,8 @@ export default {
         return handleSetPassword(body, env, authHeader, corsHeaders);
       case "me":
         return handleMe(request, body, env, authHeader, corsHeaders);
+      case "set-view-as":
+        return handleSetViewAs(request, body, env, authHeader, corsHeaders);
       case "create-user":
         return handleCreateUser(request, body, env, authHeader, corsHeaders);
       case "list-users":
@@ -375,7 +386,7 @@ async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
   }
 
   const token = await signToken(makeSessionPayload(username, true), env.SESSION_SECRET);
-  return json({ token, username, isAdmin: true, groupIds: [] }, 200, corsHeaders);
+  return json({ token, username, isAdmin: true, groupIds: [], realIsAdmin: true, viewAsGroupId: null }, 200, corsHeaders);
 }
 
 async function handleLogin(body, env, authHeader, corsHeaders) {
@@ -416,7 +427,8 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
   } catch (e) { /* siehe Kommentar oben */ }
 
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
-  return json({ token, username: user.username, isAdmin: !!user.isAdmin, groupIds: getUserGroupIds(usersDoc, user.username) }, 200, corsHeaders);
+  const identity = deriveIdentity(user, usersDoc);
+  return json({ token, username: user.username, ...identity }, 200, corsHeaders);
 }
 
 async function handleSetPassword(body, env, authHeader, corsHeaders) {
@@ -445,19 +457,21 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   }
 
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
-  return json({ token, username: user.username, isAdmin: !!user.isAdmin, groupIds: getUserGroupIds(usersDoc, user.username) }, 200, corsHeaders);
+  const identity = deriveIdentity(user, usersDoc);
+  return json({ token, username: user.username, ...identity }, 200, corsHeaders);
 }
 
 async function handleMe(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const usersDoc = session.usersDoc;
-  const groupIds = session.isAdmin ? [] : getUserGroupIds(usersDoc, session.username);
   const user = getOwn(usersDoc.users, session.username);
   const result = {
     username: session.username,
     isAdmin: !!session.isAdmin,
-    groupIds,
+    groupIds: session.groupIds,
+    realIsAdmin: !!session.realIsAdmin,
+    viewAsGroupId: session.viewAsGroupId || null,
     vorname: (user && user.vorname) || null,
     nachname: (user && user.nachname) || null,
     lizenz: (user && user.lizenz) || "",
@@ -467,6 +481,33 @@ async function handleMe(request, body, env, authHeader, corsHeaders) {
     result.canEdit = await resolveEditPermission(String(body.app), session, env, authHeader);
   }
   return json(result, 200, corsHeaders);
+}
+
+// Admin-Testansicht umschalten/zurücksetzen — siehe API-Dokumentation oben.
+// Gate bewusst auf session.realIsAdmin (NICHT session.isAdmin), sonst kann
+// sich ein Admin waehrend einer aktiven Testansicht nicht mehr zurueckschalten.
+async function handleSetViewAs(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.realIsAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, session.username);
+  const groupId = (body && body.groupId) ? String(body.groupId) : null;
+  if (groupId && !getOwn(usersDoc.groups || {}, groupId)) {
+    return json({ error: "Unbekannte Gruppe" }, 400, corsHeaders);
+  }
+
+  if (groupId) user.viewAsGroupId = groupId;
+  else delete user.viewAsGroupId;
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  const identity = deriveIdentity(user, usersDoc);
+  return json({ ok: true, ...identity }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Nutzerverwaltung ----------
@@ -1416,8 +1457,7 @@ async function userMayAccessTool(app, session, env, authHeader) {
   if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
   const gids = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   if (gids.length === 0) return true;                  // "alle eingeloggten Nutzer"
-  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
-  return gids.some((g) => userGroupIds.includes(g));
+  return gids.some((g) => session.groupIds.includes(g));
 }
 
 // Bearbeiten-Recht für ein Tool: unabhängig von der Sichtbarkeits-Gruppierung
@@ -1432,8 +1472,7 @@ async function resolveEditPermission(app, session, env, authHeader) {
   if (!entry) return false;
   const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
   if (editGroupIds.length === 0) return false;
-  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
-  return editGroupIds.some((g) => userGroupIds.includes(g));
+  return editGroupIds.some((g) => session.groupIds.includes(g));
 }
 
 // Sichtrecht fuer die GESAMTE Personalakte-App (Uebersicht + Archiv +
@@ -1449,8 +1488,7 @@ async function mayViewPersonalakte(session, env, authHeader) {
   if (!entry) return false;
   const groupIds = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   if (groupIds.length === 0) return false;
-  const userGroupIds = getUserGroupIds(session.usersDoc, session.username);
-  return groupIds.some((g) => userGroupIds.includes(g));
+  return groupIds.some((g) => session.groupIds.includes(g));
 }
 
 async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
@@ -1623,7 +1661,7 @@ function restrictedFileDir(app) {
 function mayViewRestricted(session, viewGroupId, owner) {
   if (session.isAdmin) return true;
   if (session.username === owner) return true;
-  return getUserGroupIds(session.usersDoc, session.username).includes(viewGroupId);
+  return session.groupIds.includes(viewGroupId);
 }
 
 // Eigene abgeschottete Datei hochladen. Der Dateiname ist IMMER der eigene, aus dem
@@ -1847,6 +1885,22 @@ function getUserGroupIds(usersDoc, username) {
   return Object.values(groups)
     .filter((g) => Array.isArray(g.memberUsernames) && g.memberUsernames.includes(username))
     .map((g) => g.id);
+}
+
+// Leitet aus einem rohen Nutzerdatensatz die EFFEKTIVE Identität ab (siehe
+// set-view-as oben): ein Admin mit gültigem viewAsGroupId gilt für jede
+// Zugriffsprüfung als normales, nicht-admin Mitglied genau dieser einen
+// Gruppe. "Gültig" heißt: die Gruppe existiert noch (sonst z.B. nach einem
+// delete-group ein toter Verweis, der den Admin dauerhaft aussperren würde).
+// realIsAdmin bleibt immer der echte Wert aus nutzer.json.
+function deriveIdentity(user, usersDoc) {
+  const realIsAdmin = !!user.isAdmin;
+  const viewAsGroupId = (realIsAdmin && user.viewAsGroupId && getOwn(usersDoc.groups || {}, user.viewAsGroupId))
+    ? user.viewAsGroupId
+    : null;
+  const isAdmin = realIsAdmin && !viewAsGroupId;
+  const groupIds = viewAsGroupId ? [viewAsGroupId] : (isAdmin ? [] : getUserGroupIds(usersDoc, user.username));
+  return { isAdmin, realIsAdmin, viewAsGroupId, groupIds };
 }
 
 // ---------- Auto-Provisioning: gruppengesteuertes Anlegen von Tool-Einträgen ----------
@@ -2261,7 +2315,8 @@ async function getVerifiedSession(request, env, authHeader) {
     const setAt = Math.floor(Date.parse(user.passwordSetAt) / 1000);
     if (Number.isFinite(setAt) && (Number(payload.iat) || 0) < setAt) return null;
   }
-  return { username: user.username, isAdmin: !!user.isAdmin, usersDoc };
+  const identity = deriveIdentity(user, usersDoc);
+  return { username: user.username, usersDoc, ...identity };
 }
 
 // ---------- sonstige Helfer ----------

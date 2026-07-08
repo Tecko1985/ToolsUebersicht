@@ -49,6 +49,18 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   border-radius: 999px;
   padding: 6px 14px;
 }
+.view-as-select {
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.view-as-select option { color: #111; }
+.badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
 .header-admin-btn {
   position: absolute;
   left: 50%;

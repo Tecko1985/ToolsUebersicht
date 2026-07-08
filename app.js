@@ -7,7 +7,21 @@ let visibilityState = {};
 let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
 let bootstrapAvailable = false;
 let currentToken = null;
-let currentUser = null; // { username, isAdmin, groupIds } oder null
+let currentUser = null; // { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } oder null
+let directoryGroupsState = []; // { id, name }[], für den Testansicht-Umschalter im Header (auch während aktiver Testansicht ladbar)
+
+// isAdmin/groupIds sind die effektive Identität (siehe set-view-as im Worker);
+// realIsAdmin bleibt der echte Admin-Status, damit der Testansicht-Umschalter
+// selbst auch waehrend einer aktiven Testansicht sichtbar/bedienbar bleibt.
+function buildCurrentUser(data) {
+  return {
+    username: data.username,
+    isAdmin: !!data.isAdmin,
+    groupIds: data.groupIds || [],
+    realIsAdmin: !!data.realIsAdmin,
+    viewAsGroupId: data.viewAsGroupId || null
+  };
+}
 let pendingFirstLoginUsername = null;
 let pendingLoginUsername = null;
 let groupsState = [];
@@ -70,7 +84,7 @@ async function checkSession() {
   currentToken = token;
   try {
     const data = await callWorker("me", {});
-    currentUser = { username: data.username, isAdmin: !!data.isAdmin, groupIds: data.groupIds || [] };
+    currentUser = buildCurrentUser(data);
   } catch (e) {
     currentToken = null;
     currentUser = null;
@@ -85,7 +99,7 @@ async function login(username, password) {
     return { needsPasswordSetup: true };
   }
   currentToken = data.token;
-  currentUser = { username: data.username, isAdmin: !!data.isAdmin, groupIds: data.groupIds || [] };
+  currentUser = buildCurrentUser(data);
   storeToken(currentToken);
   return { success: true };
 }
@@ -93,7 +107,7 @@ async function login(username, password) {
 async function setFirstPassword(username, password) {
   const data = await callWorker("set-password", { username, password });
   currentToken = data.token;
-  currentUser = { username: data.username, isAdmin: !!data.isAdmin, groupIds: data.groupIds || [] };
+  currentUser = buildCurrentUser(data);
   storeToken(currentToken);
   pendingFirstLoginUsername = null;
 }
@@ -101,7 +115,7 @@ async function setFirstPassword(username, password) {
 async function bootstrapAdmin(username, password) {
   const data = await callWorker("bootstrap-admin", { username, password });
   currentToken = data.token;
-  currentUser = { username: data.username, isAdmin: !!data.isAdmin, groupIds: data.groupIds || [] };
+  currentUser = buildCurrentUser(data);
   storeToken(currentToken);
   bootstrapAvailable = false;
 }
@@ -1575,10 +1589,58 @@ function renderHeaderUser() {
   if (!currentUser) {
     el.style.display = "none";
     el.innerHTML = "";
+    renderViewAsControl();
     return;
   }
-  el.innerHTML = `👤 ${escapeHtml(currentUser.username)}${currentUser.isAdmin ? '<span class="version-badge">Admin</span>' : ""}`;
+  const adminBadge = currentUser.isAdmin ? '<span class="version-badge">Admin</span>' : "";
+  const viewAsBadge = currentUser.viewAsGroupId ? '<span class="version-badge badge-view-as">🎭 Testansicht</span>' : "";
+  el.innerHTML = `👤 ${escapeHtml(currentUser.username)}${adminBadge}${viewAsBadge}`;
   el.style.display = "flex";
+  renderViewAsControl();
+}
+
+// Testansicht-Umschalter im Header: nur für echte Admins sichtbar (auch
+// während eine Testansicht bereits aktiv ist, siehe realIsAdmin), lädt die
+// Gruppenliste per list-directory nach (kein Admin-Gate im Worker, bleibt
+// also auch während der Testansicht selbst abrufbar).
+async function loadDirectoryGroupsIfNeeded() {
+  if (!currentUser || !currentUser.realIsAdmin) return;
+  try {
+    const data = await callWorker("list-directory", {});
+    directoryGroupsState = (data && data.groups) || [];
+  } catch (e) {
+    directoryGroupsState = [];
+  }
+  renderViewAsControl();
+}
+
+function renderViewAsControl() {
+  const select = document.getElementById("view-as-select");
+  if (!select) return;
+  if (!currentUser || !currentUser.realIsAdmin) {
+    select.style.display = "none";
+    return;
+  }
+  select.innerHTML = '<option value="">👑 Admin (echt)</option>' +
+    directoryGroupsState.map((g) => `<option value="${escapeHtml(g.id)}">🎭 Ansicht: ${escapeHtml(g.name)}</option>`).join("");
+  select.value = currentUser.viewAsGroupId || "";
+  select.style.display = "inline-block";
+}
+
+function setupViewAsControl() {
+  const select = document.getElementById("view-as-select");
+  if (!select) return;
+  select.addEventListener("change", async () => {
+    const groupId = select.value || null;
+    try {
+      const data = await callWorker("set-view-as", { groupId });
+      currentUser = buildCurrentUser({ ...currentUser, ...data });
+      await afterAuthChange();
+    } catch (e) {
+      alert("Testansicht konnte nicht umgeschaltet werden: " + e.message);
+      renderViewAsControl();
+    }
+  });
 }
 
 function renderAdminPanels() {
@@ -1637,6 +1699,7 @@ async function afterAuthChange() {
     renderNewsAdmin();
     await loadAndRenderFeedback();
   }
+  await loadDirectoryGroupsIfNeeded();
 }
 
 // Passwort-Regeln (identisch im admin-worker.js dupliziert, da separates Deployment):
@@ -1907,6 +1970,7 @@ async function init() {
   setupTabs();
   setupAuthForms();
   setupWhatsappLink();
+  setupViewAsControl();
 
   // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft
   // ein vorhandenes Token) sind voneinander unabhängige Worker-Aufrufe — parallel
@@ -1932,6 +1996,7 @@ async function init() {
     renderNewsAdmin();
     await loadAndRenderFeedback();
   }
+  await loadDirectoryGroupsIfNeeded();
 
   // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den
   // Admin-Tab springen, wo das "Admin-Konto einrichten"-Formular wartet.
