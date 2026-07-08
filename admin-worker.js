@@ -58,7 +58,7 @@
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
 //   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften}] }
 //     für alle Nutzer mit gesetztem Vor-/Nachnamen — zentrales Trainerprofil (Lizenz + betreute Mannschaft(en)),
-//     damit Gateway-Apps (Personalkosten, TrainerVertrag, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
+//     damit Gateway-Apps (Personalkosten, Trainerdaten, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
 //     me()-Profil, sondern auch das anderer Nutzer nachschlagen können (Namensabgleich bzw. linkedUsername-Join).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
@@ -97,7 +97,7 @@
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
   "http://localhost:8768", // TrainerCheckliste (Dev-Server)
-  "http://localhost:8769", // TrainerVertrag (Dev-Server)
+  "http://localhost:8769", // Trainerdaten (Dev-Server)
   "http://localhost:8770", // ToolsUebersicht (Dev-Server)
   "http://localhost:8771", // Spielertool (Dev-Server)
   "http://localhost:8772", // Vereinsbudget (Dev-Server)
@@ -137,11 +137,11 @@ const DAV_APPS = {
 };
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
-// bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: TrainerVertrag
+// bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: Trainerdaten
 // enthält IBAN-Daten und läuft sonst über den eigenen submit-worker — die Datei hier
 // nur intern (server-seitig) beschreiben, nie für eingeloggte Nutzer lesbar machen.
 const PROVISION_ONLY_PATHS = {
-  "trainervertrag": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerVertrag/trainervertrag.json"
+  "trainerdaten": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Trainerdaten/trainerdaten.json"
 };
 
 // Feedback & Wünsche aus dem Feedback-Tab (seit 1.10) — eigene Datei, damit ein
@@ -170,7 +170,7 @@ const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 Tage
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 
 // Zentrales Trainerprofil (seit 1.10): Lizenzstufe + betreute Mannschaft(en) je
-// Nutzer, einmalig hier gepflegt statt in Personalkosten/TrainerVertrag/etc.
+// Nutzer, einmalig hier gepflegt statt in Personalkosten/Trainerdaten/etc.
 // dupliziert. Werte übernommen aus Personalkosten config.js DEFAULT_PARAMETER.lizenzen.
 const LIZENZ_OPTIONEN = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
 
@@ -1374,7 +1374,7 @@ const PROVISION_ADAPTERS = {
   "personalkosten": provisionPersonalkosten,
   "trainercheckliste": provisionTrainercheckliste,
   "kadermanager": provisionKadermanager,
-  "trainervertrag": provisionTrainervertrag,
+  "trainerdaten": provisionTrainerdaten,
   "trainerkodex": provisionTrainerkodex
 };
 
@@ -1388,7 +1388,7 @@ function provisionDefault(app) {
     case "personalkosten":    return { meta: {}, seasons: {}, parameter: {} };
     case "trainercheckliste": return { trainerEintraege: [] };
     case "kadermanager":      return { meta: {}, teams: [] };
-    case "trainervertrag":    return { trainer: [] };
+    case "trainerdaten":      return { trainer: [] };
     case "trainerkodex":      return { bestaetigungen: {} };
     default:                  return {};
   }
@@ -1479,7 +1479,7 @@ function provisionKadermanager(data, p) {
   return "created";
 }
 
-function provisionTrainervertrag(data, p) {
+function provisionTrainerdaten(data, p) {
   if (!Array.isArray(data.trainer)) data.trainer = [];
   // Stub wie _createStubTrainer der App (ohne username -> Admin-Liste zeigt
   // "Unvollständig"; ein späteres Self-Submit merged per exaktem Namensabgleich).

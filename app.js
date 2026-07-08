@@ -526,7 +526,7 @@ function getCheckedValues(container, kind) {
 
 // Apps, die einen serverseitigen Provisioning-Adapter haben (siehe admin-worker.js
 // PROVISION_ADAPTERS) — nur für diese wird die "Auto-Eintrag"-Checkbox angeboten.
-const PROVISIONABLE_APPS = ["personalkosten", "trainercheckliste", "kadermanager", "trainervertrag", "trainerkodex"];
+const PROVISIONABLE_APPS = ["personalkosten", "trainercheckliste", "kadermanager", "trainerdaten", "trainerkodex"];
 
 // Fasst den Provisioning-Report ({ [app]: { [username]: ergebnis } }) knapp zusammen.
 function summarizeProvisionReport(report) {

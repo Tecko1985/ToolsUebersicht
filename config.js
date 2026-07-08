@@ -11,10 +11,10 @@ const WHATSAPP_CONTACT = "491778587294";
 // Hand mit der jeweiligen Version des verlinkten Tools synchron gehalten werden.
 const TOOLS = [
   {
-    id: "trainervertrag",
-    name: "TrainerVertrag",
+    id: "trainerdaten",
+    name: "Trainerdaten",
     description: "Trainer-Stammdaten erfassen und Trainerverträge automatisch als Word-Dokument erzeugen.",
-    url: "https://tecko1985.github.io/TrainerVertrag/",
+    url: "https://tecko1985.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
     version: "1.6",
