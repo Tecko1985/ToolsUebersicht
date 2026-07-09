@@ -142,6 +142,15 @@
 //      bei Erst-Upload VOM SERVER vergeben (kein owner aus dem Body vertraut) und in der Antwort
 //      zurückgegeben; Re-Upload schickt ihn zurück. Einsehbar später nur über dav-restricted-get/
 //      -delete mit Login, siehe oben.)
+//   POST { action: "fahrtenbuch-belege-list", app:"fahrtenbuch", fahrtId } + Bearer -> { belege:[{submittedAt,amount,desc,name}] }
+//     (Login + userMayAccessTool("fahrtenbuch") wie dav-load; KEIN Ownership-Check der konkreten
+//      Fahrt, da fahrtId eine nicht erratbare UUID ist und nach dem Sichtbarkeits-Fix oben ein
+//      Normalnutzer eine fremde fahrtId über die App ohnehin nicht mehr zu Gesicht bekommt. Listet
+//      per WebDAV PROPFIND den Belegeingang-Ordner von sc-heiligenstadt-budget (anderes Nextcloud-
+//      Verzeichnis, gleiches Konto) und liest nur die *.meta.json, deren Dateiname auf
+//      "_fahrt-<fahrtId>.meta.json" endet — sc-heiligenstadt-budget/worker.js schreibt diesen
+//      Suffix nur bei gültiger UUID. fahrtId wird hier zusätzlich serverseitig gegen FAHRT_ID_RE
+//      geprüft, bevor sie in den Dateinamen-Vergleich einfließt.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -191,6 +200,14 @@ const DAV_APPS = {
   "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json"
 };
 
+// Belegeingang-Ordner von sc-heiligenstadt-budget (eigenes Repo/eigener Worker,
+// aber dasselbe Nextcloud-Konto -- volle Admin-WebDAV-Credentials reichen, kein
+// Service Binding nötig). Anderer Zweig als alles in DAV_APPS (Geschäftsstelle
+// statt Nachwuchsbereich), deshalb eigene Konstante statt Ableitung aus DAV_APPS.
+// Nur für handleFahrtenbuchBelegeList (read-only) verwendet.
+const BELEGE_EINGANG_DIR =
+  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/02_Geschäftsstelle/Belege_aus_Belegtool";
+
 // Apps, bei denen Schreiben (dav-save/dav-file-put/dav-file-delete) zusätzlich zur
 // reinen Tool-Sichtbarkeit ein explizites Bearbeiten-Recht voraussetzt (editGroupIds,
 // serverseitig über resolveEditPermission geprüft) — nicht nur ein UI-Hinweis wie
@@ -231,6 +248,19 @@ const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/
 // bewusst nicht generisch über dieses Gateway erreichbar, siehe PROVISION_ONLY_PATHS).
 const RESTRICTED_FILE_APPS = {
   fahrtenbuch: { subdir: "fuehrerscheine-extern", viewGroupId: "fuehrerschein-einsicht" }
+};
+
+// Apps, bei denen dav-load/dav-save NICHT das ganze Dokument an jeden Tool-Nutzer
+// durchreichen, sondern für Nutzer ohne Bearbeiten-Recht (resolveEditPermission)
+// auf listField ein Eigentümer-Filter greift (ownerField === eigener Username).
+// Grund: die bisherige rein clientseitige Filterung (z.B. Fahrtenbuchs
+// visibleFahrten()) verhindert nur die Anzeige, nicht aber, dass das komplette
+// Array (fremde Fahrten inkl. Mängel-Fotos/Adressen) über dav-load im Klartext
+// beim Client ankommt (DevTools-Network-Tab oder Konsolen-fetch reichen). Editoren/
+// Admin (resolveEditPermission) bekommen weiterhin das volle Dokument, unveraendert.
+// Siehe handleDavLoad/handleOwnerFilteredSave für die Umsetzung.
+const OWNER_FILTERED_APPS = {
+  fahrtenbuch: { listField: "fahrten", ownerField: "erstelltVon" }
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -380,6 +410,8 @@ export default {
         return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-fuehrerschein-put":
         return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
+      case "fahrtenbuch-belege-list":
+        return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -1546,7 +1578,17 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
 
-  const { data, rev } = await readJsonWithRev(url, authHeader, null);
+  let { data, rev } = await readJsonWithRev(url, authHeader, null);
+  const ownerCfg = getOwn(OWNER_FILTERED_APPS, app);
+  if (ownerCfg && data && Array.isArray(data[ownerCfg.listField]) &&
+      !(await resolveEditPermission(app, session, env, authHeader))) {
+    // Neues Objekt bauen statt data[listField] in-place zu setzen: readJsonWithRev
+    // liefert bei Cache-Hit (jsonCache, 5s TTL) eine Referenz auf das gecachte
+    // Objekt zurück — eine In-Place-Mutation würde den Cache für alle anderen
+    // Requests im selben Fenster (auch Editoren!) auf diese gefilterte Sicht verengen.
+    data = { ...data, [ownerCfg.listField]: data[ownerCfg.listField].filter(
+      (item) => item && item[ownerCfg.ownerField] === session.username) };
+  }
   return json({ data, rev }, 200, corsHeaders);
 }
 
@@ -1569,6 +1611,15 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
   }
 
+  const ownerCfg = getOwn(OWNER_FILTERED_APPS, app);
+  if (ownerCfg && !(await resolveEditPermission(app, session, env, authHeader))) {
+    // Nutzer ohne Bearbeiten-Recht hat beim Load nur die eigenen Einträge bekommen
+    // (siehe handleDavLoad) — body.data[listField] enthaelt deshalb bestenfalls nur
+    // die eigenen. NICHT wie unten das ganze Dokument wholesale schreiben (würde
+    // alle fremden Einträge löschen, die dieser Client nie im Speicher hatte).
+    return handleOwnerFilteredSave(url, ownerCfg, session, authHeader, body.data[ownerCfg.listField], corsHeaders);
+  }
+
   // Optionaler Konfliktschutz: schickt der Client das rev (ETag) seines letzten
   // dav-load mit, wird nur geschrieben, wenn die Datei serverseitig unverändert
   // ist. Alte Clients ohne rev schreiben unconditional wie bisher. normalizeETag()
@@ -1587,6 +1638,40 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
   return json({ ok: true, rev: newRev }, 200, corsHeaders);
+}
+
+// Speicherpfad für OWNER_FILTERED_APPS-Nutzer ohne Bearbeiten-Recht: statt das vom
+// Client geschickte Dokument wholesale zu übernehmen (der Client kennt ja nur die
+// eigenen Einträge), wird serverseitig frisch gelesen, NUR listField gemergt (fremde
+// Einträge unangetastet aus dem frischen Stand übernommen, eigene komplett durch die
+// Client-Version ersetzt — deckt Anlegen/Ändern/Löschen der eigenen Einträge ab) und
+// bei einem Schreibkonflikt (zwei Nutzer speichern gleichzeitig) automatisch mit dem
+// neuen Stand erneut gemergt. Kein rev/If-Match vom Client nötig: da nie etwas
+// wholesale übernommen wird, sondern jedes Mal frisch gegen den aktuellen Stand
+// gemergt wird, können sich zwei verschiedene Nutzer nie gegenseitig überschreiben.
+async function handleOwnerFilteredSave(url, cfg, session, authHeader, submitted, corsHeaders) {
+  if (!Array.isArray(submitted) ||
+      submitted.some((it) => !it || typeof it !== "object" || it[cfg.ownerField] !== session.username)) {
+    return json({ error: "Ungültige Daten: fremde oder ungültige Einträge" }, 400, corsHeaders);
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data: rawDoc, rev } = await readJsonWithRev(url, authHeader, { meta: {}, [cfg.listField]: [] });
+    const doc = rawDoc && typeof rawDoc === "object" ? rawDoc : { meta: {}, [cfg.listField]: [] };
+    const others = (Array.isArray(doc[cfg.listField]) ? doc[cfg.listField] : [])
+      .filter((it) => !it || it[cfg.ownerField] !== session.username);
+    const merged = { ...doc, [cfg.listField]: others.concat(submitted) };
+    merged.meta = { ...(doc.meta || {}), stand: new Date().toISOString() };
+    try {
+      const newRev = await writeJson(url, authHeader, merged, rev);
+      return json({ ok: true, rev: newRev }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue; // jemand anders hat zwischenzeitlich geschrieben -> frisch neu lesen+mergen
+      if (e instanceof ConflictError) {
+        return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
 }
 
 // ---------- Aktionen: Datei-Anhänge (Binär-Upload für Gateway-Apps) ----------
@@ -2006,6 +2091,67 @@ async function handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, co
   }
   if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
   return json({ ok: true, owner }, 200, corsHeaders);
+}
+
+// Listet per WebDAV PROPFIND (Depth:1) den Belegeingang-Ordner und liest nur die
+// *.meta.json, deren Dateiname auf "_fahrt-<fahrtId>.meta.json" endet -- diesen
+// Suffix hängt sc-heiligenstadt-budget/worker.js nur bei einer gültigen UUID an
+// (siehe dort). Kein XML-Parser in Workers verfügbar und dieses Projekt bewusst
+// dependency-frei -> schlanker Href-Extractor statt echtem XML-Parsing, zugeschnitten
+// auf Nextclouds bekannte Depth:1-Multistatus-Antwort (nur die href-Werte zählen,
+// die eigentlich angefragten Props sind irrelevant).
+async function handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const app = String(body.app || "");
+  if (app !== "fahrtenbuch") return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  // Bewusst KEIN zusätzlicher Ownership-Check der konkreten Fahrt: fahrtId ist eine
+  // nicht erratbare UUID, und ein Normalnutzer bekommt eine fremde fahrtId über die
+  // App seit dem Sichtbarkeits-Fix (OWNER_FILTERED_APPS) ohnehin nicht mehr zu Gesicht.
+  const fahrtId = String(body.fahrtId || "");
+  if (!FILE_ID_RE.test(fahrtId)) return json({ error: "Ungültige Fahrt-Id" }, 400, corsHeaders);
+
+  let resp;
+  try {
+    resp = await fetch(BELEGE_EINGANG_DIR, {
+      method: "PROPFIND",
+      headers: { Authorization: authHeader, Depth: "1", "Content-Type": "application/xml" },
+      body: `<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+    });
+  } catch (e) {
+    throw new NextcloudError("Nextcloud nicht erreichbar: " + e.message);
+  }
+  if (resp.status === 404) return json({ belege: [] }, 200, corsHeaders); // Ordner existiert noch nicht
+  if (resp.status !== 207) throw new NextcloudError(`Nextcloud PROPFIND ${resp.status}`);
+
+  const xml = await resp.text();
+  const suffix = `_fahrt-${fahrtId}.meta.json`;
+  const hrefs = Array.from(xml.matchAll(/<[a-zA-Z0-9]*:?href>([^<]+)<\/[a-zA-Z0-9]*:?href>/gi))
+    .map((m) => decodeURIComponent(m[1]));
+  const matches = hrefs.filter((href) => href.endsWith(suffix));
+
+  const belege = [];
+  for (const href of matches) {
+    const fileUrl = new URL(href, BELEGE_EINGANG_DIR).href;
+    const fileResp = await fetch(fileUrl, { headers: { Authorization: authHeader } });
+    if (!fileResp.ok) continue; // einzelner Lesefehler soll nicht die ganze Liste kippen
+    let meta;
+    try { meta = await fileResp.json(); } catch (_) { continue; }
+    if (!meta || typeof meta !== "object") continue;
+    belege.push({
+      submittedAt: typeof meta.submittedAt === "string" ? meta.submittedAt : null,
+      amount: typeof meta.amount === "number" ? meta.amount : null,
+      desc: capStr(meta.desc, 200),
+      name: capStr(meta.name, 200)
+    });
+  }
+  belege.sort((a, b) => (b.submittedAt || "").localeCompare(a.submittedAt || ""));
+  return json({ belege }, 200, corsHeaders);
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
