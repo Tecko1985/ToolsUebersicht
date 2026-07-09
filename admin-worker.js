@@ -1205,6 +1205,8 @@ function buildTrainerRecord(user, usersDoc, sources) {
     (t.username && t.username === user.username) ||
     (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
     sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname));
+  // trainerlizenzHochgeladenAm: reiner Status wie fuehrungszeugnisEingereichtAm,
+  // bewusst keine Ablauflogik (kein Aequivalent zu FUEHRERSCHEIN_GUELTIGKEIT_MONATE).
   // Führerschein-Gültigkeit seit 1.1 hier statt in Fahrtenbuch berechnet (Feature
   // dorthin migriert, siehe [[project-trainerdaten]]) -- gleiche Formel wie vorher
   // (hochgeladenAm + 6 Monate). Führungszeugnis hat bewusst keine Ablauflogik (v1).
@@ -1225,6 +1227,7 @@ function buildTrainerRecord(user, usersDoc, sources) {
     fuehrerscheinHochgeladenAm: td.fuehrerscheinHochgeladenAm || null,
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
     fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null,
+    trainerlizenzHochgeladenAm: td.trainerlizenzHochgeladenAm || null,
     geburtsdatum: td.geburtsdatum || null,
     strasse: td.strasse || null,
     plz: td.plz || null,
@@ -1234,6 +1237,7 @@ function buildTrainerRecord(user, usersDoc, sources) {
   } : {
     vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
     fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null,
+    trainerlizenzHochgeladenAm: null,
     geburtsdatum: null, strasse: null, plz: null, ort: null, telefon: null, email: null
   };
 
