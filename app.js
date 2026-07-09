@@ -926,14 +926,29 @@ function renderToolGrid() {
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
         ${t.id === "trainerdaten" && trainerdatenStatus ? (
           trainerdatenStatus.trainerdatenGesamtOk
-            ? '<div class="badge-status-ok">✓ Daten vollständig</div>'
-            : '<div class="badge-status-fail">✗ Daten unvollständig</div>'
+            ? '<div class="badge-status-ok">✓ Daten vollständig<button type="button" class="badge-refresh" title="Status aktualisieren" aria-label="Status aktualisieren">⟳</button></div>'
+            : '<div class="badge-status-fail">✗ Daten unvollständig<button type="button" class="badge-refresh" title="Status aktualisieren" aria-label="Status aktualisieren">⟳</button></div>'
         ) : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
       `;
       card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
       card.addEventListener("click", (ev) => { if (card.dataset.justDragged === "1") ev.preventDefault(); });
+      const badgeRefreshBtn = card.querySelector(".badge-refresh");
+      if (badgeRefreshBtn) {
+        // Eigener Klick-Handler statt Karten-Navigation -- erlaubt ein sofortiges
+        // Neuladen des Ampel-Status (my-trainerdaten-status), ohne die Seite neu
+        // zu laden. loadTrainerdatenStatus() ruft am Ende selbst renderToolGrid()
+        // auf, baut diesen Button also gleich wieder frisch auf -- kein manuelles
+        // Zurücksetzen von disabled/Text nötig.
+        badgeRefreshBtn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          badgeRefreshBtn.disabled = true;
+          badgeRefreshBtn.textContent = "…";
+          loadTrainerdatenStatus();
+        });
+      }
       grid.appendChild(card);
     });
 

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.5";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -323,6 +323,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.5",
+    groups: [
+      {
+        title: "Trainerdaten-Ampel-Badge",
+        items: [
+          "Kleiner ⟳-Knopf direkt im Badge löst eine sofortige Neuabfrage aus, ohne dass die Seite neu geladen werden muss."
+        ]
+      }
+    ]
+  },
   {
     version: "1.4",
     groups: [
