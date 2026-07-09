@@ -17,7 +17,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
-    version: "1.8",
+    version: "1.9",
     devices: ["mobile", "desktop"]
   },
   {
