@@ -142,7 +142,8 @@
 //      bei Erst-Upload VOM SERVER vergeben (kein owner aus dem Body vertraut) und in der Antwort
 //      zurückgegeben; Re-Upload schickt ihn zurück. Einsehbar später nur über dav-restricted-get/
 //      -delete mit Login, siehe oben.)
-//   POST { action: "fahrtenbuch-belege-list", app:"fahrtenbuch", fahrtId } + Bearer -> { belege:[{submittedAt,amount,desc,name}] }
+//   POST { action: "fahrtenbuch-belege-list", app:"fahrtenbuch", fahrtId } + Bearer
+//     -> { belege:[{submittedAt,amount,desc,name,files:[{fileName,fileMime}]}] }
 //     (Login + userMayAccessTool("fahrtenbuch") wie dav-load; KEIN Ownership-Check der konkreten
 //      Fahrt, da fahrtId eine nicht erratbare UUID ist und nach dem Sichtbarkeits-Fix oben ein
 //      Normalnutzer eine fremde fahrtId über die App ohnehin nicht mehr zu Gesicht bekommt. Listet
@@ -151,6 +152,13 @@
 //      "_fahrt-<fahrtId>.meta.json" endet — sc-heiligenstadt-budget/worker.js schreibt diesen
 //      Suffix nur bei gültiger UUID. fahrtId wird hier zusätzlich serverseitig gegen FAHRT_ID_RE
 //      geprüft, bevor sie in den Dateinamen-Vergleich einfließt.)
+//   POST { action: "fahrtenbuch-beleg-file-get", app:"fahrtenbuch", fahrtId, fileName } + Bearer
+//     -> Datei-Bytes (Content-Type wie Original) | 400/403/404
+//     (liest eine einzelne, zu fahrtId gehörende Beleg-Datei aus demselben Ordner wie oben, für den
+//      "Beleg anzeigen"-Knopf im Fahrtenbuch-Modal. fileName kommt vom Client — wird serverseitig
+//      gegen ein Muster geprüft, das zwingend den "_fahrt-<fahrtId>"-Suffix enthalten muss, sonst
+//      könnte ein Nutzer über einen erratenen/kopierten Dateinamen fremde Kassierer-Belege im
+//      selben geteilten Ordner lesen.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -412,6 +420,8 @@ export default {
         return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
       case "fahrtenbuch-belege-list":
         return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
+      case "fahrtenbuch-beleg-file-get":
+        return handleFahrtenbuchBelegFileGet(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -2143,15 +2153,59 @@ async function handleFahrtenbuchBelegeList(request, body, env, authHeader, corsH
     let meta;
     try { meta = await fileResp.json(); } catch (_) { continue; }
     if (!meta || typeof meta !== "object") continue;
+    const files = Array.isArray(meta.files)
+      ? meta.files
+          .map((f) => ({ fileName: capStr(f && f.fileName, 300), fileMime: capStr(f && f.fileMime, 100) }))
+          .filter((f) => f.fileName)
+      : [];
     belege.push({
       submittedAt: typeof meta.submittedAt === "string" ? meta.submittedAt : null,
       amount: typeof meta.amount === "number" ? meta.amount : null,
       desc: capStr(meta.desc, 200),
-      name: capStr(meta.name, 200)
+      name: capStr(meta.name, 200),
+      files
     });
   }
   belege.sort((a, b) => (b.submittedAt || "").localeCompare(a.submittedAt || ""));
   return json({ belege }, 200, corsHeaders);
+}
+
+// Liest eine einzelne Beleg-Datei aus BELEGE_EINGANG_DIR für den "Beleg anzeigen"-Knopf im
+// Fahrtenbuch-Modal -- fileName kommt vom Client (aus der fahrtenbuch-belege-list-Antwort),
+// wird hier aber serverseitig gegen den Suffix "_fahrt-<fahrtId>[_<n>].<ext>" geprüft statt
+// blind vertraut, sonst könnte ein Nutzer über einen erratenen/kopierten Dateinamen fremde
+// Kassierer-Belege im selben geteilten Ordner lesen. Gleiches Streaming-Muster wie
+// handleDavFileGet/handleDavRestrictedGet.
+async function handleFahrtenbuchBelegFileGet(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  if (app !== "fahrtenbuch") return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const fahrtId = String(body.fahrtId || "");
+  if (!FILE_ID_RE.test(fahrtId)) return json({ error: "Ungültige Fahrt-Id" }, 400, corsHeaders);
+  const fileName = String(body.fileName || "");
+  const validSuffix = new RegExp(`_fahrt-${fahrtId}(?:_\\d+)?\\.[a-zA-Z0-9]+$`, "i");
+  if (!validSuffix.test(fileName) || fileName.includes("/") || fileName.includes("..")) {
+    return json({ error: "Ungültiger Dateiname" }, 400, corsHeaders);
+  }
+
+  const fileUrl = BELEGE_EINGANG_DIR + "/" + encodeURIComponent(fileName);
+  let resp;
+  try {
+    resp = await fetch(fileUrl, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+  const ctype = resp.headers.get("Content-Type") || "application/octet-stream";
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": ctype, "Cache-Control": "private, no-store" }
+  });
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
