@@ -1,5 +1,6 @@
 // Worker-URL des admin-worker.js (siehe README für Deploy-Anleitung).
 const WORKER_URL = "https://landingpage.michel-brunner.workers.dev";
+const WIKI_WORKER_URL = "https://vereinswiki.michel-brunner.workers.dev";
 const TOKEN_STORAGE_KEY = "tu_session_token";
 const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 
@@ -1382,6 +1383,78 @@ function renderFeedbackTab() {
   emptyEl.style.display = "none";
   contentEl.style.display = "block";
   renderFeedbackToolOptions();
+  const wikiCard = document.getElementById("wiki-ask-card");
+  if (wikiCard) wikiCard.style.display = isVisibleToUser("vereinswiki", currentUser) ? "block" : "none";
+}
+
+// Fragen ans Toolbox Wiki, direkt hier ganz oben im Tab eingebettet (statt einer
+// eigenen Kachel) — wer Hilfe braucht, soll sich erst selbst helfen lassen können,
+// bevor Feedback/Hilfe angefragt wird. Ruft den separaten wiki-worker (Gemini)
+// direkt mit dem hier schon vorhandenen currentToken auf (gleiches Login-Token,
+// gleiche Origin) — kein eigener Login-Umweg nötig. Sichtbarkeit folgt derselben
+// isVisibleToUser()-Regel wie die Tool-Kachel (siehe renderFeedbackTab), da der
+// wiki-worker serverseitig denselben Zugriffscheck macht.
+async function askWiki(question) {
+  let resp;
+  try {
+    resp = await fetch(WIKI_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + currentToken },
+      body: JSON.stringify({ question })
+    });
+  } catch (e) {
+    throw new Error("Wissens-Assistent nicht erreichbar.");
+  }
+  let data = null;
+  try { data = await resp.json(); } catch (_) { /* kein JSON-Body */ }
+  if (!resp.ok) {
+    throw new Error((data && data.error) || ("Assistent-Fehler (HTTP " + resp.status + ")"));
+  }
+  return data;
+}
+
+function setupWikiFrage() {
+  const btn = document.getElementById("btn-wiki-frage");
+  if (!btn) return;
+  btn.addEventListener("click", handleWikiFrage);
+  document.getElementById("wiki-frage-input").addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); handleWikiFrage(); }
+  });
+}
+
+async function handleWikiFrage() {
+  const input = document.getElementById("wiki-frage-input");
+  const q = input.value.trim();
+  if (!q) { input.focus(); return; }
+  const btn = document.getElementById("btn-wiki-frage");
+  btn.disabled = true;
+  showWikiAntwortLoading(q);
+  try {
+    const res = await askWiki(q);
+    const anzahl = typeof res.dokumentAnzahl === "number" ? res.dokumentAnzahl : null;
+    const meta = "KI-generiert" + (anzahl != null ? ` auf Basis von ${anzahl} Dokument${anzahl === 1 ? "" : "en"}` : "") + ", bitte im Zweifel im Originaldokument prüfen.";
+    showWikiAntwort(q, res.answer || "(keine Antwort erhalten)", meta);
+  } catch (e) {
+    showWikiAntwort(q, "Es ist ein Fehler aufgetreten: " + e.message, "");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showWikiAntwortLoading(frage) {
+  const card = document.getElementById("wiki-antwort-card");
+  card.style.display = "block";
+  document.getElementById("wiki-antwort-frage").textContent = frage;
+  document.getElementById("wiki-antwort-text").innerHTML = '<span class="muted">Der Assistent liest die Dokumente und formuliert eine Antwort …</span>';
+  document.getElementById("wiki-antwort-meta").textContent = "";
+}
+
+function showWikiAntwort(frage, text, meta) {
+  const card = document.getElementById("wiki-antwort-card");
+  card.style.display = "block";
+  document.getElementById("wiki-antwort-frage").textContent = frage;
+  document.getElementById("wiki-antwort-text").innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+  document.getElementById("wiki-antwort-meta").textContent = meta || "";
 }
 
 function setupWhatsappLink() {
@@ -2445,6 +2518,7 @@ async function init() {
   setupTabs();
   setupAuthForms();
   setupWhatsappLink();
+  setupWikiFrage();
   setupViewAsControl();
 
   // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft

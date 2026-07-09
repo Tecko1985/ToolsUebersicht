@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1";
+const APP_VERSION = "1.2";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -333,6 +333,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.2",
+    groups: [
+      {
+        title: "Feedback & Hilfe",
+        items: [
+          "Ganz oben im Tab „Feedback & Hilfe“ lässt sich jetzt direkt eine Frage ans Toolbox Wiki stellen (kein Umweg über die eigene App) — bevor man Feedback gibt oder Hilfe anfragt, kann man sich so erst selbst helfen lassen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.1",
     groups: [
