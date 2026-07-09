@@ -898,9 +898,17 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   const td = findTrainerdatenRecord(trainerdatenDoc, user);
   const summary = buildTrainerdatenSummary(td);
 
+  // trainerlizenzGueltigBis ist ein reines "yyyy-mm-dd"-Datum (Kalendertag), kein
+  // Zeitpunkt -- ein new Date(...)-Momentvergleich würde es ab Mitternacht UTC als
+  // abgelaufen werten, obwohl die App selbst (_dateOnlyIsPast, String-Vergleich)
+  // "gültig bis heute" noch den ganzen Tag über als gültig zeigt (Bug live erlebt:
+  // Michel setzte testweise "gültig bis heute", App zeigte grün, Badge trotzdem rot).
+  // String-Vergleich gegen "heute" in Europe/Berlin, gleiche Technik wie
+  // handleListBirthdaysToday, hält Client und Server konsistent.
+  const heuteBerlin = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
   const lizenzOk = summary.trainerlizenzNichtVorhanden === true || !!(
     summary.trainerlizenzHochgeladenAm &&
-    (!summary.trainerlizenzGueltigBis || new Date(summary.trainerlizenzGueltigBis) > new Date())
+    (!summary.trainerlizenzGueltigBis || summary.trainerlizenzGueltigBis >= heuteBerlin)
   );
   const trainerdatenGesamtOk = summary.vorhanden ? !!(
     summary.unterschriftAm &&
