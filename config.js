@@ -1,4 +1,4 @@
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -219,16 +219,6 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["desktop"]
-  },
-  {
-    id: "vereinswiki",
-    name: "Toolbox Wiki",
-    description: "Wissens-Assistent für allgemeine Vereinsunterlagen: Dokumente (Satzung, Ordnungen, Konzepte) hinterlegen und in normaler Sprache Fragen dazu stellen – eine KI antwortet auf Basis der Dokumente.",
-    url: "https://tecko1985.github.io/Vereinswiki/",
-    icon: "📚",
-    category: "Verein",
-    version: "1.1",
-    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -333,6 +323,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.3",
+    groups: [
+      {
+        title: "Feedback & Hilfe",
+        items: [
+          "Eigene Kachel „Toolbox Wiki“ entfernt — die Frage-Funktion steht seit 1.2 direkt oben im Tab „Feedback & Hilfe“, eine zusätzliche Kachel dafür ist nicht mehr nötig. Dokumente verwalten geht weiterhin direkt über die App."
+        ]
+      }
+    ]
+  },
   {
     version: "1.2",
     groups: [
