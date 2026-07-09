@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.1";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -17,7 +17,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
-    version: "1.0",
+    version: "1.6",
     devices: ["mobile", "desktop"]
   },
   {
@@ -116,16 +116,6 @@ const TOOLS = [
     description: "Sichtung und Bewertung von Nachwuchsspielern für Kader- und Förderentscheidungen.",
     url: "https://tecko1985.github.io/spielersichtung/",
     icon: "🔍",
-    category: "Verein",
-    version: "1.0",
-    devices: ["mobile", "desktop"]
-  },
-  {
-    id: "trainerkodex",
-    name: "Trainerkodex",
-    description: "Verhaltenskodex für Trainer:innen — digital einsehbar und bestätigbar.",
-    url: "https://tecko1985.github.io/trainerkodex/",
-    icon: "📜",
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
@@ -251,6 +241,13 @@ const TOOLS = [
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [
   {
+    date: "2026-07-09",
+    type: "update",
+    title: "Trainerkodex jetzt Teil von Trainerdaten",
+    text: "Kodex lesen und mit Unterschrift bestätigen läuft nicht mehr über eine eigene Kachel, sondern direkt in Trainerdaten — dort zeigt ein Ampel-Badge auf einen Blick, ob Stammdaten, Lizenz, Führerschein, Führungszeugnis und Kodex vollständig und aktuell sind.",
+    toolId: "trainerdaten",
+  },
+  {
     date: "2026-07-08",
     type: "neu",
     title: "Vereinswiki ist online",
@@ -336,6 +333,25 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.1",
+    groups: [
+      {
+        title: "Trainerdaten-Kachel",
+        items: [
+          "Die Trainerdaten-Kachel zeigt jetzt ein Ampel-Badge (✓/✗): grün, wenn bei der eigenen Person Stammdaten, Trainerlizenz (oder \"keine Lizenz\"), Führerschein, Führungszeugnis und Trainerkodex vollständig, nicht abgelaufen und bestätigt hinterlegt sind, sonst rot. Kein Badge, wenn noch gar kein Trainerdaten-Datensatz existiert.",
+          "Trainerkodex ist keine eigene Kachel mehr — Kodex lesen und mit Unterschrift bestätigen läuft jetzt direkt in Trainerdaten, inklusive einer alle 6 Monate erneut fälligen Bestätigung (wie beim Führerschein)."
+        ]
+      },
+      {
+        title: "Export-Sammlung im Admin-Dashboard",
+        items: [
+          "Neue Karte „📦 Exporte“ im Admin-Dashboard sammelt die Export-Funktionen mehrerer Apps an einem Ort: Materialliste (JSON), Personalkosten (Text/PDF), Busplan (PDF), Kleiderbestellung (Text/PDF), Materialbedarf (Text/PDF) und Spielerbewertung (JSON) lassen sich jetzt direkt hier auslösen, ohne die jeweilige App einzeln zu öffnen.",
+          "Für Apps mit eigenem, aber (noch) nicht zentral eingebundenem Export (Trainerdaten, Vereinsbudget, Trainerversammlung-Anmeldung, Kassenbuch) verlinkt die Karte direkt auf die jeweilige App."
+        ]
+      }
+    ]
+  },
   {
     version: "1.0",
     groups: [

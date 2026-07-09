@@ -396,6 +396,29 @@ main { flex: 1; min-width: 0; }
   padding: 3px 10px;
 }
 
+/* Ampel-Badge auf der Trainerdaten-Kachel (my-trainerdaten-status) --
+   ok/fail statt wip-Gold, gleiche Form wie .badge-wip. */
+.badge-status-ok,
+.badge-status-fail {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.badge-status-ok {
+  background: var(--green-light);
+  color: var(--green);
+}
+
+.badge-status-fail {
+  background: var(--red-light);
+  color: var(--red);
+}
+
 /* ---------- Admin-Dashboard (eigene Ansicht) ---------- */
 
 .stat-grid {
@@ -524,5 +547,54 @@ main { flex: 1; min-width: 0; }
   gap: 14px;
   flex-basis: 100%;
   padding: 4px 0;
+}
+
+/* ---------- Export-Sammlung (Admin-Dashboard) ---------- */
+
+.export-hub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.export-hub-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.export-hub-row:last-child { border-bottom: none; }
+.export-hub-label { font-weight: 600; font-size: 14px; }
+.export-hub-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Druckansicht (PDF-Export via window.print) ----------
+   Gleiches Muster wie Personalkosten/Busplan/Kleiderbestellung/Materialbedarf --
+   jeder Export baut sein Markup in #print-content, window.print() blendet per
+   body.printing-report alles andere aus. */
+
+#print-area { display: none; }
+body.printing-report > *:not(#print-area) { display: none !important; }
+body.printing-report #print-area { display: block; padding: 20px; }
+#print-area h1 { font-size: 1.4rem; margin-bottom: 4px; color: #000; }
+#print-area .print-meta { font-size: 0.85rem; color: #444; margin-bottom: 16px; }
+.print-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 18px; }
+.print-table th, .print-table td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; color: #000; }
+.print-table th.num, .print-table td.num { text-align: right; white-space: nowrap; }
+.print-table tr.total-row td { font-weight: 700; border-top: 2px solid #000; }
+.print-table td.print-status-cell {
+  color: #fff; font-weight: 700; text-align: center;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.print-kennzahlen { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 16px; }
+.print-kennzahl { border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px; }
+.print-kennzahl .pk-label { font-size: 0.75rem; color: #444; }
+.print-kennzahl .pk-value { font-size: 1.1rem; font-weight: 700; color: #000; }
+.print-konflikte { margin-bottom: 18px; }
+.print-konflikt-row { font-size: 0.85rem; margin-bottom: 4px; color: #000; }
+.print-team-block { margin-bottom: 22px; }
+@media print {
+  .print-table tr { page-break-inside: avoid; }
 }
 .group-picker-row .gp-tool-name { flex: 1; min-width: 140px; }

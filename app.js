@@ -8,6 +8,7 @@ let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-New
 let bootstrapAvailable = false;
 let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } oder null
+let trainerdatenStatus = null; // Antwort von my-trainerdaten-status für die Badge-Anzeige auf der Trainerdaten-Kachel, null = kein Badge
 let directoryGroupsState = []; // { id, name }[], für den Testansicht-Umschalter im Header (auch während aktiver Testansicht ladbar)
 
 // isAdmin/groupIds sind die effektive Identität (siehe set-view-as im Worker);
@@ -123,6 +124,7 @@ async function bootstrapAdmin(username, password) {
 function logout() {
   currentToken = null;
   currentUser = null;
+  trainerdatenStatus = null;
   pendingFirstLoginUsername = null;
   pendingLoginUsername = null;
   storeToken(null);
@@ -920,6 +922,11 @@ function renderToolGrid() {
         </div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
+        ${t.id === "trainerdaten" && trainerdatenStatus ? (
+          trainerdatenStatus.trainerdatenGesamtOk
+            ? '<div class="badge-status-ok">✓ Daten vollständig</div>'
+            : '<div class="badge-status-fail">✗ Daten unvollständig</div>'
+        ) : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
       `;
@@ -1133,6 +1140,26 @@ async function loadBirthdaysToday() {
     console.warn("Geburtstage nicht ladbar:", e);
     return [];
   }
+}
+
+// Lädt den Ampel-Status für die Trainerdaten-Kachel (my-trainerdaten-status,
+// siehe admin-worker.js) — analog loadBirthdaysToday: Fehler werden geschluckt
+// (Badge verschwindet dann einfach statt die Kachel zu blockieren). Kein Badge,
+// solange kein Trainerdaten-Datensatz existiert (vorhanden:false) -- das ist
+// kein Fehlerfall, sondern z.B. ein Nutzer ohne Trainerrolle.
+async function loadTrainerdatenStatus() {
+  if (!currentUser || !isVisibleToUser("trainerdaten", currentUser)) {
+    trainerdatenStatus = null;
+    return;
+  }
+  try {
+    const res = await callWorker("my-trainerdaten-status", {});
+    trainerdatenStatus = (res && res.vorhanden) ? res : null;
+  } catch (e) {
+    console.warn("Trainerdaten-Status nicht ladbar:", e);
+    trainerdatenStatus = null;
+  }
+  renderToolGrid();
 }
 
 async function loadCalendarWidget() {
@@ -1431,6 +1458,444 @@ function renderRecentActivity() {
   }).join("");
 }
 
+// ---------- Export-Sammlung (Admin-Dashboard) ----------
+// Sammelt die Export-Funktionen mehrerer Gateway-Apps an einem Ort, damit der
+// Admin nicht für jeden Export einzeln in die jeweilige App wechseln muss. Holt
+// die App-Daten über das bestehende dav-load-Gateway (Admin hat dort per
+// userMayAccessTool()-Bypass ohnehin uneingeschränkten Lesezugriff, siehe
+// admin-worker.js) und baut denselben Export dann hier nach — kein
+// Worker-Redeploy nötig, da nur bereits existierende DAV_APPS-Einträge gelesen
+// werden (materialliste, personalkosten, busplan, kleiderbestellung,
+// materialbedarf, spielertool-test). Bewusst NICHT die Original-Exportfunktion
+// der Ziel-App direkt aufrufen (die läuft im dortigen app.js, nicht hier) --
+// kleine Formeln/Layouts werden repliziert, gleiches Muster wie an anderen
+// Cross-App-Stellen dieses Workers (z.B. buildTrainerRecord).
+
+async function exportHubLoadAppData(appId) {
+  const res = await callWorker("dav-load", { app: appId });
+  return res.data;
+}
+
+function downloadFile(filename, type, content) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// Lokales Datum (nicht toISOString, das liefert UTC), siehe gleichnamige
+// Helfer in Materialliste/Personalkosten -- gleicher Grund (Mitternachts-Bug).
+function exportHubLocalDateIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function printExportHubContent() {
+  document.body.classList.add("printing-report");
+  const cleanup = () => { document.body.classList.remove("printing-report"); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => window.print(), 150);
+}
+
+// -- Materialliste / spielertool-test: reiner appData-JSON-Dump, 1:1 wie dort --
+
+async function exportMateriallisteJson() {
+  const data = await exportHubLoadAppData("materialliste");
+  downloadFile("materialdaten-backup-" + exportHubLocalDateIso() + ".json", "application/json", JSON.stringify(data, null, 2));
+}
+
+async function exportSpielertoolJson() {
+  const data = await exportHubLoadAppData("spielertool-test");
+  downloadFile("spielerdaten-backup-" + exportHubLocalDateIso() + ".json", "application/json", JSON.stringify(data, null, 2));
+}
+
+// -- Personalkosten: Text/PDF, alle Bereiche+Felder (kein Auswahl-Modal wie im
+// Original -- der Admin will hier den Gesamtexport, nicht eine Teilauswahl) --
+
+const EXPORT_HUB_PK_FIELDS = [
+  { key: "bereich", label: "Bereich" },
+  { key: "name", label: "Name" },
+  { key: "mannschaft", label: "Mannschaft" },
+  { key: "position", label: "Position" },
+  { key: "jahrgangsleiter", label: "Jahrgangsleiter" },
+  { key: "lizenz", label: "Lizenz" },
+  { key: "landesebene", label: "Landesebene" },
+  { key: "stelle", label: "Stelle", num: true, fmt: (v) => (v == null ? "—" : exportHubFmtPct(v)) },
+  { key: "ae100", label: "AE 100%", num: true, fmt: (v) => (v == null ? "—" : exportHubFmtEuro(v)) },
+  { key: "aeMonat", label: "AE / Monat", num: true, fmt: (v) => exportHubFmtEuro(v) },
+  { key: "besonderheit", label: "Besonderheit" }
+];
+function exportHubNumFmt(n, maxDec) {
+  n = Number(n) || 0;
+  return n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: maxDec == null ? 2 : maxDec });
+}
+function exportHubFmtEuro(n) { return exportHubNumFmt(n, 2) + " €"; }
+function exportHubFmtPct(factor) { return exportHubNumFmt((Number(factor) || 0) * 100, 1) + " %"; }
+function exportHubBetragOf(list, label) {
+  if (!label) return 0;
+  const hit = (list || []).find((x) => x.label === label);
+  return hit ? (Number(hit.betrag) || 0) : 0;
+}
+function exportHubTrainerAe100(t, parameter) {
+  return exportHubBetragOf(parameter.positionen, t.position)
+    + exportHubBetragOf(parameter.lizenzen, t.lizenz)
+    + exportHubBetragOf(parameter.landesebene, t.landesebene)
+    + exportHubBetragOf(parameter.jahrgangsleiter, t.jahrgangsleiter);
+}
+function exportHubTrainerAeIst(t, parameter) {
+  if (t.manuellAE != null && t.manuellAE !== "") return Number(t.manuellAE) || 0;
+  return exportHubTrainerAe100(t, parameter) * (Number(t.stelle) || 0);
+}
+function exportHubEntryAe(x) { return Number(x.ae) || 0; }
+
+function exportHubPersonalRows(data) {
+  const season = data.seasons[data.meta.currentSeason];
+  const rows = [];
+  (season.trainer || []).forEach((t) => rows.push({
+    bereich: "Trainer", name: t.name || "", mannschaft: t.mannschaft || "", position: t.position || "",
+    jahrgangsleiter: t.jahrgangsleiter || "", lizenz: t.lizenz || "", landesebene: t.landesebene || "",
+    stelle: Number(t.stelle) || 0, ae100: exportHubTrainerAe100(t, data.parameter), aeMonat: exportHubTrainerAeIst(t, data.parameter),
+    besonderheit: t.besonderheit || ""
+  }));
+  (season.schwerpunkt || []).forEach((x) => rows.push({
+    bereich: "Schwerpunkttrainer", name: x.name || "", mannschaft: x.mannschaft || "", position: x.position || "",
+    jahrgangsleiter: "", lizenz: "", landesebene: "", stelle: null, ae100: null,
+    aeMonat: exportHubEntryAe(x), besonderheit: x.besonderheit || ""
+  }));
+  (season.foerderung || []).forEach((x) => rows.push({
+    bereich: "Förderung", name: x.name || "", mannschaft: x.mannschaft || "", position: x.position || "",
+    jahrgangsleiter: "", lizenz: "", landesebene: "", stelle: null, ae100: null,
+    aeMonat: exportHubEntryAe(x), besonderheit: x.besonderheit || ""
+  }));
+  rows.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  return rows;
+}
+
+async function exportPersonalkostenReport(format) {
+  const data = await exportHubLoadAppData("personalkosten");
+  const rows = exportHubPersonalRows(data);
+  const seasonKey = data.meta.currentSeason;
+  const fields = EXPORT_HUB_PK_FIELDS;
+  const cell = (f, r) => (f.fmt ? f.fmt(r[f.key]) : (r[f.key] ?? ""));
+  if (format === "pdf") {
+    const theadHtml = `<tr>${fields.map((f) => `<th${f.num ? ' class="num"' : ""}>${escapeHtml(f.label)}</th>`).join("")}</tr>`;
+    const rowsHtml = rows.map((r) => `<tr>${fields.map((f) => `<td${f.num ? ' class="num"' : ""}>${escapeHtml(String(cell(f, r)))}</td>`).join("")}</tr>`).join("");
+    const total = rows.reduce((a, r) => a + (Number(r.aeMonat) || 0), 0);
+    const totalRow = `<tr class="total-row">${fields.map((f, i) => {
+      if (f.key === "aeMonat") return `<td class="num">${escapeHtml(exportHubFmtEuro(total))}</td>`;
+      return i === 0 ? `<td>Summe (${rows.length} Personen)</td>` : "<td></td>";
+    }).join("")}</tr>`;
+    document.getElementById("print-content").innerHTML = `
+      <h1>💶 Personalübersicht</h1>
+      <p class="print-meta">Trainer, Schwerpunkttrainer, Förderung — Saison ${escapeHtml(seasonKey)} — erstellt am ${new Date().toLocaleString("de-DE")}</p>
+      <table class="print-table"><thead>${theadHtml}</thead><tbody>${rowsHtml}${totalRow}</tbody></table>`;
+    printExportHubContent();
+    return;
+  }
+  const widths = fields.map((f) => Math.max(f.label.length, ...rows.map((r) => String(cell(f, r)).length)));
+  const line = (cells) => cells.map((c, i) => {
+    const s = String(c);
+    return fields[i].num ? s.padStart(widths[i]) : s.padEnd(widths[i]);
+  }).join("  ");
+  const sepLine = widths.map((w) => "-".repeat(w)).join("  ");
+  let out = `Personalübersicht (Trainer, Schwerpunkttrainer, Förderung) — Saison ${seasonKey}\n`;
+  out += `Erstellt am ${new Date().toLocaleString("de-DE")}\n\n`;
+  out += line(fields.map((f) => f.label)) + "\n" + sepLine + "\n";
+  out += rows.map((r) => line(fields.map((f) => cell(f, r)))).join("\n") + "\n";
+  const total = rows.reduce((a, r) => a + (Number(r.aeMonat) || 0), 0);
+  out += sepLine + "\n" + `${rows.length} Personen — Summe AE / Monat: ${exportHubFmtEuro(total)}\n`;
+  downloadFile(`personalkosten_${seasonKey.replace("/", "-")}_${exportHubLocalDateIso()}.txt`, "text/plain", "﻿" + out);
+}
+
+// -- Kleiderbestellung: Text/PDF. Beim Nachbauen fiel ein Bug im Original auf:
+// exportZeilen() dort baut den Map-Key als `p.artikelId + "" + p.groesse` und
+// liest artikelId/groesse per key.split("") wieder aus -- das splittet aber in
+// EINZELNE ZEICHEN, nicht die zwei Original-Felder (".split("")" ist kein
+// Trenner-Split). Die Summierung selbst bleibt richtig (gleicher Key wird
+// konsistent verwendet), aber Artikelname/Größe in der Ausgabe sind kaputt,
+// sobald artikelId/groesse mehr als ein Zeichen haben. Hier daher NICHT über
+// einen zusammengesetzten Key re-parsen, sondern beide Felder direkt im
+// Map-Value mitführen. (Fund gilt nur für diesen Nachbau -- das Original in
+// E:\kleiderbestellung\app.js hat den Bug weiterhin.)
+
+function exportHubGroessenIndex(artikelById, artikelId, groesse) {
+  const artikel = artikelById[artikelId];
+  if (!artikel) return 999;
+  const idx = artikel.groessen.indexOf(groesse);
+  return idx === -1 ? 999 : idx;
+}
+
+function exportHubKleiderZeilen(data) {
+  const map = new Map();
+  for (const b of Object.values(data.bestellungen || {})) {
+    for (const p of (b.positionen || [])) {
+      if (!p.menge) continue;
+      const key = p.artikelId + "" + p.groesse;
+      const entry = map.get(key) || { artikelId: p.artikelId, groesse: p.groesse, summe: 0 };
+      entry.summe += Number(p.menge);
+      map.set(key, entry);
+    }
+  }
+  const artikelById = Object.fromEntries((data.katalog.artikel || []).map((a) => [a.id, a]));
+  return [...map.values()]
+    .map((z) => ({ ...z, artikelName: artikelById[z.artikelId] ? artikelById[z.artikelId].name : `(gelöscht: ${z.artikelId})` }))
+    .sort((a, b) => a.artikelName.localeCompare(b.artikelName, "de") ||
+      exportHubGroessenIndex(artikelById, a.artikelId, a.groesse) - exportHubGroessenIndex(artikelById, b.artikelId, b.groesse));
+}
+
+async function exportKleiderbestellungReport(format) {
+  const data = await exportHubLoadAppData("kleiderbestellung");
+  const zeilen = exportHubKleiderZeilen(data);
+  if (!zeilen.length) throw new Error("Es liegen noch keine Bestellungen vor.");
+  if (format === "pdf") {
+    const theadHtml = `<tr><th>Artikel</th><th>Größe</th><th class="num">Menge</th></tr>`;
+    const rowsHtml = zeilen.map((z) => `<tr><td>${escapeHtml(z.artikelName)}</td><td>${escapeHtml(z.groesse)}</td><td class="num">${escapeHtml(String(z.summe))}</td></tr>`).join("");
+    const gesamt = zeilen.reduce((a, z) => a + z.summe, 0);
+    const totalRow = `<tr class="total-row"><td>Gesamt</td><td></td><td class="num">${escapeHtml(String(gesamt))}</td></tr>`;
+    document.getElementById("print-content").innerHTML = `
+      <h1>👕 Kleiderbestellung</h1>
+      <p class="print-meta">Zusammenfassung nach Artikel und Größe — erstellt am ${new Date().toLocaleString("de-DE")}</p>
+      <table class="print-table"><thead>${theadHtml}</thead><tbody>${rowsHtml}${totalRow}</tbody></table>`;
+    printExportHubContent();
+    return;
+  }
+  const fields = [
+    { label: "Artikel", key: "artikelName", num: false },
+    { label: "Größe", key: "groesse", num: false },
+    { label: "Menge", key: "summe", num: true }
+  ];
+  const widths = fields.map((f) => Math.max(f.label.length, ...zeilen.map((z) => String(z[f.key]).length)));
+  const line = (cells) => cells.map((c, i) => {
+    const s = String(c);
+    return fields[i].num ? s.padStart(widths[i]) : s.padEnd(widths[i]);
+  }).join("  ");
+  const sepLine = widths.map((w) => "-".repeat(w)).join("  ");
+  let out = `Kleiderbestellung — Zusammenfassung\n`;
+  out += `Erstellt am ${new Date().toLocaleString("de-DE")}\n\n`;
+  out += line(fields.map((f) => f.label)) + "\n" + sepLine + "\n";
+  out += zeilen.map((z) => line(fields.map((f) => z[f.key]))).join("\n") + "\n";
+  const gesamt = zeilen.reduce((a, z) => a + z.summe, 0);
+  out += sepLine + "\n" + `Gesamt: ${gesamt} Stück\n`;
+  downloadFile(`kleiderbestellung_${exportHubLocalDateIso()}.txt`, "text/plain", "﻿" + out);
+}
+
+// -- Materialbedarf: Text/PDF, IMMER alle Meldungen (Dashboard hat keinen
+// Status-Filter wie die App selbst -- Admin will hier den Gesamtüberblick) --
+
+const EXPORT_HUB_MELDUNG_STATUS = [
+  { id: "offen", label: "Offen" },
+  { id: "angenommen", label: "Angenommen" },
+  { id: "abgelehnt", label: "Abgelehnt" },
+  { id: "gekauft", label: "Gekauft/Erledigt" }
+];
+function exportHubStatusLabel(status) {
+  const s = EXPORT_HUB_MELDUNG_STATUS.find((x) => x.id === status);
+  return s ? s.label : status;
+}
+function exportHubFmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("de-DE") + ", " + d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr";
+}
+function exportHubPositionenText(positionen) {
+  return (positionen || []).map((p) => `${p.material} ×${p.menge}`).join(", ");
+}
+function exportHubMeldungTrainerName(m) {
+  return (m.vorname || m.nachname) ? `${m.vorname || ""} ${m.nachname || ""}`.trim() : m.erstelltVon;
+}
+
+async function exportMaterialbedarfReport(format) {
+  const data = await exportHubLoadAppData("materialbedarf");
+  const meldungen = data.meldungen || [];
+  if (!meldungen.length) throw new Error("Keine Meldungen vorhanden.");
+  const rows = meldungen.map((m) => ({
+    datum: exportHubFmtDate(m.erstelltAm),
+    trainer: exportHubMeldungTrainerName(m),
+    mannschaft: m.mannschaft || "",
+    material: exportHubPositionenText(m.positionen),
+    grund: m.grund || "",
+    dringlichkeit: m.dringlichkeit === "dringend" ? "dringend" : "normal",
+    status: exportHubStatusLabel(m.status),
+    kommentar: m.adminKommentar || ""
+  }));
+  if (format === "pdf") {
+    const theadHtml = `<tr><th>Datum</th><th>Trainer</th><th>Mannschaft</th><th>Material</th><th>Grund</th><th>Dringlichkeit</th><th>Status</th><th>Kommentar</th></tr>`;
+    const rowsHtml = rows.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.datum)}</td><td>${escapeHtml(r.trainer)}</td><td>${escapeHtml(r.mannschaft)}</td>
+        <td>${escapeHtml(r.material)}</td><td>${escapeHtml(r.grund)}</td><td>${escapeHtml(r.dringlichkeit)}</td>
+        <td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.kommentar)}</td>
+      </tr>`).join("");
+    document.getElementById("print-content").innerHTML = `
+      <h1>🛒 Materialbedarf</h1>
+      <p class="print-meta">Alle Meldungen — erstellt am ${new Date().toLocaleString("de-DE")}</p>
+      <table class="print-table"><thead>${theadHtml}</thead><tbody>${rowsHtml}</tbody></table>`;
+    printExportHubContent();
+    return;
+  }
+  const fields = [
+    { label: "Datum", key: "datum" }, { label: "Trainer", key: "trainer" }, { label: "Mannschaft", key: "mannschaft" },
+    { label: "Material", key: "material" }, { label: "Grund", key: "grund" }, { label: "Dringlichkeit", key: "dringlichkeit" },
+    { label: "Status", key: "status" }, { label: "Kommentar", key: "kommentar" }
+  ];
+  const widths = fields.map((f) => Math.max(f.label.length, ...rows.map((r) => String(r[f.key]).length)));
+  const line = (cells) => cells.map((c, i) => String(c).padEnd(widths[i])).join("  ");
+  const sepLine = widths.map((w) => "-".repeat(w)).join("  ");
+  let out = `Materialbedarf — alle Meldungen\n`;
+  out += `Erstellt am ${new Date().toLocaleString("de-DE")}\n\n`;
+  out += line(fields.map((f) => f.label)) + "\n" + sepLine + "\n";
+  out += rows.map((r) => line(fields.map((f) => r[f.key]))).join("\n") + "\n";
+  downloadFile(`materialbedarf_${exportHubLocalDateIso()}.txt`, "text/plain", "﻿" + out);
+}
+
+// -- Busplan: nur PDF (Original hat auch nur den Druck-Export) --
+
+const EXPORT_HUB_BUSPLAN_STATUS_WERTE = [
+  { id: "", label: "—", farbe: "#c7ccd6" },
+  { id: "zusage", label: "Zusage", farbe: "#2d8c4e" },
+  { id: "absage", label: "Absage", farbe: "#c0392b" },
+  { id: "offen", label: "offen", farbe: "#c9941f" },
+  { id: "klaerung", label: "in Klärung", farbe: "#d2691e" },
+  { id: "vorbereitung", label: "Unter Vorbereitung", farbe: "#6b7280" }
+];
+const EXPORT_HUB_BUSPLAN_CONFLICT_STATUS_IDS = EXPORT_HUB_BUSPLAN_STATUS_WERTE.filter((s) => s.id && s.id !== "absage").map((s) => s.id);
+const EXPORT_HUB_WOCHENTAGE_KURZ = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+function exportHubFmtDatum(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return iso;
+  const wd = EXPORT_HUB_WOCHENTAGE_KURZ[d.getDay()];
+  return `${wd}, ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
+function exportHubBusplanStatusCounts(season) {
+  const counts = {};
+  EXPORT_HUB_BUSPLAN_STATUS_WERTE.forEach((s) => { counts[s.id] = 0; });
+  season.teams.forEach((t) => t.spiele.forEach((sp) => t.busOptionIds.forEach((oid) => {
+    const wert = sp.status[oid] ? sp.status[oid].wert : "";
+    counts[wert] = (counts[wert] || 0) + 1;
+  })));
+  return counts;
+}
+function exportHubBusplanConflictGroups(season) {
+  const groups = {};
+  season.teams.forEach((t) => t.spiele.forEach((sp) => {
+    if (!sp.datum) return;
+    t.busOptionIds.forEach((oid) => {
+      const st = sp.status[oid];
+      if (!st || !EXPORT_HUB_BUSPLAN_CONFLICT_STATUS_IDS.includes(st.wert)) return;
+      const key = sp.datum + "|" + oid;
+      if (!groups[key]) groups[key] = { datum: sp.datum, optionId: oid, entries: [] };
+      groups[key].entries.push({ teamId: t.id, teamName: t.name, spielId: sp.id, ort: sp.ort, wert: st.wert });
+    });
+  }));
+  return Object.values(groups).filter((g) => g.entries.length >= 2);
+}
+function exportHubBusplanConflictMap(groups) {
+  const map = {};
+  groups.forEach((g) => {
+    g.entries.forEach((e) => { map[`${e.teamId}|${e.spielId}|${g.optionId}`] = g.entries.filter((o) => o !== e); });
+  });
+  return map;
+}
+
+async function exportBusplanHubPdf() {
+  const data = await exportHubLoadAppData("busplan");
+  const seasonKey = data.meta.currentSeason;
+  const season = data.seasons[seasonKey];
+  const counts = exportHubBusplanStatusCounts(season);
+  const totalSpiele = season.teams.reduce((a, t) => a + t.spiele.length, 0);
+  const kennzahlen = [
+    { label: "Mannschaften", value: season.teams.length },
+    { label: "Spiele gesamt", value: totalSpiele },
+    { label: "Zusagen", value: counts.zusage || 0 },
+    { label: "Offen / in Klärung", value: (counts.offen || 0) + (counts.klaerung || 0) },
+    { label: "Absagen", value: counts.absage || 0 }
+  ];
+  const kennzahlenHtml = kennzahlen.map((k) => `
+    <div class="print-kennzahl"><div class="pk-label">${escapeHtml(k.label)}</div><div class="pk-value">${escapeHtml(String(k.value))}</div></div>`).join("");
+
+  const conflictGroups = exportHubBusplanConflictGroups(season).sort((a, b) => a.datum.localeCompare(b.datum));
+  const conflictMap = exportHubBusplanConflictMap(conflictGroups);
+  const conflictHtml = conflictGroups.length ? `
+    <div class="print-konflikte">
+      <h2>⚠️ Konflikte</h2>
+      ${conflictGroups.map((g) => {
+        const option = season.busOptions.find((o) => o.id === g.optionId);
+        const teamsText = g.entries.map((e) => `${escapeHtml(e.teamName)} (${escapeHtml(e.ort || "Ort offen")})`).join(" + ");
+        return `<div class="print-konflikt-row"><strong>${escapeHtml(exportHubFmtDatum(g.datum))}</strong> — ${escapeHtml(option ? option.name : g.optionId)}: ${teamsText}</div>`;
+      }).join("")}
+    </div>` : "";
+
+  const teamBlocksHtml = season.teams.map((t) => {
+    const options = t.busOptionIds.map((id) => season.busOptions.find((o) => o.id === id)).filter(Boolean);
+    const spiele = t.spiele.slice().sort((a, b) => (a.datum || "").localeCompare(b.datum || ""));
+    const heading = `<h2>${escapeHtml(t.name)}${t.liga ? " — " + escapeHtml(t.liga) : ""}</h2>`;
+    if (!spiele.length) return `<div class="print-team-block">${heading}<p class="print-meta">Keine Spiele erfasst.</p></div>`;
+    const theadHtml = `<tr><th>Datum</th><th>Ort</th>${options.map((o) => `<th>${escapeHtml(o.name)}</th>`).join("")}<th>Notiz</th></tr>`;
+    const rowsHtml = spiele.map((sp) => {
+      const cells = options.map((o) => {
+        const st = sp.status[o.id] || { wert: "", notiz: "" };
+        const def = EXPORT_HUB_BUSPLAN_STATUS_WERTE.find((s) => s.id === st.wert) || EXPORT_HUB_BUSPLAN_STATUS_WERTE[0];
+        const partners = conflictMap[`${t.id}|${sp.id}|${o.id}`];
+        let text = def.label;
+        if (st.notiz) text += " – " + st.notiz;
+        if (partners) text += " ⚠️";
+        return `<td class="print-status-cell" style="background:${def.farbe}">${escapeHtml(text)}</td>`;
+      }).join("");
+      return `<tr><td class="strong">${escapeHtml(exportHubFmtDatum(sp.datum))}</td><td>${escapeHtml(sp.ort)}</td>${cells}<td>${escapeHtml(sp.notiz || "")}</td></tr>`;
+    }).join("");
+    return `<div class="print-team-block">${heading}<table class="print-table"><thead>${theadHtml}</thead><tbody>${rowsHtml}</tbody></table></div>`;
+  }).join("");
+
+  document.getElementById("print-content").innerHTML = `
+    <h1>🚌 Busplan — Gesamtübersicht</h1>
+    <p class="print-meta">Saison ${escapeHtml(seasonKey)} — erstellt am ${new Date().toLocaleString("de-DE")}</p>
+    <div class="print-kennzahlen">${kennzahlenHtml}</div>
+    ${conflictHtml}
+    ${teamBlocksHtml || `<p class="print-meta">Für diese Saison sind noch keine Mannschaften erfasst.</p>`}`;
+  printExportHubContent();
+}
+
+// -- Dispatch + Klick-Wiring (data-export-Attribute, siehe index.html) --
+
+const EXPORT_HUB_HANDLERS = {
+  "materialliste-json": exportMateriallisteJson,
+  "spielertool-test-json": exportSpielertoolJson,
+  "personalkosten-text": () => exportPersonalkostenReport("text"),
+  "personalkosten-pdf": () => exportPersonalkostenReport("pdf"),
+  "busplan-pdf": exportBusplanHubPdf,
+  "kleiderbestellung-text": () => exportKleiderbestellungReport("text"),
+  "kleiderbestellung-pdf": () => exportKleiderbestellungReport("pdf"),
+  "materialbedarf-text": () => exportMaterialbedarfReport("text"),
+  "materialbedarf-pdf": () => exportMaterialbedarfReport("pdf")
+};
+
+async function runExportHubAction(key, btn) {
+  const errorEl = document.getElementById("export-hub-error");
+  if (errorEl) errorEl.style.display = "none";
+  const handler = EXPORT_HUB_HANDLERS[key];
+  if (!handler) return;
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Lädt …";
+  try {
+    await handler();
+  } catch (e) {
+    if (errorEl) {
+      errorEl.textContent = e.message || "Export fehlgeschlagen.";
+      errorEl.style.display = "block";
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+
 async function loadAndRenderFeedback() {
   const errorEl = document.getElementById("feedback-admin-error");
   errorEl.style.display = "none";
@@ -1582,6 +2047,16 @@ function setupTabs() {
 
   const recentSelect = document.getElementById("admin-dashboard-recent-select");
   if (recentSelect) recentSelect.addEventListener("change", renderRecentActivity);
+
+  document.querySelectorAll("[data-export]").forEach((btn) => {
+    btn.addEventListener("click", () => runExportHubAction(btn.dataset.export, btn));
+  });
+  document.querySelectorAll("[data-open-tool]").forEach((btn) => {
+    btn.addEventListener("click", () => openTool(btn.dataset.openTool));
+  });
+  document.querySelectorAll("[data-open-url]").forEach((btn) => {
+    btn.addEventListener("click", () => window.open(btn.dataset.openUrl, "_blank", "noopener"));
+  });
 }
 
 function renderHeaderUser() {
@@ -1691,7 +2166,7 @@ async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await loadCalendarWidget();
+  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
@@ -1984,7 +2459,7 @@ async function init() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await loadCalendarWidget();
+  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus()]);
   if (currentUser && currentUser.isAdmin) {
     // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
     // anhand von groupsState, das also schon geladen sein muss, bevor

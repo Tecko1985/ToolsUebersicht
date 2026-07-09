@@ -73,6 +73,13 @@
 //     wer laut Trainerdaten (PROVISION_ONLY_PATHS, Tag+Monat, Europe/Berlin) heute Geburtstag hat — nur der
 //     Name, nie das Geburtsjahr oder andere Trainerdaten-Felder (die bleiben exklusiv personalakte-overview
 //     vorbehalten). Fürs "Nächste Termine"-Widget in app.js.
+//   POST { action: "my-trainerdaten-status" } (jeder eingeloggte Nutzer) -> { vorhanden, trainerdatenGesamtOk, ...restliche
+//     Trainerdaten-Statusfelder (gleiche Zusammenfassung wie personalakte-overview, aber NUR für den eigenen
+//     Datensatz, kein Admin-Gate) } — für das grüne/rote Ampel-Badge auf der Trainerdaten-Kachel im Dashboard.
+//     trainerdatenGesamtOk ist `null`, solange gar kein Trainerdaten-Datensatz existiert (kein rotes Kreuz für
+//     "bin gar kein Trainer"), sonst ein serverseitig berechnetes bool (Daten eingereicht + Lizenz oder "keine
+//     Lizenz" + Lizenz nicht abgelaufen + Führerschein < 6 Monate alt + Führungszeugnis eingereicht + Kodex
+//     < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von Trainerdaten geworden, siehe unten).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -370,6 +377,8 @@ export default {
         return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
       case "list-birthdays-today":
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
+      case "my-trainerdaten-status":
+        return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "provision-group":
@@ -862,6 +871,36 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
   return json({ namen }, 200, corsHeaders);
 }
 
+// Status-Badge auf der Trainerdaten-Kachel (Dashboard) -- bewusst wie
+// list-birthdays-today/list-trainer-profiles für JEDEN eingeloggten Nutzer
+// offen (nur der eigene Datensatz, kein Admin-Gate wie mayViewPersonalakte).
+// trainerdatenGesamtOk ist die einzige Ampel-Bedingung, serverseitig berechnet,
+// damit die Logik nicht im Client dupliziert wird. null (nicht false), wenn
+// gar kein Trainerdaten-Datensatz existiert -- die Kachel zeigt dann bewusst
+// KEIN rotes Kreuz ("bin gar kein Trainer"), sondern gar kein Badge.
+async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const user = getOwn(session.usersDoc.users, session.username);
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const td = findTrainerdatenRecord(trainerdatenDoc, user);
+  const summary = buildTrainerdatenSummary(td);
+
+  const lizenzOk = summary.trainerlizenzNichtVorhanden === true || !!(
+    summary.trainerlizenzHochgeladenAm &&
+    (!summary.trainerlizenzGueltigBis || new Date(summary.trainerlizenzGueltigBis) > new Date())
+  );
+  const trainerdatenGesamtOk = summary.vorhanden ? !!(
+    summary.unterschriftAm &&
+    lizenzOk &&
+    summary.fuehrerscheinGueltig === true &&
+    summary.fuehrungszeugnisEingereichtAm &&
+    summary.kodexGueltig === true
+  ) : null;
+
+  return json({ ...summary, trainerdatenGesamtOk }, 200, corsHeaders);
+}
+
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
@@ -1152,10 +1191,12 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
       })
     : [];
 
-  const [feedbackDoc, trainerdatenDoc, trainerkodexDoc, materialbedarfDoc, busplanDoc] = await Promise.all([
+  // trainerkodexDoc/DAV_APPS.trainerkodex seit 1.6 nicht mehr nötig -- Trainerkodex
+  // ist Teil von Trainerdaten geworden (siehe [[project-trainerkodex]]), die Quote
+  // unten liest jetzt aus trainerdatenByUsername statt einem eigenen Lookup.
+  const [feedbackDoc, trainerdatenDoc, materialbedarfDoc, busplanDoc] = await Promise.all([
     readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] }),
     readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
-    readJson(DAV_APPS.trainerkodex, authHeader, { bestaetigungen: {} }),
     readJson(DAV_APPS.materialbedarf, authHeader, { meldungen: [] }),
     readJson(DAV_APPS.busplan, authHeader, { meta: {}, seasons: {} })
   ]);
@@ -1172,13 +1213,11 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     return !!(t && (t.unterschriftAm || t.signatureDataUrl));
   }).length;
 
-  // Trainerkodex: bestaetigungen ist ein Objekt keyed by username; ein
-  // bestätigter Eintrag hat "datum" gesetzt (unbestätigte Provisioning-
-  // Platzhalter haben kein datum).
-  const bestaetigungen = trainerkodexDoc.bestaetigungen || {};
+  // Trainerkodex: seit 1.6 kodexBestaetigtAm auf dem Trainerdaten-Datensatz
+  // (gleiche Quelle wie trainervertragEingereicht oben, kein eigenes Dokument mehr).
   const trainerkodexBestaetigt = trainerUsernames.filter((uname) => {
-    const b = bestaetigungen[uname];
-    return !!(b && b.datum);
+    const t = trainerdatenByUsername.get(uname);
+    return !!(t && t.kodexBestaetigtAm);
   }).length;
 
   const meldungen = Array.isArray(materialbedarfDoc.meldungen) ? materialbedarfDoc.meldungen : [];
@@ -1203,7 +1242,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     username: uname, at: trainerdatenByUsername.has(uname) ? trainervertragEingereichtAm(trainerdatenByUsername.get(uname)) : null
   })), 5);
   const recentTrainerkodex = topRecent(trainerUsernames.map((uname) => ({
-    username: uname, at: bestaetigungen[uname] ? bestaetigungen[uname].datum : null
+    username: uname, at: trainerdatenByUsername.has(uname) ? trainerdatenByUsername.get(uname).kodexBestaetigtAm : null
   })), 5);
 
   const feedbackEntries = Array.isArray(feedbackDoc.entries) ? feedbackDoc.entries : [];
@@ -1247,36 +1286,33 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
 // gelesenen App-Dateien. Wird sowohl für die Übersicht (einmal je Mitglied der
 // Trainer-Gruppe) als auch für archive-trainer (einmal, frisch, für genau eine
 // Person) verwendet -- ein Join, zwei Aufrufer.
-function buildTrainerRecord(user, usersDoc, sources) {
-  const { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc } = sources;
-  const fullName = `${user.vorname || ""} ${user.nachname || ""}`.trim();
-  const fullNameReversed = `${user.nachname || ""} ${user.vorname || ""}`.trim();
-
-  // Trainerkodex: bestaetigungen[username] -- Platzhalter (soll:true, kein datum)
-  // zaehlt als nicht bestaetigt, wie schon in handleGetAdminStats.
-  const kodex = (trainerkodexDoc.bestaetigungen || {})[user.username];
-  const trainerkodex = {
-    bestaetigt: !!(kodex && kodex.datum),
-    datum: (kodex && kodex.datum) || null,
-    kodexVersion: (kodex && kodex.kodexVersion) || null
-  };
-
-  // Trainerdaten: Status/Verlaufsfelder plus seit 2026-07-08 zusaetzlich
-  // Geburtsdatum/Adresse/Telefon/E-Mail (expliziter User-Wunsch, damit die
-  // Personalakte diese Basisdaten zeigen kann) -- IBAN/Bankverbindung bleiben
-  // weiterhin ausgeschlossen, dafuer gibt es PROVISION_ONLY_PATHS ueberhaupt.
-  // Match-Reihenfolge: echter username (reale Einreichung) > linkedUsername
-  // (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback
-  // (sameNamePair reihenfolge-tolerant, gleicher Grund wie TrainerCheckliste).
-  const td = (trainerdatenDoc.trainer || []).find((t) =>
+// Trainerdaten: gemeinsame Match-Kaskade, auch von handleMyTrainerdatenStatus
+// (Status-Badge auf der Trainerdaten-Kachel) genutzt -- ein Ort für den Join.
+// Match-Reihenfolge: echter username (reale Einreichung) > linkedUsername
+// (Provisioning-Stub vor Erstlogin, siehe provisionTrainerdaten) > Namensfallback
+// (sameNamePair reihenfolge-tolerant, gleicher Grund wie TrainerCheckliste).
+function findTrainerdatenRecord(trainerdatenDoc, user) {
+  if (!user) return null;
+  return (trainerdatenDoc.trainer || []).find((t) =>
     (t.username && t.username === user.username) ||
     (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
-    sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname));
-  // trainerlizenzHochgeladenAm: reiner Status wie fuehrungszeugnisEingereichtAm,
-  // bewusst keine Ablauflogik (kein Aequivalent zu FUEHRERSCHEIN_GUELTIGKEIT_MONATE).
-  // Führerschein-Gültigkeit seit 1.1 hier statt in Fahrtenbuch berechnet (Feature
-  // dorthin migriert, siehe [[project-trainerdaten]]) -- gleiche Formel wie vorher
-  // (hochgeladenAm + 6 Monate). Führungszeugnis hat bewusst keine Ablauflogik (v1).
+    sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname)) || null;
+}
+
+// Status/Verlaufsfelder plus seit 2026-07-08 zusaetzlich Geburtsdatum/Adresse/
+// Telefon/E-Mail (expliziter User-Wunsch, damit die Personalakte diese
+// Basisdaten zeigen kann) -- IBAN/Bankverbindung bleiben weiterhin
+// ausgeschlossen, dafuer gibt es PROVISION_ONLY_PATHS ueberhaupt.
+// trainerlizenzHochgeladenAm: reiner Status wie fuehrungszeugnisEingereichtAm.
+// trainerlizenzNichtVorhanden/Art/GueltigBis: seit 2026-07-09, vorher fehlten
+// diese drei hier (Lücke, u.a. Personalaktes Lizenzanzeige betreffend).
+// Führerschein-Gültigkeit seit 1.1 hier statt in Fahrtenbuch berechnet (Feature
+// dorthin migriert, siehe [[project-trainerdaten]]) -- gleiche Formel wie vorher
+// (hochgeladenAm + 6 Monate). Führungszeugnis hat bewusst keine Ablauflogik (v1).
+// kodexBestaetigtAm/kodexSignatureDataUrl/kodexVersion (seit 1.6): Trainerkodex ist
+// in Trainerdaten aufgegangen (siehe [[project-trainerkodex]]), gleiche 6-Monats-
+// Ablauflogik wie beim Führerschein, aber unabhängig davon berechnet.
+function buildTrainerdatenSummary(td) {
   let fuehrerscheinGueltigBis = null, fuehrerscheinGueltig = null;
   if (td && td.fuehrerscheinHochgeladenAm) {
     const faellig = new Date(td.fuehrerscheinHochgeladenAm);
@@ -1284,7 +1320,14 @@ function buildTrainerRecord(user, usersDoc, sources) {
     fuehrerscheinGueltigBis = faellig.toISOString();
     fuehrerscheinGueltig = faellig.getTime() > Date.now();
   }
-  const trainerdaten = td ? {
+  let kodexGueltigBis = null, kodexGueltig = null;
+  if (td && td.kodexBestaetigtAm) {
+    const faellig = new Date(td.kodexBestaetigtAm);
+    faellig.setMonth(faellig.getMonth() + 6);
+    kodexGueltigBis = faellig.toISOString();
+    kodexGueltig = faellig.getTime() > Date.now();
+  }
+  return td ? {
     vorhanden: true,
     trainerId: td.id || null,
     unterschriftAm: td.unterschriftAm || null,
@@ -1295,6 +1338,13 @@ function buildTrainerRecord(user, usersDoc, sources) {
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
     fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null,
     trainerlizenzHochgeladenAm: td.trainerlizenzHochgeladenAm || null,
+    trainerlizenzNichtVorhanden: !!td.trainerlizenzNichtVorhanden,
+    trainerlizenzArt: td.trainerlizenzArt || null,
+    trainerlizenzGueltigBis: td.trainerlizenzGueltigBis || null,
+    kodexBestaetigtAm: td.kodexBestaetigtAm || null,
+    kodexSignatureDataUrl: td.kodexSignatureDataUrl || null,
+    kodexVersion: td.kodexVersion || null,
+    kodexGueltigBis, kodexGueltig,
     geburtsdatum: td.geburtsdatum || null,
     strasse: td.strasse || null,
     plz: td.plz || null,
@@ -1304,8 +1354,28 @@ function buildTrainerRecord(user, usersDoc, sources) {
   } : {
     vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
     fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null,
-    trainerlizenzHochgeladenAm: null,
+    trainerlizenzHochgeladenAm: null, trainerlizenzNichtVorhanden: false, trainerlizenzArt: null, trainerlizenzGueltigBis: null,
+    kodexBestaetigtAm: null, kodexSignatureDataUrl: null, kodexVersion: null, kodexGueltigBis: null, kodexGueltig: null,
     geburtsdatum: null, strasse: null, plz: null, ort: null, telefon: null, email: null
+  };
+}
+
+function buildTrainerRecord(user, usersDoc, sources) {
+  const { trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc } = sources;
+  const fullName = `${user.vorname || ""} ${user.nachname || ""}`.trim();
+  const fullNameReversed = `${user.nachname || ""} ${user.vorname || ""}`.trim();
+
+  const td = findTrainerdatenRecord(trainerdatenDoc, user);
+  const trainerdaten = buildTrainerdatenSummary(td);
+
+  // Trainerkodex: seit 1.6 Teil von Trainerdaten (siehe [[project-trainerkodex]]),
+  // kein separates trainerkodexDoc/DAV_APPS.trainerkodex-Lookup mehr -- dieselbe
+  // Ausgabeform wie vorher (bestaetigt/datum/kodexVersion), Personalakte braucht
+  // dafür keine Client-Änderung.
+  const trainerkodex = {
+    bestaetigt: !!trainerdaten.kodexBestaetigtAm,
+    datum: trainerdaten.kodexBestaetigtAm,
+    kodexVersion: trainerdaten.kodexVersion
   };
 
   // TrainerCheckliste: exakt dieselbe Match-Konvention wie provisionTrainercheckliste
@@ -1370,14 +1440,15 @@ function buildTrainerRecord(user, usersDoc, sources) {
 }
 
 async function loadPersonalakteSources(env, authHeader) {
-  const [trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc] = await Promise.all([
-    readJson(DAV_APPS.trainerkodex, authHeader, { bestaetigungen: {} }),
+  // trainerkodexDoc seit 1.6 nicht mehr nötig -- Trainerkodex ist Teil von
+  // Trainerdaten geworden (siehe buildTrainerRecord), ein Lookup weniger.
+  const [trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc] = await Promise.all([
     readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
     readJson(DAV_APPS.trainercheckliste, authHeader, { trainerEintraege: [] }),
     readJson(DAV_APPS.personalkosten, authHeader, { meta: {}, seasons: {} }),
     readJson(DAV_APPS.kadermanager, authHeader, { meta: {}, teams: [] })
   ]);
-  return { trainerkodexDoc, trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc };
+  return { trainerdatenDoc, checklisteDoc, personalkostenDoc, kadermanagerDoc };
 }
 
 async function handlePersonalakteOverview(request, env, authHeader, corsHeaders) {
@@ -2371,8 +2442,7 @@ const PROVISION_ADAPTERS = {
   "personalkosten": provisionPersonalkosten,
   "trainercheckliste": provisionTrainercheckliste,
   "kadermanager": provisionKadermanager,
-  "trainerdaten": provisionTrainerdaten,
-  "trainerkodex": provisionTrainerkodex
+  "trainerdaten": provisionTrainerdaten
 };
 
 function provisionPathFor(app) {
@@ -2386,7 +2456,6 @@ function provisionDefault(app) {
     case "trainercheckliste": return { trainerEintraege: [] };
     case "kadermanager":      return { meta: {}, teams: [] };
     case "trainerdaten":      return { trainer: [] };
-    case "trainerkodex":      return { bestaetigungen: {} };
     default:                  return {};
   }
 }
@@ -2505,17 +2574,6 @@ function provisionTrainerdaten(data, p) {
     vertragsGeneriert: false,
     linkedUsername: p.username
   });
-  return "created";
-}
-
-function provisionTrainerkodex(data, p) {
-  if (!data.bestaetigungen || typeof data.bestaetigungen !== "object") data.bestaetigungen = {};
-  // Key = username. Ein vorhandener Eintrag (echte Bestätigung ODER Platzhalter)
-  // bleibt unangetastet — die echte Bestätigung überschreibt den Platzhalter später
-  // client-seitig. Der Platzhalter (soll:true, ohne datum) erscheint in der
-  // Admin-Übersicht als "offen — noch nicht bestätigt".
-  if (getOwn(data.bestaetigungen, p.username)) return "exists";
-  data.bestaetigungen[p.username] = { vorname: p.vorname, nachname: p.nachname, soll: true };
   return "created";
 }
 
