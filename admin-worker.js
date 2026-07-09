@@ -113,10 +113,12 @@
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
 //     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
+//     Für Apps in WRITE_REQUIRES_EDIT_PERMISSION (aktuell: vereinswiki) zusätzlich ein Bearbeiten-Recht (editGroupIds/resolveEditPermission) -> sonst 403.
 //   POST { action: "dav-file-put", app, id, name, contentType, dataBase64 } + Authorization: Bearer -> { ok:true }
-//     (lädt eine Binärdatei in den Unterordner dateien/ der App; id = UUID, Größe <= 10 MB; Sichtbarkeits-Check wie dav-load)
+//     (lädt eine Binärdatei in den Unterordner dateien/ der App; id = UUID, Größe <= 10 MB; Sichtbarkeits-Check wie dav-load,
+//      plus Bearbeiten-Recht-Check wie dav-save für Apps in WRITE_REQUIRES_EDIT_PERMISSION)
 //   POST { action: "dav-file-get", app, id } + Authorization: Bearer    -> rohe Datei-Bytes (Content-Type von Nextcloud) | 404
-//   POST { action: "dav-file-delete", app, id } + Authorization: Bearer -> { ok:true } (204/404 = Erfolg beim Aufräumen)
+//   POST { action: "dav-file-delete", app, id } + Authorization: Bearer -> { ok:true } (204/404 = Erfolg beim Aufräumen; Bearbeiten-Recht-Check wie dav-file-put)
 //   POST { action: "dav-restricted-put", app, contentType, dataBase64 } + Bearer -> { ok:true }
 //     (abgeschotteter Datei-Upload: die Datei wird IMMER unter dem eigenen, aus dem Token stammenden
 //      Nutzernamen abgelegt und ist NUR für Eigentümer/viewGroupId/Admin lesbar — für sensible
@@ -173,6 +175,15 @@ const DAV_APPS = {
   "personalakte":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalakte/personalakte.json",
   "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json"
 };
+
+// Apps, bei denen Schreiben (dav-save/dav-file-put/dav-file-delete) zusätzlich zur
+// reinen Tool-Sichtbarkeit ein explizites Bearbeiten-Recht voraussetzt (editGroupIds,
+// serverseitig über resolveEditPermission geprüft) — nicht nur ein UI-Hinweis wie
+// bisher bei den anderen Apps mit canEdit(). Für alle DAV_APPS, die NICHT hier stehen,
+// bleibt das gewollte Verhalten: wer das Tool sehen darf, darf auch schreiben (z.B.
+// Materialbedarf-Meldungen, Kleiderbestellungen) — dort ist das kein Bearbeiten-Recht-
+// Konzept, sondern die eigentliche Nutzung des Tools.
+const WRITE_REQUIRES_EDIT_PERMISSION = new Set(["vereinswiki"]);
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
 // bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: Trainerdaten
@@ -1524,6 +1535,9 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
   if (!(await userMayAccessTool(app, session, env, authHeader))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
+  if (WRITE_REQUIRES_EDIT_PERMISSION.has(app) && !(await resolveEditPermission(app, session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
 
   // Optionaler Konfliktschutz: schickt der Client das rev (ETag) seines letzten
   // dav-load mit, wird nur geschrieben, wenn die Datei serverseitig unverändert
@@ -1561,9 +1575,11 @@ function davFileDir(app) {
 }
 
 // Gemeinsame Vorprüfung aller Datei-Aktionen: Login, bekannte App, gültige
-// Datei-Id (UUID) und Tool-Sichtbarkeit (wie dav-load/dav-save). Liefert
-// { dir, fileUrl } oder { error: <fertige Response> }.
-async function prepareFileAction(request, body, env, authHeader, corsHeaders) {
+// Datei-Id (UUID) und Tool-Sichtbarkeit (wie dav-load/dav-save). Mit
+// { requireEdit: true } (put/delete) zusätzlich ein Bearbeiten-Recht für Apps
+// in WRITE_REQUIRES_EDIT_PERMISSION — get (Ansehen/Herunterladen) verlangt das
+// bewusst nicht. Liefert { dir, fileUrl } oder { error: <fertige Response> }.
+async function prepareFileAction(request, body, env, authHeader, corsHeaders, opts) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return { error: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
   const app = String(body.app || "");
@@ -1574,11 +1590,15 @@ async function prepareFileAction(request, body, env, authHeader, corsHeaders) {
   if (!(await userMayAccessTool(app, session, env, authHeader))) {
     return { error: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
   }
+  if (opts && opts.requireEdit && WRITE_REQUIRES_EDIT_PERMISSION.has(app) &&
+      !(await resolveEditPermission(app, session, env, authHeader))) {
+    return { error: json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders) };
+  }
   return { dir, fileUrl: dir + "/" + id };
 }
 
 async function handleDavFilePut(request, body, env, authHeader, corsHeaders) {
-  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders);
+  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders, { requireEdit: true });
   if (p.error) return p.error;
 
   let bytes;
@@ -1633,7 +1653,7 @@ async function handleDavFileGet(request, body, env, authHeader, corsHeaders) {
 }
 
 async function handleDavFileDelete(request, body, env, authHeader, corsHeaders) {
-  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders);
+  const p = await prepareFileAction(request, body, env, authHeader, corsHeaders, { requireEdit: true });
   if (p.error) return p.error;
 
   const resp = await fetch(p.fileUrl, { method: "DELETE", headers: { Authorization: authHeader } });
