@@ -79,7 +79,8 @@
 //     trainerdatenGesamtOk ist `null`, solange gar kein Trainerdaten-Datensatz existiert (kein rotes Kreuz für
 //     "bin gar kein Trainer"), sonst ein serverseitig berechnetes bool (Daten eingereicht + Lizenz oder "keine
 //     Lizenz" + Lizenz nicht abgelaufen + Führerschein < 6 Monate alt + Führungszeugnis eingereicht + Kodex
-//     < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von Trainerdaten geworden, siehe unten).
+//     < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von Trainerdaten geworden, siehe unten;
+//     + Jugendschutzkonzept < 6 Monate alt bestätigt, seit Trainerdaten 1.7, gleiche Ablauflogik wie Kodex).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -895,7 +896,8 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     lizenzOk &&
     summary.fuehrerscheinGueltig === true &&
     summary.fuehrungszeugnisEingereichtAm &&
-    summary.kodexGueltig === true
+    summary.kodexGueltig === true &&
+    summary.jugendschutzGueltig === true
   ) : null;
 
   return json({ ...summary, trainerdatenGesamtOk }, 200, corsHeaders);
@@ -1312,6 +1314,9 @@ function findTrainerdatenRecord(trainerdatenDoc, user) {
 // kodexBestaetigtAm/kodexSignatureDataUrl/kodexVersion (seit 1.6): Trainerkodex ist
 // in Trainerdaten aufgegangen (siehe [[project-trainerkodex]]), gleiche 6-Monats-
 // Ablauflogik wie beim Führerschein, aber unabhängig davon berechnet.
+// jugendschutzBestaetigtAm/jugendschutzSignatureDataUrl/jugendschutzVersion (seit
+// Trainerdaten 1.7): Kinder- und Jugendschutzkonzept, eigenständiges Dokument neben
+// dem Kodex, gleiche 6-Monats-Ablauflogik, unabhängig davon berechnet.
 function buildTrainerdatenSummary(td) {
   let fuehrerscheinGueltigBis = null, fuehrerscheinGueltig = null;
   if (td && td.fuehrerscheinHochgeladenAm) {
@@ -1326,6 +1331,13 @@ function buildTrainerdatenSummary(td) {
     faellig.setMonth(faellig.getMonth() + 6);
     kodexGueltigBis = faellig.toISOString();
     kodexGueltig = faellig.getTime() > Date.now();
+  }
+  let jugendschutzGueltigBis = null, jugendschutzGueltig = null;
+  if (td && td.jugendschutzBestaetigtAm) {
+    const faellig = new Date(td.jugendschutzBestaetigtAm);
+    faellig.setMonth(faellig.getMonth() + 6);
+    jugendschutzGueltigBis = faellig.toISOString();
+    jugendschutzGueltig = faellig.getTime() > Date.now();
   }
   return td ? {
     vorhanden: true,
@@ -1345,6 +1357,10 @@ function buildTrainerdatenSummary(td) {
     kodexSignatureDataUrl: td.kodexSignatureDataUrl || null,
     kodexVersion: td.kodexVersion || null,
     kodexGueltigBis, kodexGueltig,
+    jugendschutzBestaetigtAm: td.jugendschutzBestaetigtAm || null,
+    jugendschutzSignatureDataUrl: td.jugendschutzSignatureDataUrl || null,
+    jugendschutzVersion: td.jugendschutzVersion || null,
+    jugendschutzGueltigBis, jugendschutzGueltig,
     geburtsdatum: td.geburtsdatum || null,
     strasse: td.strasse || null,
     plz: td.plz || null,
@@ -1356,6 +1372,7 @@ function buildTrainerdatenSummary(td) {
     fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null,
     trainerlizenzHochgeladenAm: null, trainerlizenzNichtVorhanden: false, trainerlizenzArt: null, trainerlizenzGueltigBis: null,
     kodexBestaetigtAm: null, kodexSignatureDataUrl: null, kodexVersion: null, kodexGueltigBis: null, kodexGueltig: null,
+    jugendschutzBestaetigtAm: null, jugendschutzSignatureDataUrl: null, jugendschutzVersion: null, jugendschutzGueltigBis: null, jugendschutzGueltig: null,
     geburtsdatum: null, strasse: null, plz: null, ort: null, telefon: null, email: null
   };
 }
