@@ -127,6 +127,21 @@
 //   POST { action: "dav-restricted-delete", app, owner } + Bearer -> { ok:true }
 //     (dav-restricted-get/-delete nur, wenn owner==eigener Nutzer ODER Admin ODER Mitglied der viewGroupId;
 //      abgeschotteter Bereich je App in RESTRICTED_FILE_APPS konfiguriert)
+//   POST { action: "fahrtenbuch-extern-submit", code, fahrt:{...} } -> { ok:true, id } | 400 | 403
+//     (ohne Login: externe Eltern-Fahrt. code = PW_FAHRTENBUCH_EXTERN, JEDER der drei
+//      fahrtenbuch-extern-*-Aktionen prüft ihn unabhängig. fahrt entspricht dem Fahrtenbuch-Schema,
+//      wird serverseitig validiert/gecappt; quelle wird IMMER hart auf "extern" gesetzt, status
+//      IMMER "abgeschlossen". id vom Client vorab per crypto.randomUUID() erzeugt -> erneuter Submit
+//      mit gleicher id UND quelle "extern" überschreibt denselben Eintrag (Idempotenz bei Netzwerk-
+//      Retry) -- interne Einträge sind davon bewusst ausgenommen, sonst könnte ein Zugriffscode-
+//      Inhaber eine bestehende interne Fahrt per erratener/bekannter Id überschreiben.)
+//   POST { action: "fahrtenbuch-extern-file-put", code, id, name, contentType, dataBase64 } -> { ok:true }
+//     (Mängelfoto ohne Login, offener dateien/-Ordner wie dav-file-put, id = client-UUID.)
+//   POST { action: "fahrtenbuch-extern-fuehrerschein-put", code, owner?, contentType, dataBase64 } -> { ok:true, owner }
+//     (Führerschein-Kopie ohne Login, abgeschotteter Bereich wie dav-restricted-put, aber owner wird
+//      bei Erst-Upload VOM SERVER vergeben (kein owner aus dem Body vertraut) und in der Antwort
+//      zurückgegeben; Re-Upload schickt ihn zurück. Einsehbar später nur über dav-restricted-get/
+//      -delete mit Login, siehe oben.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -208,11 +223,15 @@ const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/
 // die echte serverseitige Abschottung für sensible Dokumente (z. B. Führerschein-Kopien).
 // Die Datei liegt unter <app-ordner>/<subdir>/<eigentuemer-username>, der Nutzername ist
 // zugleich der Zugriffsschlüssel (genau ein Dokument je Nutzer, Re-Upload überschreibt).
-// Aktuell leer: Fahrtenbuchs Führerschein-Eintrag wurde entfernt (Feature nach
-// Trainerdaten migriert, dort nativ nachgebaut statt über dieses generische Gateway
-// -- Trainerdaten enthält IBAN-Daten und darf bewusst nicht generisch erreichbar
-// sein, siehe PROVISION_ONLY_PATHS). Infrastruktur bleibt für künftige Apps stehen.
-const RESTRICTED_FILE_APPS = {};
+// fahrtenbuch (seit 1.1-extern): externe Eltern haben keinen Login-Nutzernamen als
+// natürlichen Schlüssel -- hier wird stattdessen ein serverseitig vergebener 32-Zeichen-
+// Hex-Schlüssel verwendet, siehe handleFahrtenbuchExternFuehrerscheinPut. Eigener
+// Unterordner-Name "fuehrerscheine-extern", damit er nicht mit Trainerdatens eigenem,
+// andersartigem Führerschein-Pfad kollidiert (Trainerdaten enthält IBAN-Daten und ist
+// bewusst nicht generisch über dieses Gateway erreichbar, siehe PROVISION_ONLY_PATHS).
+const RESTRICTED_FILE_APPS = {
+  fahrtenbuch: { subdir: "fuehrerscheine-extern", viewGroupId: "fuehrerschein-einsicht" }
+};
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
 const SALT_BYTES = 16;
@@ -355,6 +374,12 @@ export default {
         return handleDavRestrictedGet(request, body, env, authHeader, corsHeaders);
       case "dav-restricted-delete":
         return handleDavRestrictedDelete(request, body, env, authHeader, corsHeaders);
+      case "fahrtenbuch-extern-submit":
+        return handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders);
+      case "fahrtenbuch-extern-file-put":
+        return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
+      case "fahrtenbuch-extern-fuehrerschein-put":
+        return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -1431,7 +1456,8 @@ const ACTION_PASSWORD_SECRETS = {
   "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
   "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN", // Trainerkodex: Bestätigungen löschen (einzeln/alle)
-  "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG" // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
+  "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG", // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
+  "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN" // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
 };
 
 async function handleVerifyActionPassword(body, env, corsHeaders) {
@@ -1779,6 +1805,207 @@ async function handleDavRestrictedDelete(request, body, env, authHeader, corsHea
   const resp = await fetch(fileUrl, { method: "DELETE", headers: { Authorization: authHeader } });
   if (resp.ok || resp.status === 404) return json({ ok: true }, 200, corsHeaders);
   return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
+}
+
+// ---------- Aktionen: Fahrtenbuch extern (ohne Login, Zugriffscode) ----------
+//
+// Eltern ohne eigenes Tools-Übersicht-Konto tragen eine Fahrt ein bzw. laden
+// Mängelfotos/Führerschein hoch. Kein getVerifiedSession() — jeder der drei
+// Handler prüft stattdessen unabhängig über requireFahrtenbuchExternCode()
+// denselben Zugriffscode. Bewusst fest an app "fahrtenbuch" gebunden, kein
+// generisches app-Feld aus dem Body (kein Login -> kein Bezug zu
+// userMayAccessTool, das Konzept "Tool-Sichtbarkeit" existiert hier nicht).
+
+// Schema-Ausschnitt aus fahrtenbuch/config.js (ALLE_CHECK_KEYS). Der Worker hat
+// keinen Import-Zugriff auf die App-eigene config.js (separates Deployment) —
+// bei Änderung der Checkbox-Keys dort IMMER auch hier nachziehen.
+const FAHRTENBUCH_CHECK_KEYS = [
+  "chkFuehrerschein", "chkMindestalter", "chkKeinAlkohol",
+  "chkSicherheitVor", "chkSichtVor",
+  "chkVollgetankt", "chkReinigung", "chkSicherheitNach", "chkSichtNach"
+];
+
+const MAX_SIGNATURE_DATA_URL_LENGTH = 2 * 1024 * 1024; // ~1.5 MB dekodiert – reicht für eine Canvas-Unterschrift
+const MAX_EXTERN_FOTOS = 20;
+
+function capStr(v, max) {
+  return String(v == null ? "" : v).trim().slice(0, max);
+}
+
+// Gemeinsame Codeprüfung der drei fahrtenbuch-extern-*-Aktionen. Bewusst EIN
+// Secret für Fahrt-Eintrag + Mängelfoto + Führerschein (kein separater Vorab-
+// Verify-Call nötig — jeder der drei Handler ruft dies selbst auf, ist also für
+// sich vollständig authentifiziert, exakt wie handleVerifyActionPassword selbst).
+async function requireFahrtenbuchExternCode(body, env, corsHeaders) {
+  if (!env.PW_FAHRTENBUCH_EXTERN) {
+    return { error: json({ error: "Zugriffscode ist serverseitig nicht konfiguriert" }, 500, corsHeaders) };
+  }
+  const ok = await staticPasswordEquals(String(body.code || ""), env.PW_FAHRTENBUCH_EXTERN);
+  if (!ok) {
+    // Bremse gegen Durchprobieren — die Aktion ist ohne Login erreichbar.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return { error: json({ error: "Falscher Zugriffscode" }, 403, corsHeaders) };
+  }
+  return { ok: true };
+}
+
+async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders) {
+  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+  if (codeCheck.error) return codeCheck.error;
+
+  const f = body.fahrt && typeof body.fahrt === "object" ? body.fahrt : {};
+
+  const fahrerName = capStr(f.fahrerName, 120);
+  const reiseziel = capStr(f.reiseziel, 200);
+  const unterschrift = typeof f.unterschriftDataUrl === "string" ? f.unterschriftDataUrl : "";
+  if (!fahrerName) return json({ error: "Name des Fahrers fehlt" }, 400, corsHeaders);
+  if (!reiseziel) return json({ error: "Reiseziel fehlt" }, 400, corsHeaders);
+  if (!/^data:image\//.test(unterschrift)) return json({ error: "Unterschrift fehlt" }, 400, corsHeaders);
+  if (unterschrift.length > MAX_SIGNATURE_DATA_URL_LENGTH) return json({ error: "Unterschrift zu groß" }, 400, corsHeaders);
+
+  const id = (typeof f.id === "string" && /^[0-9a-f-]{8,64}$/i.test(f.id)) ? f.id : crypto.randomUUID();
+
+  const fotosIn = Array.isArray(f.maengelFotos) ? f.maengelFotos.slice(0, MAX_EXTERN_FOTOS) : [];
+  const maengelFotos = fotosIn.map((p) => {
+    const fid = p && typeof p.id === "string" ? p.id : "";
+    if (!FILE_ID_RE.test(fid)) return null;
+    return {
+      id: fid,
+      name: capStr(p.name, 200) || "Foto",
+      contentType: capStr(p.contentType, 100).replace(/[^\x20-\x7e]/g, "") || "image/jpeg"
+    };
+  }).filter(Boolean);
+
+  let fuehrerscheinKey = null;
+  if (typeof f.fuehrerscheinKey === "string" && f.fuehrerscheinKey) {
+    if (!USERNAME_RE.test(f.fuehrerscheinKey)) {
+      return json({ error: "Ungültiger Führerschein-Schlüssel" }, 400, corsHeaders);
+    }
+    fuehrerscheinKey = f.fuehrerscheinKey;
+  }
+
+  const entry = {
+    id,
+    erstelltVon: "",
+    erstelltAm: new Date().toISOString(),
+    quelle: "extern", // server-hart gesetzt, NIE aus dem Client-Body übernommen
+    fahrerName, reiseziel,
+    kennzeichen: capStr(f.kennzeichen, 20),
+    abteilung: capStr(f.abteilung, 120),
+    anzahlInsassen: capStr(f.anzahlInsassen, 5),
+    kmStart: capStr(f.kmStart, 10),
+    kmEnde: capStr(f.kmEnde, 10),
+    datumStart: capStr(f.datumStart, 10),
+    datumEnde: capStr(f.datumEnde, 10),
+    uhrzeitStart: capStr(f.uhrzeitStart, 5),
+    uhrzeitEnde: capStr(f.uhrzeitEnde, 5),
+    uebernahmeVon: capStr(f.uebernahmeVon, 120),
+    abholort: capStr(f.abholort, 120),
+    uebergabeAn: capStr(f.uebergabeAn, 120),
+    abstellort: capStr(f.abstellort, 120),
+    maengelText: capStr(f.maengelText, 2000),
+    maengelFotos,
+    unterschriftDataUrl: unterschrift,
+    status: "abgeschlossen", // extern immer sofort abgeschlossen, kein Zwischenspeichern
+    fuehrerscheinKey
+  };
+  FAHRTENBUCH_CHECK_KEYS.forEach((k) => { entry[k] = !!f[k]; });
+
+  const url = DAV_APPS.fahrtenbuch;
+  const doc = await readJson(url, authHeader, { meta: {}, fahrten: [] });
+  doc.meta = doc.meta && typeof doc.meta === "object" ? doc.meta : {};
+  doc.fahrten = Array.isArray(doc.fahrten) ? doc.fahrten : [];
+
+  // Idempotenz: erneuter Submit mit derselben (vom Client VOR diesem Aufruf
+  // erzeugten) id — z.B. weil eine Mobilfunkverbindung mitten in der Antwort
+  // abbrach und das Formular erneut sendet — überschreibt denselben Eintrag,
+  // statt eine zweite Fahrt anzulegen. Der Abgleich läuft NUR gegen bereits
+  // vorhandene EXTERNE Einträge (quelle==="extern") — sonst könnte ein
+  // Zugriffscode-Inhaber über eine erratene/bekannte interne Fahrt-Id eine
+  // echte, intern erfasste Fahrt überschreiben.
+  const existingIdx = doc.fahrten.findIndex((x) => x && x.id === id && x.quelle === "extern");
+  if (existingIdx >= 0) doc.fahrten[existingIdx] = entry;
+  else doc.fahrten.push(entry);
+  doc.meta.stand = new Date().toISOString();
+
+  try {
+    await writeJson(url, authHeader, doc); // unconditional, wie handleSubmitFeedback -- akzeptiertes Race-Risiko
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true, id }, 200, corsHeaders);
+}
+
+async function handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders) {
+  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+  if (codeCheck.error) return codeCheck.error;
+
+  const dir = davFileDir("fahrtenbuch");
+  const id = String(body.id || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+
+  const fileUrl = dir + "/" + id;
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(dir, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+async function handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders) {
+  const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
+  if (codeCheck.error) return codeCheck.error;
+
+  const rf = restrictedFileDir("fahrtenbuch");
+  if (!rf) return json({ error: "Abgeschotteter Bereich nicht konfiguriert" }, 500, corsHeaders);
+
+  // Owner-Schlüssel ist ein Zugriffs-Capability für ein sensibles Dokument —
+  // wird NIE frei vom Client erfunden. Erst-Upload: Server generiert (leerer/
+  // fehlender owner im Body). Re-Upload/Ersetzen in derselben Sitzung: Client
+  // schickt den zuvor VOM SERVER erhaltenen Wert zurück, damit dieselbe Datei
+  // überschrieben wird statt eine zweite, verwaiste Datei anzulegen.
+  let owner = String(body.owner || "");
+  if (owner && !USERNAME_RE.test(owner)) {
+    return json({ error: "Ungültiger Owner-Schlüssel" }, 400, corsHeaders);
+  }
+  if (!owner) owner = crypto.randomUUID().replace(/-/g, ""); // 32 Hex-Zeichen, erfüllt USERNAME_RE {3,32}
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+
+  const fileUrl = rf.dir + "/" + owner;
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(rf.dir, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, owner }, 200, corsHeaders);
 }
 
 // ---------- Nextcloud-JSON-Helfer ----------
