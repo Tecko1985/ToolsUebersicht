@@ -81,6 +81,15 @@
 //     Lizenz" + Lizenz nicht abgelaufen + Führerschein < 6 Monate alt + Führungszeugnis eingereicht + Kodex
 //     < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von Trainerdaten geworden, siehe unten;
 //     + Jugendschutzkonzept < 6 Monate alt bestätigt, seit Trainerdaten 1.7, gleiche Ablauflogik wie Kodex).
+//   POST { action: "my-trainercheckliste-status" } (jeder eingeloggte Nutzer) -> { vorhanden, zugang, abgang }
+//     eigener TrainerCheckliste-Eintrag (Namensabgleich wie personalakte-overview), NUR der eigene Datensatz,
+//     kein Admin-Gate (gleiche Vertrauensstufe wie my-trainerdaten-status) — für die read-only Anzeige "meine
+//     Checkliste" in Trainerdatens Trainer-Selbstbedienung (rein informativ, fließt NICHT in trainerdatenGesamtOk
+//     ein, siehe [[project-trainerdaten]]). zugang/abgang je { abgeschlossen, nichtAbgeschlossen,
+//     nichtAbgeschlossenGrund, headerChecked, headerDatum, ort, datum, bemerkungen, items, itemTexts,
+//     unterschriftTrainer, unterschriftFunktionaer } — volle eigene Personendaten inkl. Unterschriften sind hier
+//     unbedenklich (es ist ausschließlich der eigene Eintrag, gleiche Vertrauensstufe wie die eigene
+//     Trainerdaten-Einreichung), NICHT das ganze trainerEintraege-Array (Minimal-Disclosure, siehe CLAUDE.md).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -380,6 +389,8 @@ export default {
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
       case "my-trainerdaten-status":
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
+      case "my-trainercheckliste-status":
+        return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "provision-group":
@@ -901,6 +912,50 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   ) : null;
 
   return json({ ...summary, trainerdatenGesamtOk }, 200, corsHeaders);
+}
+
+// Trainer-Selbstbedienungs-Pendant zum Admin-only "TrainerCheckliste-Status"-Feld
+// in Trainerdaten (dort per Admin-WebDAV gelesen, siehe TRAINERCHECKLISTE_WEBDAV_URL
+// in Trainerdatens config.js) — dieselbe Quelle (DAV_APPS.trainercheckliste), aber
+// serverseitig auf den EIGENEN Eintrag verengt, da der Trainer keinen WebDAV-Zugriff
+// hat und das volle trainerEintraege-Array Namen/Adressen/Unterschriften ALLER
+// anderen Trainer enthält (Minimal-Disclosure, wie list-birthdays-today).
+async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const user = getOwn(session.usersDoc.users, session.username);
+  const checklisteDoc = await readJson(DAV_APPS.trainercheckliste, authHeader, { trainerEintraege: [] });
+  // Gleiche Match-Konvention wie handlePersonalakteOverview: linkedUsername (falls
+  // je gesetzt) vor Namensfallback; TrainerCheckliste kennt aktuell kein
+  // linkedUsername-Feld, der Zweig ist also Zukunftsvorsorge, kein toter Code-Pfad.
+  const eintrag = (checklisteDoc.trainerEintraege || []).find((e) =>
+    (e.linkedUsername && sameText(e.linkedUsername, session.username)) ||
+    sameNamePair(e.vorname, e.name, user.vorname, user.nachname));
+  if (!eintrag) return json({ vorhanden: false }, 200, corsHeaders);
+
+  const sectionOut = (s) => {
+    s = s || {};
+    return {
+      abgeschlossen: !!s.abgeschlossen,
+      nichtAbgeschlossen: !!s.nichtAbgeschlossen,
+      nichtAbgeschlossenGrund: s.nichtAbgeschlossenGrund || "",
+      headerChecked: !!s.headerChecked,
+      headerDatum: s.headerDatum || null,
+      ort: s.ort || "",
+      datum: s.datum || null,
+      bemerkungen: s.bemerkungen || "",
+      items: (s.items && typeof s.items === "object") ? s.items : {},
+      itemTexts: (s.itemTexts && typeof s.itemTexts === "object") ? s.itemTexts : {},
+      unterschriftTrainer: s.unterschriftTrainer || "",
+      unterschriftFunktionaer: s.unterschriftFunktionaer || ""
+    };
+  };
+
+  return json({
+    vorhanden: true,
+    zugang: sectionOut(eintrag.zugang),
+    abgang: sectionOut(eintrag.abgang)
+  }, 200, corsHeaders);
 }
 
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
