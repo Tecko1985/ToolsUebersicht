@@ -222,12 +222,12 @@ const TOOLS = [
   },
   {
     id: "vereinswiki",
-    name: "Vereinswiki",
+    name: "Toolbox Wiki",
     description: "Wissens-Assistent für allgemeine Vereinsunterlagen: Dokumente (Satzung, Ordnungen, Konzepte) hinterlegen und in normaler Sprache Fragen dazu stellen – eine KI antwortet auf Basis der Dokumente.",
     url: "https://tecko1985.github.io/Vereinswiki/",
     icon: "📚",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   }
 ];
