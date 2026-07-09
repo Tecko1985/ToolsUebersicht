@@ -1358,10 +1358,18 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
 // (sameNamePair reihenfolge-tolerant, gleicher Grund wie TrainerCheckliste).
 function findTrainerdatenRecord(trainerdatenDoc, user) {
   if (!user) return null;
-  return (trainerdatenDoc.trainer || []).find((t) =>
-    (t.username && t.username === user.username) ||
-    (t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
-    sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname)) || null;
+  const list = trainerdatenDoc.trainer || [];
+  // Username-Treffer haben Vorrang ueber das GANZE Array, erst dann linkedUsername,
+  // erst dann Namensabgleich -- exakt dieselbe Rangfolge wie die Schreibpfade
+  // (submit-worker.js handleSubmit/resolveOwnTrainerRecord). Die fruehere einzelne
+  // .find()-ODER-Kette nahm stattdessen den ERSTEN Record, der irgendein Kriterium
+  // erfuellte: stand ein namensgleicher Import-Stub (ohne Dokumente/Unterschrift)
+  // vor dem echten Datensatz, las die Ampel den Stub und blieb rot, obwohl der
+  // Trainer auf seinem echten Datensatz alles erfuellt hatte.
+  return list.find((t) => t.username && t.username === user.username) ||
+         list.find((t) => t.linkedUsername && sameText(t.linkedUsername, user.username)) ||
+         list.find((t) => sameNamePair(t.vorname, t.nachname, user.vorname, user.nachname)) ||
+         null;
 }
 
 // Status/Verlaufsfelder plus seit 2026-07-08 zusaetzlich Geburtsdatum/Adresse/
@@ -1405,7 +1413,11 @@ function buildTrainerdatenSummary(td) {
   return td ? {
     vorhanden: true,
     trainerId: td.id || null,
-    unterschriftAm: td.unterschriftAm || null,
+    // Fallback wie _eingereichtAm() in Trainerdatens app.js: Einreichungen von vor
+    // submit-worker 1.5 (2026-07-07) haben eine echte Signatur, aber noch kein
+    // unterschriftAm-Feld -- ohne den Fallback blieb die Ampel fuer solche Trainer
+    // dauerhaft rot, obwohl Admin-Liste/Detail (mit Fallback) "eingereicht" zeigen.
+    unterschriftAm: td.unterschriftAm || (td.signatureDataUrl ? td.erstelltAm : null) || null,
     erstelltAm: td.erstelltAm || null,
     vertragsGeneriert: !!td.vertragsGeneriert,
     status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
