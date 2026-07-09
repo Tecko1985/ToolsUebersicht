@@ -1,4 +1,4 @@
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.4";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -323,6 +323,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.4",
+    groups: [
+      {
+        title: "Trainerdaten-Ampel-Badge",
+        items: [
+          "Der Status auf der Trainerdaten-Kachel wird jetzt automatisch neu abgefragt, sobald man in den Dashboard-Tab zurückkehrt — vorher blieb er bis zu einem manuellen Neuladen der Seite auf dem Stand vom letzten Login stehen, auch wenn zwischenzeitlich z.B. eine fehlende Unterschrift nachgeholt wurde."
+        ]
+      }
+    ]
+  },
   {
     version: "1.3",
     groups: [

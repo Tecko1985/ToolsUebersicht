@@ -10,6 +10,7 @@ let bootstrapAvailable = false;
 let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } oder null
 let trainerdatenStatus = null; // Antwort von my-trainerdaten-status für die Badge-Anzeige auf der Trainerdaten-Kachel, null = kein Badge
+let _trainerdatenStatusLastFetch = 0; // Date.now() der letzten loadTrainerdatenStatus()-Abfrage, siehe visibilitychange-Listener unten
 let directoryGroupsState = []; // { id, name }[], für den Testansicht-Umschalter im Header (auch während aktiver Testansicht ladbar)
 
 // isAdmin/groupIds sind die effektive Identität (siehe set-view-as im Worker);
@@ -1149,6 +1150,7 @@ async function loadBirthdaysToday() {
 // solange kein Trainerdaten-Datensatz existiert (vorhanden:false) -- das ist
 // kein Fehlerfall, sondern z.B. ein Nutzer ohne Trainerrolle.
 async function loadTrainerdatenStatus() {
+  _trainerdatenStatusLastFetch = Date.now();
   if (!currentUser || !isVisibleToUser("trainerdaten", currentUser)) {
     trainerdatenStatus = null;
     return;
@@ -2555,3 +2557,17 @@ async function init() {
 }
 
 init();
+
+// Mehrfach live beobachtet (siehe project-toolsuebersicht-Memory): loadTrainerdatenStatus()
+// wurde bisher nur einmal beim Seitenladen/Login geholt. Kehrt ein Nutzer aus einer
+// verlinkten App zurück, nachdem er dort gerade eine fehlende Bestätigung nachgeholt
+// hat, blieb die Kachel bis zum manuellen Reload auf dem alten (roten) Stand hängen,
+// obwohl der Server längst "vollständig" berechnet. Fix: bei Rückkehr in den
+// sichtbaren Tab erneut abfragen -- mit Mindestabstand, damit schnelles Tab-Switching
+// den Worker nicht flutet (Timestamp wird auch vom Erstladen selbst gesetzt, siehe
+// loadTrainerdatenStatus()).
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (Date.now() - _trainerdatenStatusLastFetch < 10000) return;
+  loadTrainerdatenStatus();
+});
