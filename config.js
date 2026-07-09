@@ -183,11 +183,21 @@ const TOOLS = [
   {
     id: "fahrtenbuch",
     name: "Fahrtenbuch",
-    description: "Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit Fotos hochladen, unterschreiben — plus Führerschein-Kopie je Saison hinterlegen.",
+    description: "Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit Fotos hochladen, unterschreiben.",
     url: "https://tecko1985.github.io/fahrtenbuch/",
     icon: "🚐",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
+    devices: ["mobile", "desktop"]
+  },
+  {
+    id: "fahrtenbuch-extern",
+    name: "Fahrtenbuch (extern)",
+    description: "Für Eltern ohne Vereinskonto: Fahrt mit einem Vereinsfahrzeug eintragen und Führerschein-Kopie hochladen — zugriffscode-geschützt statt Login.",
+    url: "https://tecko1985.github.io/fahrtenbuch/extern.html",
+    icon: "🔗",
+    category: "Verein",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   },
   {
