@@ -176,6 +176,15 @@
 //      gegen ein Muster geprüft, das zwingend den "_fahrt-<fahrtId>"-Suffix enthalten muss, sonst
 //      könnte ein Nutzer über einen erratenen/kopierten Dateinamen fremde Kassierer-Belege im
 //      selben geteilten Ordner lesen.)
+//   POST { action: "testspielplaner-platzbelegung", app:"testspielplaner" } + Bearer
+//     -> { plaetze:[{id,name}], belegungen:[{tag,platz,start,ende,label}] }
+//     (read-only Minimal-Auszug des Platzbelegung-Wochenplans für die Slot-Suche des Testspielplaners.
+//      Zugriff über userMayAccessTool("testspielplaner") — wer Testspiele planen darf, braucht die
+//      Trainingszeiten, ohne die Platzbelegung-Kachel sehen zu müssen. notiz/ansprechpartner/kategorien/
+//      hallen* werden serverseitig weggelassen; bewusst KEIN DAV_APPS-Alias, der wäre per dav-save beschreibbar.)
+//   POST { action: "my-testspielplaner-status" } + Bearer -> { anstehendOhneGegner }
+//     (Badge auf der Testspielplaner-Kachel: Anzahl EIGENER genehmigter Reservierungen ohne Gegner in den
+//      nächsten 14 Tagen. Logik spiegelt anstehendeOhneGegner() in E:\testspielplaner\app.js.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
 
@@ -199,6 +208,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8798", // Materialbedarf (Dev-Server)
   "http://localhost:8783", // Personalakte (Dev-Server)
   "http://localhost:8784", // Vereinswiki (Dev-Server)
+  "http://localhost:8785", // Testspielplaner (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -222,7 +232,8 @@ const DAV_APPS = {
   "fahrtenbuch":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fahrtenbuch/fahrtenbuch.json",
   "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json",
   "personalakte":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalakte/personalakte.json",
-  "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json"
+  "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json",
+  "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json"
 };
 
 // Belegeingang-Ordner von sc-heiligenstadt-budget (eigenes Repo/eigener Worker,
@@ -391,6 +402,10 @@ export default {
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
+      case "my-testspielplaner-status":
+        return handleMyTestspielplanerStatus(request, env, authHeader, corsHeaders);
+      case "testspielplaner-platzbelegung":
+        return handleTestspielplanerPlatzbelegung(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "provision-group":
@@ -966,6 +981,47 @@ async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHea
   }, 200, corsHeaders);
 }
 
+// Read-only, stark gefilterter Blick auf den Platzbelegung-Wochenplan für die
+// Slot-Suche des Testspielplaners. Gated über userMayAccessTool("testspielplaner"),
+// NICHT "platzbelegung" — wer Testspiele planen darf, braucht die Trainingszeiten,
+// auch ohne die Platzbelegung-Kachel zu sehen. Minimal-Disclosure wie
+// my-trainercheckliste-status: notiz/ansprechpartner/kategorien/hallen* werden
+// serverseitig weggelassen. Bewusst KEIN zweiter DAV_APPS-Alias auf
+// platzbelegung.json — der wäre über dav-save beschreibbar und bräuchte eine
+// eigene sichtbarkeit.json-Konfiguration.
+async function handleTestspielplanerPlatzbelegung(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("testspielplaner", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const doc = await readJson(DAV_APPS.platzbelegung, authHeader, { plaetze: [], belegungen: [] });
+  return json({
+    plaetze: (Array.isArray(doc.plaetze) ? doc.plaetze : []).map((p) => ({ id: p.id, name: p.name })),
+    belegungen: (Array.isArray(doc.belegungen) ? doc.belegungen : []).map((b) => ({
+      tag: b.tag, platz: b.platz, start: b.start, ende: b.ende, label: b.label || ""
+    }))
+  }, 200, corsHeaders);
+}
+
+// Badge auf der Testspielplaner-Kachel (Dashboard): Anzahl EIGENER genehmigter
+// Reservierungen ohne Gegner in den nächsten 14 Tagen ("Gegner eintragen oder
+// Platz freigeben"). Logik muss anstehendeOhneGegner() in
+// E:\testspielplaner\app.js spiegeln (ISO-Stringvergleich, Europe/Berlin wie
+// handleListBirthdaysToday), sonst widersprechen sich Badge und In-App-Banner.
+async function handleMyTestspielplanerStatus(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const doc = await readJson(DAV_APPS.testspielplaner, authHeader, { reservierungen: [] });
+  const heute = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const grenze = new Date(Date.now() + 14 * 86400000).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const anstehendOhneGegner = (Array.isArray(doc.reservierungen) ? doc.reservierungen : []).filter((r) =>
+    r.erstelltVon === session.username && r.status === "genehmigt" &&
+    !((r.gegner || "").trim()) && (r.datum || "") >= heute && (r.datum || "") <= grenze
+  ).length;
+  return json({ anstehendOhneGegner }, 200, corsHeaders);
+}
+
 async function handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
@@ -1259,27 +1315,40 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   // trainerkodexDoc/DAV_APPS.trainerkodex seit 1.6 nicht mehr nötig -- Trainerkodex
   // ist Teil von Trainerdaten geworden (siehe [[project-trainerkodex]]), die Quote
   // unten liest jetzt aus trainerdatenByUsername statt einem eigenen Lookup.
-  const [feedbackDoc, trainerdatenDoc, materialbedarfDoc, busplanDoc] = await Promise.all([
+  const [feedbackDoc, trainerdatenDoc, materialbedarfDoc, busplanDoc, testspielplanerDoc] = await Promise.all([
     readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] }),
     readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] }),
     readJson(DAV_APPS.materialbedarf, authHeader, { meldungen: [] }),
-    readJson(DAV_APPS.busplan, authHeader, { meta: {}, seasons: {} })
+    readJson(DAV_APPS.busplan, authHeader, { meta: {}, seasons: {} }),
+    readJson(DAV_APPS.testspielplaner, authHeader, { reservierungen: [] })
   ]);
 
-  // Trainervertrag "eingereicht" = hat Account UND hat unterschrieben (nicht
-  // bloß ein automatisch angelegter Stub-Datensatz ohne Konto) — Ableitung
-  // wie E:\Trainerdaten\app.js::_eingereichtAm, hier nur als Boolean.
   const trainerdatenByUsername = new Map();
   (Array.isArray(trainerdatenDoc.trainer) ? trainerdatenDoc.trainer : []).forEach((t) => {
     if (t.username) trainerdatenByUsername.set(t.username, t);
   });
-  const trainervertragEingereicht = trainerUsernames.filter((uname) => {
-    const t = trainerdatenByUsername.get(uname);
-    return !!(t && (t.unterschriftAm || t.signatureDataUrl));
-  }).length;
 
-  // Trainerkodex: seit 1.6 kodexBestaetigtAm auf dem Trainerdaten-Datensatz
-  // (gleiche Quelle wie trainervertragEingereicht oben, kein eigenes Dokument mehr).
+  // Trainervertrag-Status je Gruppenmitglied: seit dem admin-getriebenen
+  // "generate-pdfs.ps1 -Zuweisen"-Stapel-Workflow kann ein Vertrag erstellt sein,
+  // OHNE dass der Trainer sich je selbst eingeloggt/eingereicht hat — solche
+  // Datensätze haben kein username-Feld und wurden von der reinen
+  // trainerdatenByUsername-Map (unten nur noch für Trainerkodex gebraucht) nie
+  // gefunden. Deshalb hier dieselbe namens-tolerante Match-Kaskade wie
+  // buildTrainerRecord/Personalakte (findTrainerdatenRecord) plus dieselbe
+  // Status-Ableitung wie Trainerdatens eigene _trainerStatus()/statusLabel
+  // (buildTrainerdatenSummary liefert exakt "unvollstaendig"|"ausstehend"|"generiert").
+  const trainervertragStatusCounts = { unvollstaendig: 0, ausstehend: 0, generiert: 0 };
+  trainerUsernames.forEach((uname) => {
+    const user = getOwn(usersDoc.users, uname);
+    const record = findTrainerdatenRecord(trainerdatenDoc, user);
+    const status = buildTrainerdatenSummary(record).status;
+    trainervertragStatusCounts[status] = (trainervertragStatusCounts[status] || 0) + 1;
+  });
+
+  // Trainerkodex: bestätigt sich der Trainer ausschließlich selbst im eigenen
+  // Login-Bereich (kein Admin-Batch-Äquivalent wie beim Vertrag oben) — ein
+  // Datensatz ohne username kann daher nie kodexBestaetigtAm tragen, die
+  // einfachere username-Map genügt hier weiterhin.
   const trainerkodexBestaetigt = trainerUsernames.filter((uname) => {
     const t = trainerdatenByUsername.get(uname);
     return !!(t && t.kodexBestaetigtAm);
@@ -1287,6 +1356,10 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
 
   const meldungen = Array.isArray(materialbedarfDoc.meldungen) ? materialbedarfDoc.meldungen : [];
   const materialbedarfOffen = meldungen.filter((m) => m.status === "offen").length;
+
+  // Testspielplaner: Anfragen, die auf eine Admin-Entscheidung warten.
+  const tspReservierungen = Array.isArray(testspielplanerDoc.reservierungen) ? testspielplanerDoc.reservierungen : [];
+  const testspielplanerAngefragt = tspReservierungen.filter((r) => r.status === "angefragt").length;
 
   // "Zuletzt aktiv"-Listen für das Dropdown im Admin-Dashboard — dieselben
   // bereits geladenen Datenquellen, nur nach Datum sortiert statt gezählt.
@@ -1334,11 +1407,17 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   return json({
     users: { total: usersTotal, passwordSet: usersPasswordSet },
     trainerGroup: { exists: !!trainerGroup, memberCount: trainerUsernames.length },
-    trainervertrag: { submitted: trainervertragEingereicht, total: trainerUsernames.length },
+    trainervertrag: {
+      total: trainerUsernames.length,
+      generiert: trainervertragStatusCounts.generiert,
+      ausstehend: trainervertragStatusCounts.ausstehend,
+      unvollstaendig: trainervertragStatusCounts.unvollstaendig
+    },
     trainerkodex: { confirmed: trainerkodexBestaetigt, total: trainerUsernames.length },
     feedbackOpen: feedbackOffen,
     materialbedarfOpen: materialbedarfOffen,
     busplanOpen: busplanOffen,
+    testspielplanerAngefragt,
     recentLogins,
     recentTrainervertrag,
     recentTrainerkodex
@@ -1420,7 +1499,15 @@ function buildTrainerdatenSummary(td) {
     unterschriftAm: td.unterschriftAm || (td.signatureDataUrl ? td.erstelltAm : null) || null,
     erstelltAm: td.erstelltAm || null,
     vertragsGeneriert: !!td.vertragsGeneriert,
-    status: td.status || (td.vertragsGeneriert ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
+    // vertragPdfBereitgestelltAm/vertragUnterschriebenAm (seit Trainerdaten 1.10):
+    // der digitale Signier-Workflow -- eigene Felder, getrennt vom alten Word-
+    // Batch-Flag vertragsGeneriert. Ohne diese beiden hier zeigte Personalakte
+    // "Vertrag ausstehend" auch fuer laengst digital unterschriebene Vertraege.
+    vertragPdfBereitgestelltAm: td.vertragPdfBereitgestelltAm || null,
+    vertragUnterschriebenAm: td.vertragUnterschriebenAm || null,
+    // vertragUnterschriebenAm zaehlt hier wie vertragsGeneriert als "generiert" --
+    // zwei gleichwertige Wege zum selben Ziel (unterschriebener Vertrag).
+    status: td.status || ((td.vertragsGeneriert || td.vertragUnterschriebenAm) ? "generiert" : (td.username ? "ausstehend" : "unvollstaendig")),
     fuehrerscheinHochgeladenAm: td.fuehrerscheinHochgeladenAm || null,
     fuehrerscheinGueltigBis, fuehrerscheinGueltig,
     fuehrungszeugnisEingereichtAm: td.fuehrungszeugnisEingereichtAm || null,
@@ -1443,7 +1530,8 @@ function buildTrainerdatenSummary(td) {
     telefon: td.telefon || null,
     email: td.email || null
   } : {
-    vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false, status: "unvollstaendig",
+    vorhanden: false, trainerId: null, unterschriftAm: null, erstelltAm: null, vertragsGeneriert: false,
+    vertragPdfBereitgestelltAm: null, vertragUnterschriebenAm: null, status: "unvollstaendig",
     fuehrerscheinHochgeladenAm: null, fuehrerscheinGueltigBis: null, fuehrerscheinGueltig: null, fuehrungszeugnisEingereichtAm: null,
     trainerlizenzHochgeladenAm: null, trainerlizenzNichtVorhanden: false, trainerlizenzArt: null, trainerlizenzGueltigBis: null,
     kodexBestaetigtAm: null, kodexSignatureDataUrl: null, kodexVersion: null, kodexGueltigBis: null, kodexGueltig: null,

@@ -1,4 +1,4 @@
-const APP_VERSION = "1.5";
+const APP_VERSION = "1.7";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -211,6 +211,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    id: "testspielplaner",
+    name: "Testspielplaner",
+    description: "Testspiele und Leistungsvergleiche planen: freien Platz mit passender Feldgröße finden (inkl. Trainingsplan-Abgleich), Termin anfragen, Admin genehmigt, Gegner nachtragen — mit Saison-Kontingent je Trainer.",
+    url: "https://tecko1985.github.io/testspielplaner/",
+    icon: "🆚",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "personalakte",
     name: "Personalakte",
     description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten und Lizenzen auf einen Blick, inkl. Archivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
@@ -323,6 +333,30 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Testspielplaner",
+        items: [
+          "Neue Kachel „Testspielplaner“: Testspiele und Leistungsvergleiche mit Platz-Reservierung, Genehmigungs-Workflow und Saison-Kontingent.",
+          "Kachel-Badge erinnert, wenn ein genehmigter Termin in den nächsten 14 Tagen noch keinen Gegner hat.",
+          "Admin-Dashboard zählt offene Testspiel-Anfragen."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.6",
+    groups: [
+      {
+        title: "Trainervertrag-Quote",
+        items: [
+          "Die Kachel zeigte nur, wie viele Trainer das Datenformular selbst mit Unterschrift eingereicht haben — Verträge, die der Admin per Stapel-Zuweisung erstellt hat, ohne dass sich der Trainer je selbst angemeldet hat, zählten nirgends mit. Kachel zeigt jetzt „erstellt von Gesamt“ plus Aufschlüsselung nach ausstehend/unvollständig."
+        ]
+      }
+    ]
+  },
   {
     version: "1.5",
     groups: [

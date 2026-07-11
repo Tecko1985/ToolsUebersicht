@@ -11,6 +11,8 @@ let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } oder null
 let trainerdatenStatus = null; // Antwort von my-trainerdaten-status für die Badge-Anzeige auf der Trainerdaten-Kachel, null = kein Badge
 let _trainerdatenStatusLastFetch = 0; // Date.now() der letzten loadTrainerdatenStatus()-Abfrage, siehe visibilitychange-Listener unten
+let testspielplanerStatus = null; // Antwort von my-testspielplaner-status (Badge "Gegner eintragen" auf der Testspielplaner-Kachel), null = kein Badge
+let _testspielplanerStatusLastFetch = 0; // analog _trainerdatenStatusLastFetch
 let directoryGroupsState = []; // { id, name }[], für den Testansicht-Umschalter im Header (auch während aktiver Testansicht ladbar)
 
 // isAdmin/groupIds sind die effektive Identität (siehe set-view-as im Worker);
@@ -929,6 +931,9 @@ function renderToolGrid() {
             ? '<div class="badge-status-ok">✓ Daten vollständig<button type="button" class="badge-refresh" title="Status aktualisieren" aria-label="Status aktualisieren">⟳</button></div>'
             : '<div class="badge-status-fail">✗ Daten unvollständig<button type="button" class="badge-refresh" title="Status aktualisieren" aria-label="Status aktualisieren">⟳</button></div>'
         ) : ""}
+        ${t.id === "testspielplaner" && testspielplanerStatus
+          ? `<div class="badge-status-fail">✗ ${testspielplanerStatus.anstehendOhneGegner}× Gegner eintragen</div>`
+          : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
       `;
@@ -1176,6 +1181,25 @@ async function loadTrainerdatenStatus() {
   } catch (e) {
     console.warn("Trainerdaten-Status nicht ladbar:", e);
     trainerdatenStatus = null;
+  }
+  renderToolGrid();
+}
+
+// Badge "Gegner eintragen" auf der Testspielplaner-Kachel (my-testspielplaner-status,
+// siehe admin-worker.js) — gleiches Muster wie loadTrainerdatenStatus: Fehler werden
+// geschluckt (z.B. "Unbekannte Aktion" vor dem Worker-Redeploy -> einfach kein Badge).
+async function loadTestspielplanerStatus() {
+  _testspielplanerStatusLastFetch = Date.now();
+  if (!currentUser || !isVisibleToUser("testspielplaner", currentUser)) {
+    testspielplanerStatus = null;
+    return;
+  }
+  try {
+    const res = await callWorker("my-testspielplaner-status", {});
+    testspielplanerStatus = (res && res.anstehendOhneGegner > 0) ? res : null;
+  } catch (e) {
+    console.warn("Testspielplaner-Status nicht ladbar:", e);
+    testspielplanerStatus = null;
   }
   renderToolGrid();
 }
@@ -1510,16 +1534,22 @@ function renderAdminStats(data) {
   if (!data.trainerGroup.exists) {
     trainerNote.style.display = "block";
     document.getElementById("stat-trainervertrag").textContent = "–";
+    document.getElementById("stat-trainervertrag-sub").textContent = "erstellt";
     document.getElementById("stat-trainerkodex").textContent = "–";
   } else {
     trainerNote.style.display = "none";
-    document.getElementById("stat-trainervertrag").textContent = `${data.trainervertrag.submitted} von ${data.trainervertrag.total}`;
+    const tv = data.trainervertrag;
+    document.getElementById("stat-trainervertrag").textContent = `${tv.generiert} von ${tv.total}`;
+    document.getElementById("stat-trainervertrag-sub").textContent =
+      `erstellt · ${tv.ausstehend} ausstehend · ${tv.unvollstaendig} unvollständig`;
     document.getElementById("stat-trainerkodex").textContent = `${data.trainerkodex.confirmed} von ${data.trainerkodex.total}`;
   }
 
   document.getElementById("stat-feedback").textContent = String(data.feedbackOpen);
   document.getElementById("stat-materialbedarf").textContent = String(data.materialbedarfOpen);
   document.getElementById("stat-busplan").textContent = String(data.busplanOpen);
+  // Fallback "–", solange der Worker das Feld noch nicht liefert (alter Deploy).
+  document.getElementById("stat-testspielplaner").textContent = data.testspielplanerAngefragt == null ? "–" : String(data.testspielplanerAngefragt);
 
   renderRecentActivity();
 }
@@ -2124,7 +2154,8 @@ function setupTabs() {
     "stat-tile-trainervertrag": () => openTool("trainerdaten"),
     "stat-tile-trainerkodex": () => openTool("trainerkodex"),
     "stat-tile-materialbedarf": () => openTool("materialbedarf"),
-    "stat-tile-busplan": () => openTool("busplan")
+    "stat-tile-busplan": () => openTool("busplan"),
+    "stat-tile-testspielplaner": () => openTool("testspielplaner")
   };
   Object.keys(statTileActions).forEach((id) => {
     const el = document.getElementById(id);
@@ -2256,7 +2287,7 @@ async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus()]);
+  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
@@ -2550,7 +2581,7 @@ async function init() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus()]);
+  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
     // anhand von groupsState, das also schon geladen sein muss, bevor
@@ -2583,6 +2614,9 @@ init();
 // loadTrainerdatenStatus()).
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
-  if (Date.now() - _trainerdatenStatusLastFetch < 10000) return;
-  loadTrainerdatenStatus();
+  if (Date.now() - _trainerdatenStatusLastFetch >= 10000) loadTrainerdatenStatus();
+  // Gleiches Muster für die Testspielplaner-Kachel: wer aus der App zurückkehrt und
+  // dort gerade den Gegner eingetragen/den Platz freigegeben hat, soll das Badge
+  // ohne manuellen Reload verschwinden sehen.
+  if (Date.now() - _testspielplanerStatusLastFetch >= 10000) loadTestspielplanerStatus();
 });
