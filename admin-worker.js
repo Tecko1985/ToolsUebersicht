@@ -65,7 +65,7 @@
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "list-directory" } (jeder eingeloggte Nutzer)  -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
-//   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften}] }
+//   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften,vertragBenoetigt}] }
 //     für alle Nutzer mit gesetztem Vor-/Nachnamen — zentrales Trainerprofil (Lizenz + betreute Mannschaft(en)),
 //     damit Gateway-Apps (Personalkosten, Trainerdaten, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
 //     me()-Profil, sondern auch das anderer Nutzer nachschlagen können (Namensabgleich bzw. linkedUsername-Join).
@@ -636,6 +636,7 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
     username, vorname, nachname, passwordHash: null, salt: null, iterations: null,
     isAdmin: !!body.isAdmin, mustSetPassword: true,
     lizenz: normalizeLizenz(body.lizenz), mannschaften: normalizeMannschaften(body.mannschaften),
+    vertragBenoetigt: !!body.vertragBenoetigt,
     createdAt: new Date().toISOString(), passwordSetAt: null
   };
 
@@ -675,7 +676,8 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
     createdAt: u.createdAt,
     groupIds: getUserGroupIds(usersDoc, u.username),
     lizenz: u.lizenz || "",
-    mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : []
+    mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : [],
+    vertragBenoetigt: !!u.vertragBenoetigt
   }));
   return json({ users }, 200, corsHeaders);
 }
@@ -728,6 +730,7 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   user.isAdmin = isAdmin;
   user.lizenz = normalizeLizenz(body.lizenz);
   user.mannschaften = normalizeMannschaften(body.mannschaften);
+  user.vertragBenoetigt = !!body.vertragBenoetigt;
 
   // Der Login-Nutzername wird beim Anlegen einmalig aus Vorname/Nachname generiert
   // (generateUsername) und danach nie mehr angefasst. Ohne diesen Abgleich bleibt
@@ -861,7 +864,8 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
       vorname: u.vorname,
       nachname: u.nachname,
       lizenz: u.lizenz || "",
-      mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : []
+      mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : [],
+      vertragBenoetigt: !!u.vertragBenoetigt
     }));
   return json({ profiles }, 200, corsHeaders);
 }
@@ -1281,6 +1285,16 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
       })
     : [];
 
+  // Trainervertrag ist NICHT auf Mitglieder der Gruppe "Trainer" beschränkt --
+  // manche Nutzer (z.B. Helfer/Betreuer) sind keine Trainer im engeren Sinn,
+  // brauchen aber trotzdem einen Vertrag (User-Entscheidung 2026-07-12, siehe
+  // vertragBenoetigt-Feld/Checkbox in der Nutzerverwaltung). Trainerkodex
+  // bleibt bewusst auf trainerUsernames/Gruppe Trainer beschränkt.
+  const vertragspflichtigeUsernames = Array.from(new Set([
+    ...trainerUsernames,
+    ...users.filter((u) => u.vertragBenoetigt && !u.archiviert).map((u) => u.username)
+  ]));
+
   // trainerkodexDoc/DAV_APPS.trainerkodex seit 1.6 nicht mehr nötig -- Trainerkodex
   // ist Teil von Trainerdaten geworden (siehe [[project-trainerkodex]]), die Quote
   // unten liest jetzt aus trainerdatenByUsername statt einem eigenen Lookup.
@@ -1307,7 +1321,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   // Status-Ableitung wie Trainerdatens eigene _trainerStatus()/statusLabel
   // (buildTrainerdatenSummary liefert exakt "unvollstaendig"|"ausstehend"|"generiert").
   const trainervertragStatusCounts = { unvollstaendig: 0, ausstehend: 0, generiert: 0 };
-  trainerUsernames.forEach((uname) => {
+  vertragspflichtigeUsernames.forEach((uname) => {
     const user = getOwn(usersDoc.users, uname);
     const record = findTrainerdatenRecord(trainerdatenDoc, user);
     const status = buildTrainerdatenSummary(record).status;
@@ -1345,7 +1359,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     });
 
   const recentLogins = topRecent(users.map((u) => ({ username: u.username, at: u.lastLoginAt })), 5);
-  const recentTrainervertrag = topRecent(trainerUsernames.map((uname) => ({
+  const recentTrainervertrag = topRecent(vertragspflichtigeUsernames.map((uname) => ({
     username: uname, at: trainerdatenByUsername.has(uname) ? trainervertragEingereichtAm(trainerdatenByUsername.get(uname)) : null
   })), 5);
   const recentTrainerkodex = topRecent(trainerUsernames.map((uname) => ({
@@ -1377,7 +1391,7 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     users: { total: usersTotal, passwordSet: usersPasswordSet },
     trainerGroup: { exists: !!trainerGroup, memberCount: trainerUsernames.length },
     trainervertrag: {
-      total: trainerUsernames.length,
+      total: vertragspflichtigeUsernames.length,
       generiert: trainervertragStatusCounts.generiert,
       ausstehend: trainervertragStatusCounts.ausstehend,
       unvollstaendig: trainervertragStatusCounts.unvollstaendig

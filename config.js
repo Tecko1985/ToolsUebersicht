@@ -1,4 +1,4 @@
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -333,6 +333,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.8",
+    groups: [
+      {
+        title: "Nutzerverwaltung: „Vertrag benötigt“",
+        items: [
+          "Neue Checkbox „Vertrag benötigt“ beim Anlegen und Bearbeiten eines Nutzers — unabhängig von der Gruppe „Trainer“, für Personen, die keine Trainer im engeren Sinn sind, aber trotzdem einen Trainervertrag bekommen sollen.",
+          "Die Trainervertrag-Quote im Admin-Dashboard zählt jetzt Gruppe-Trainer-Mitglieder UND individuell markierte Nutzer zusammen. Die Trainerkodex-Quote bleibt unverändert auf die Gruppe „Trainer“ beschränkt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.7",
     groups: [

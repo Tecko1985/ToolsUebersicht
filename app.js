@@ -273,6 +273,9 @@ function renderUsersList(users) {
             <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-is-admin ${user.isAdmin ? "checked" : ""} /> Admin-Rechte</label>
           </div>
           <div class="form-field">
+            <label class="checkbox-label" style="margin-top:22px;"><input type="checkbox" data-edit-user-vertrag-benoetigt ${user.vertragBenoetigt ? "checked" : ""} /> Vertrag benötigt</label>
+          </div>
+          <div class="form-field">
             <button type="button" class="btn small" data-save-edit-user="${escapeHtml(username)}">Speichern</button>
           </div>
         </div>
@@ -286,11 +289,12 @@ function renderUsersList(users) {
         const lizenz = panel.querySelector("[data-edit-user-lizenz]").value;
         const mannschaften = panel.querySelector("[data-edit-user-mannschaften]").value
           .split(",").map((s) => s.trim()).filter(Boolean);
+        const vertragBenoetigt = panel.querySelector("[data-edit-user-vertrag-benoetigt]").checked;
         const desiredGroupIds = getCheckedValues(panel.querySelector(".group-picker"));
         const errorEl = document.getElementById("users-error");
         errorEl.style.display = "none";
         try {
-          const result = await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften });
+          const result = await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt });
           // Bei Namensänderung zieht der Worker den Login-Nutzernamen automatisch mit
           // (usernameRename.applied) — die Gruppenmitgliedschaft muss dann unter dem
           // NEUEN Nutzernamen gepflegt werden, sonst fällt der Nutzer beim folgenden
@@ -2442,18 +2446,20 @@ function setupAuthForms() {
     const lizenz = document.getElementById("new-user-lizenz").value;
     const mannschaften = document.getElementById("new-user-mannschaften").value
       .split(",").map((s) => s.trim()).filter(Boolean);
+    const vertragBenoetigt = document.getElementById("new-user-vertrag-benoetigt").checked;
     const groupIds = getCheckedValues(document.getElementById("new-user-groups"));
     const errorEl = document.getElementById("users-error");
     const successEl = document.getElementById("users-success");
     errorEl.style.display = "none";
     successEl.style.display = "none";
     try {
-      const data = await callWorker("create-user", { vorname, nachname, isAdmin, lizenz, mannschaften, groupIds });
+      const data = await callWorker("create-user", { vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt, groupIds });
       document.getElementById("new-user-vorname").value = "";
       document.getElementById("new-user-nachname").value = "";
       document.getElementById("new-user-lizenz").value = "";
       document.getElementById("new-user-mannschaften").value = "";
       document.getElementById("new-user-is-admin").checked = false;
+      document.getElementById("new-user-vertrag-benoetigt").checked = false;
       const prov = summarizeProvisionReport(data.provisioned);
       successEl.textContent = `Angelegt: ${data.username}` + (prov ? ` · Auto-Einträge → ${prov}` : "");
       successEl.style.display = "block";
