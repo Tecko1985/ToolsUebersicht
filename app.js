@@ -1000,14 +1000,17 @@ function renderVisibilityList() {
         <option value="loggedin" ${mode === "loggedin" ? "selected" : ""}>Alle eingeloggten Nutzer</option>
         <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
       </select>
-      <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
-        <div class="gp-label">Sehen</div>
-        <div class="group-picker" data-role="see-boxes"></div>
-      </div>
-      <div class="group-picker-wrap" data-field="editGroupIds">
-        <div class="gp-label">Bearbeiten</div>
-        <div class="group-picker" data-role="edit-boxes"></div>
-      </div>
+      <details class="collapsible visibility-groups">
+        <summary>Gruppen (${groupIds.length} sehen, ${editGroupIds.length} bearbeiten)</summary>
+        <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
+          <div class="gp-label">Sehen</div>
+          <div class="group-picker" data-role="see-boxes"></div>
+        </div>
+        <div class="group-picker-wrap" data-field="editGroupIds">
+          <div class="gp-label">Bearbeiten</div>
+          <div class="group-picker" data-role="edit-boxes"></div>
+        </div>
+      </details>
     `;
     container.appendChild(row);
 
@@ -1015,7 +1018,9 @@ function renderVisibilityList() {
     renderGroupCheckboxes(row.querySelector('[data-field="editGroupIds"] [data-role="edit-boxes"]'), editGroupIds);
 
     row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
-      row.querySelector('[data-field="groupIds"]').style.display = e.target.value === "groups" ? "block" : "none";
+      const isGroups = e.target.value === "groups";
+      row.querySelector('[data-field="groupIds"]').style.display = isGroups ? "block" : "none";
+      if (isGroups) row.querySelector(".visibility-groups").open = true;
     });
   });
 }

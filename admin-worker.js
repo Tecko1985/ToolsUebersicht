@@ -176,12 +176,6 @@
 //      gegen ein Muster geprüft, das zwingend den "_fahrt-<fahrtId>"-Suffix enthalten muss, sonst
 //      könnte ein Nutzer über einen erratenen/kopierten Dateinamen fremde Kassierer-Belege im
 //      selben geteilten Ordner lesen.)
-//   POST { action: "testspielplaner-platzbelegung", app:"testspielplaner" } + Bearer
-//     -> { plaetze:[{id,name}], belegungen:[{tag,platz,start,ende,label}] }
-//     (read-only Minimal-Auszug des Platzbelegung-Wochenplans für die Slot-Suche des Testspielplaners.
-//      Zugriff über userMayAccessTool("testspielplaner") — wer Testspiele planen darf, braucht die
-//      Trainingszeiten, ohne die Platzbelegung-Kachel sehen zu müssen. notiz/ansprechpartner/kategorien/
-//      hallen* werden serverseitig weggelassen; bewusst KEIN DAV_APPS-Alias, der wäre per dav-save beschreibbar.)
 //   POST { action: "my-testspielplaner-status" } + Bearer -> { anstehendOhneGegner }
 //     (Badge auf der Testspielplaner-Kachel: Anzahl EIGENER genehmigter Reservierungen ohne Gegner in den
 //      nächsten 14 Tagen. Logik spiegelt anstehendeOhneGegner() in E:\testspielplaner\app.js.)
@@ -404,8 +398,6 @@ export default {
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
         return handleMyTestspielplanerStatus(request, env, authHeader, corsHeaders);
-      case "testspielplaner-platzbelegung":
-        return handleTestspielplanerPlatzbelegung(request, env, authHeader, corsHeaders);
       case "update-group-members":
         return handleUpdateGroupMembers(request, body, env, authHeader, corsHeaders);
       case "provision-group":
@@ -978,29 +970,6 @@ async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHea
     vorhanden: true,
     zugang: sectionOut(eintrag.zugang),
     abgang: sectionOut(eintrag.abgang)
-  }, 200, corsHeaders);
-}
-
-// Read-only, stark gefilterter Blick auf den Platzbelegung-Wochenplan für die
-// Slot-Suche des Testspielplaners. Gated über userMayAccessTool("testspielplaner"),
-// NICHT "platzbelegung" — wer Testspiele planen darf, braucht die Trainingszeiten,
-// auch ohne die Platzbelegung-Kachel zu sehen. Minimal-Disclosure wie
-// my-trainercheckliste-status: notiz/ansprechpartner/kategorien/hallen* werden
-// serverseitig weggelassen. Bewusst KEIN zweiter DAV_APPS-Alias auf
-// platzbelegung.json — der wäre über dav-save beschreibbar und bräuchte eine
-// eigene sichtbarkeit.json-Konfiguration.
-async function handleTestspielplanerPlatzbelegung(request, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
-  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("testspielplaner", session, env, authHeader))) {
-    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
-  }
-  const doc = await readJson(DAV_APPS.platzbelegung, authHeader, { plaetze: [], belegungen: [] });
-  return json({
-    plaetze: (Array.isArray(doc.plaetze) ? doc.plaetze : []).map((p) => ({ id: p.id, name: p.name })),
-    belegungen: (Array.isArray(doc.belegungen) ? doc.belegungen : []).map((b) => ({
-      tag: b.tag, platz: b.platz, start: b.start, ende: b.ende, label: b.label || ""
-    }))
   }, 200, corsHeaders);
 }
 

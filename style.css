@@ -491,8 +491,10 @@ main { flex: 1; min-width: 0; }
 .visibility-row .tool-icon { font-size: 20px; width: 28px; text-align: center; }
 .visibility-row .vr-name { font-weight: 700; flex: 1; }
 .visibility-row .vr-category { font-size: 12px; color: var(--muted); }
-.visibility-row .group-picker-wrap { flex-basis: 100%; padding-left: 40px; }
+.visibility-row .group-picker-wrap { flex-basis: 100%; padding-left: 16px; }
 .visibility-row .gp-label, .ur-groups .gp-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+.visibility-row .visibility-groups { flex-basis: 100%; }
+.visibility-row .visibility-groups summary { font-size: 13px; }
 .visibility-row select.form-select {
   padding: 6px 10px;
   border: 1px solid var(--border);
