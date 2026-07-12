@@ -803,8 +803,12 @@ function row_findMembersEl(container, groupId) {
 }
 
 function isVisibleToUser(toolId, user) {
-  const entry = visibilityState[toolId] || {};
-  if (entry.visible === false) return false;
+  // Kein gespeicherter Eintrag (z.B. Tool per Code-Push neu hinzugefügt, aber
+  // noch nie im Sichtbarkeits-Panel gespeichert) gilt als versteckt, nicht als
+  // öffentlich — passend zu userMayAccessTool() im Worker, das den WebDAV-
+  // Gatewayzugriff für genau diesen Fall schon immer verweigert hat.
+  const entry = visibilityState[toolId];
+  if (!entry || entry.visible === false) return false;
   if (!entry.loginRequired) return true;
   if (!user) return false;
   if (user.isAdmin) return true;
