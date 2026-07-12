@@ -332,7 +332,7 @@ function renderUsersList(users) {
   container.querySelectorAll("[data-delete-user]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const username = btn.dataset.deleteUser;
-      if (!confirm(`Nutzer "${username}" wirklich löschen?`)) return;
+      if (!confirm(`Nutzer "${username}" wirklich löschen?\n\nDas entfernt das Konto vollständig (inkl. aller Gruppen) und kann NICHT rückgängig gemacht werden. "Passwort zurücksetzen" funktioniert danach nicht mehr — für einen Neustart muss der Nutzer über "Nutzer anlegen" komplett neu angelegt werden.`)) return;
       const errorEl = document.getElementById("users-error");
       errorEl.style.display = "none";
       try {
