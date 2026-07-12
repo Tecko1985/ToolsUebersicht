@@ -67,7 +67,9 @@ async function callWorker(action, payload) {
   let data = null;
   try { data = await resp.json(); } catch (_) { /* kein JSON-Body */ }
   if (!resp.ok) {
-    throw new Error((data && data.error) || ("Worker-Fehler (HTTP " + resp.status + ")"));
+    const err = new Error((data && data.error) || ("Worker-Fehler (HTTP " + resp.status + ")"));
+    if (data && data.archived) err.archived = true;
+    throw err;
   }
   return data;
 }
@@ -296,7 +298,7 @@ function renderUsersList(users) {
           // siehe handleUpdateGroupMembers-Filter im Worker).
           const rename = result.usernameRename;
           const effectiveUsername = (rename && rename.applied) ? rename.to : username;
-          await applyUserGroupMembership(effectiveUsername, desiredGroupIds);
+          await applyUserGroupMembership(username, effectiveUsername, desiredGroupIds);
           await loadAndRenderGroups();
           await loadAndRenderUsers();
           if (rename) {
@@ -512,14 +514,20 @@ async function applyBackfill(rows) {
 
 // Gleicht die Gruppenmitgliedschaft eines Nutzers auf den gewünschten Stand
 // ab, indem nur die tatsächlich geänderten Gruppen einzeln aktualisiert werden.
-async function applyUserGroupMembership(username, desiredGroupIds) {
+// groupsState ist der Stand VOR dieser Bearbeitung und kennt bei einer
+// Umbenennung nur den alten Nutzernamen; Mitgliedschaft deshalb unter dem
+// alten Namen prüfen (passend zum Cache) und in memberUsernames immer beide
+// Varianten herausfiltern, bevor ggf. der neue Name wieder ergänzt wird —
+// sonst überlebt eine im selben Speichervorgang entfernte Gruppe die
+// Umbenennung unbemerkt (der Server hat den alten Namen zu diesem Zeitpunkt
+// serverseitig schon in jede bisherige Gruppe umgetragen).
+async function applyUserGroupMembership(oldUsername, newUsername, desiredGroupIds) {
   for (const group of groupsState) {
-    const isMember = group.memberUsernames.includes(username);
+    const isMember = group.memberUsernames.includes(oldUsername);
     const shouldBeMember = desiredGroupIds.includes(group.id);
     if (isMember === shouldBeMember) continue;
-    const memberUsernames = shouldBeMember
-      ? [...group.memberUsernames, username]
-      : group.memberUsernames.filter((m) => m !== username);
+    const memberUsernames = group.memberUsernames.filter((m) => m !== oldUsername && m !== newUsername);
+    if (shouldBeMember) memberUsernames.push(newUsername);
     await callWorker("update-group-members", { groupId: group.id, memberUsernames });
   }
 }
@@ -2157,7 +2165,7 @@ function setupTabs() {
     "stat-tile-users": () => jumpToAdminPanel("admin-users-panel"),
     "stat-tile-feedback": () => jumpToAdminPanel("admin-feedback-panel"),
     "stat-tile-trainervertrag": () => openTool("trainerdaten"),
-    "stat-tile-trainerkodex": () => openTool("trainerkodex"),
+    "stat-tile-trainerkodex": () => openTool("trainerdaten"),
     "stat-tile-materialbedarf": () => openTool("materialbedarf"),
     "stat-tile-busplan": () => openTool("busplan"),
     "stat-tile-testspielplaner": () => openTool("testspielplaner")
@@ -2351,6 +2359,11 @@ function setupAuthForms() {
         await afterAuthChange();
       }
     } catch (err) {
+      if (err.archived) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+        return;
+      }
       // Konto existiert bereits und hat ein Passwort -> Passwort-Schritt zeigen statt Fehler.
       pendingLoginUsername = username;
       renderAdminPanels();
@@ -2473,7 +2486,11 @@ function setupAuthForms() {
       const editGroupIds = getCheckedValues(row.querySelector('[data-field="editGroupIds"]'));
       const visible = mode !== "hidden";
       const loginRequired = mode === "loggedin" || mode === "groups";
-      tools[id] = { visible, loginRequired, groupIds, editGroupIds };
+      // provisionGroupIds wird nur im Gruppen-Tab gepflegt, hier unverändert übernehmen —
+      // sonst würde jedes Speichern in diesem Panel die Auto-Provisionierung für ALLE
+      // Tools löschen (save-visibility ersetzt config.tools auf dem Worker komplett).
+      const provisionGroupIds = (visibilityState[id] && visibilityState[id].provisionGroupIds) || [];
+      tools[id] = { visible, loginRequired, groupIds, editGroupIds, provisionGroupIds };
     });
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");

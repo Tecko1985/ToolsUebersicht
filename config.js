@@ -13,11 +13,11 @@ const TOOLS = [
   {
     id: "trainerdaten",
     name: "Trainerdaten",
-    description: "Trainer-Stammdaten erfassen und Trainerverträge automatisch als Word-Dokument erzeugen.",
+    description: "Trainer-Stammdaten erfassen, Trainerverträge automatisch als Word-Dokument erzeugen und digital unterschreiben, dazu Führerschein, Führungszeugnis und Trainerlizenz zentral hochladen und verwalten.",
     url: "https://tecko1985.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
-    version: "1.9",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -133,7 +133,7 @@ const TOOLS = [
   {
     id: "kadermanager",
     name: "Kadermanager",
-    description: "Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung, Spielberichte, Urlaub/Krank, Umfragen, Mannschaftskasse und Dateiablage je Mannschaft.",
+    description: "Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung/Taktikboard, Spielberichte, Urlaub/Krank, Umfragen und Mannschaftskasse je Mannschaft.",
     url: "https://tecko1985.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
@@ -153,7 +153,7 @@ const TOOLS = [
   {
     id: "digitaler-stempel",
     name: "Digitaler Stempel",
-    description: "PDF-Dokumente digital stempeln (Position, Größe, Drehung frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
+    description: "PDF- und Word-Dokumente digital stempeln (Position, Größe, Drehung und Deckkraft frei wählbar) — jede Stempelung wird mit Nutzer und Zeitpunkt archiviert (nur für berechtigte Gruppe).",
     url: "https://tecko1985.github.io/digitaler-stempel/",
     icon: "🖋️",
     category: "Verein",
@@ -177,7 +177,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/fahrtenbuch/",
     icon: "🚐",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -187,7 +187,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/fahrtenbuch/extern.html",
     icon: "🔗",
     category: "Verein",
-    version: "1.1",
+    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -213,7 +213,7 @@ const TOOLS = [
   {
     id: "testspielplaner",
     name: "Testspielplaner",
-    description: "Testspiele und Leistungsvergleiche planen: freien Platz mit passender Feldgröße finden (inkl. Trainingsplan-Abgleich), Termin anfragen, Admin genehmigt, Gegner nachtragen — mit Saison-Kontingent je Trainer.",
+    description: "Testspiele und Leistungsvergleiche planen: Termin anfragen, Admin genehmigt nach DFBnet-Eintragung, Gegner wird nachgetragen — mit Saison-Kontingent je Trainer.",
     url: "https://tecko1985.github.io/testspielplaner/",
     icon: "🆚",
     category: "Verein",
@@ -223,7 +223,7 @@ const TOOLS = [
   {
     id: "personalakte",
     name: "Personalakte",
-    description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten und Lizenzen auf einen Blick, inkl. Archivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
+    description: "Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten, Führerschein, Personalkosten und Kadermanager-Rolle auf einen Blick, inkl. Archivieren/Reaktivieren ausgeschiedener Trainer (nur für berechtigte Gruppe).",
     url: "https://tecko1985.github.io/personalakte/",
     icon: "🗂️",
     category: "Verein",
