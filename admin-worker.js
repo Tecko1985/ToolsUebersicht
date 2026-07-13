@@ -192,6 +192,15 @@
 //      wird-angelegt->ordner-angelegt. fotoauftraege steht zusätzlich in TEAM_FILTERED_APPS (siehe dort) —
 //      dav-load liefert Nicht-Editoren nur Aufträge der eigenen Mannschaft(en), und in
 //      WRITE_REQUIRES_EDIT_PERMISSION — generisches dav-save ist für Nicht-Editoren komplett gesperrt.)
+//   POST { action: "fotoauftrag-spielbericht-hochladen", id, text, dataBase64 } + Bearer
+//     -> { ok:true, auftrag, rev } | 400 | 403 | 404 | 409 | 413 | 502
+//     (Fotoaufträge: lädt eine vom Client aus dem Spielbericht-Freitext erzeugte .docx
+//      in denselben Ordner wie die Fotos — landet automatisch im selben Freigabelink.
+//      Nur möglich, wenn der Auftrag schon einen ordnerPfad hat (Ordner muss existieren).
+//      Gleiche Berechtigung wie fotoauftrag-ordner-anlegen: Editor oder eigenes
+//      mannschaften-Profil enthält den Team-Namen. Fixer Dateiname Spielbericht.docx,
+//      Re-Upload überschreibt bewusst. text wird zusätzlich roh im Auftrag gespeichert,
+//      damit die App ihn ohne erneuten Datei-Download anzeigen kann.)
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
@@ -494,6 +503,8 @@ export default {
         return handleDavSave(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-ordner-anlegen":
         return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
+      case "fotoauftrag-spielbericht-hochladen":
+        return handleFotoauftragSpielberichtHochladen(request, body, env, authHeader, corsHeaders);
       case "dav-file-put":
         return handleDavFilePut(request, body, env, authHeader, corsHeaders);
       case "dav-file-get":
@@ -2017,9 +2028,12 @@ function slugifyMannschaftForPath(str) {
   return (cleaned || "Team").slice(0, 60);
 }
 
-function buildFotoauftragBasisPfad(mannschaft, datumIso) {
+function buildFotoauftragBasisPfad(mannschaft, datumIso, gegner) {
   const jahr = datumIso.slice(0, 4);
-  return `${jahr}/${datumIso}_${slugifyMannschaftForPath(mannschaft)}`;
+  const mannschaftSlug = slugifyMannschaftForPath(mannschaft);
+  const gegnerSlug = gegner ? slugifyMannschaftForPath(gegner) : "";
+  const teil = gegnerSlug ? `${mannschaftSlug}_${gegnerSlug}` : mannschaftSlug;
+  return `${jahr}/${datumIso}_${teil}`;
 }
 
 // Legt den Ziel-Ordner an. Anders als ensureCollection() wird ein bereits
@@ -2163,11 +2177,8 @@ async function handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, co
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = getOwn(usersDoc.users, session.username);
   const isEditor = await resolveEditPermission("fotoauftraege", session, env, authHeader);
-  if (!isEditor) {
-    const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
-    if (!meineMannschaften.has(auftrag.mannschaft)) {
-      return json({ error: "Keine Berechtigung, für dieses Team einen Ordner anzulegen" }, 403, corsHeaders);
-    }
+  if (!isEditor && !mayActOnFotoauftragTeam(auftrag.mannschaft, user)) {
+    return json({ error: "Keine Berechtigung, für dieses Team einen Ordner anzulegen" }, 403, corsHeaders);
   }
 
   auftrag.status = "wird-angelegt";
@@ -2183,7 +2194,7 @@ async function handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, co
   }
 
   // Phase B: eigentliche Arbeit, genau einmal.
-  const basisPfad = buildFotoauftragBasisPfad(auftrag.mannschaft, auftrag.datum);
+  const basisPfad = buildFotoauftragBasisPfad(auftrag.mannschaft, auftrag.datum, auftrag.gegner);
   let fullUrl, share;
   try {
     fullUrl = await ensureUniqueFotoauftragOrdner(FOTOAUFTRAEGE_ORDNER_BASIS + "/" + basisPfad, authHeader);
@@ -2230,6 +2241,98 @@ async function handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, co
       auftrag = freshAuftrag;
       applyFinal(auftrag);
     }
+  }
+}
+
+// Gemeinsamer Team-Zugehörigkeits-Check für fotoauftrag-ordner-anlegen UND
+// fotoauftrag-spielbericht-hochladen (beide: Editor darf immer, sonst nur bei
+// Team-Übereinstimmung mit dem eigenen mannschaften-Profil).
+function mayActOnFotoauftragTeam(mannschaft, user) {
+  const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
+  return meineMannschaften.has(mannschaft);
+}
+
+// Escaping für Freitext in word/document.xml-Textknoten -- & < > sind dort
+// die einzigen zwingend zu escapenden Zeichen (anders als in HTML/escapeHtml
+// braucht es kein &quot;/&#39;, da hier keine Attributwerte befüllt werden).
+function escapeXmlText(str) {
+  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Lädt eine vom Client aus Freitext erzeugte .docx-Datei (siehe buildSpielberichtDocxBlob
+// in app.js) in denselben Nextcloud-Ordner, der auch die Fotos enthält -- landet damit
+// automatisch im selben Freigabelink, ohne eigene neue Freigabe. Fixer Dateiname
+// (Re-Upload überschreibt bewusst, ein Spielbericht pro Auftrag).
+async function handleFotoauftragSpielberichtHochladen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const url = getOwn(DAV_APPS, "fotoauftraege");
+  if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool("fotoauftraege", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const id = String(body.id || "");
+  if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
+  const text = String(body.text || "").slice(0, 20000);
+  if (!text.trim()) return json({ error: "Spielbericht ist leer" }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Ungültige Datei-Daten" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß (max. 10 MB)" }, 413, corsHeaders);
+
+  const { data, rev } = await readJsonWithRev(url, authHeader, { meta: {}, auftraege: [] });
+  const doc = normalizeFotoauftraegeDoc(data);
+  const auftrag = doc.auftraege.find((a) => a && a.id === id);
+  if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
+  if (!auftrag.ordnerPfad) {
+    return json({ error: "Für diesen Auftrag existiert noch kein Ordner" }, 400, corsHeaders);
+  }
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = getOwn(usersDoc.users, session.username);
+  const isEditor = await resolveEditPermission("fotoauftraege", session, env, authHeader);
+  if (!isEditor && !mayActOnFotoauftragTeam(auftrag.mannschaft, user)) {
+    return json({ error: "Keine Berechtigung, für dieses Team einen Spielbericht hochzuladen" }, 403, corsHeaders);
+  }
+
+  const fileUrl = `${FOTOAUFTRAEGE_ORDNER_BASIS}/${auftrag.ordnerPfad}/Spielbericht.docx`;
+  const putHeaders = { Authorization: authHeader, "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
+  let resp;
+  try {
+    resp = await fetch(fileUrl, { method: "PUT", headers: putHeaders, body: bytes });
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(fileUrl.slice(0, fileUrl.lastIndexOf("/")), authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers: putHeaders, body: bytes });
+    }
+  } catch (e) {
+    return json({ error: "Nextcloud nicht erreichbar: " + e.message }, 502, corsHeaders);
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+
+  auftrag.spielbericht = text;
+  auftrag.spielberichtHochgeladenVon = session.username;
+  auftrag.spielberichtHochgeladenVonVorname = (user && user.vorname) || null;
+  auftrag.spielberichtHochgeladenVonNachname = (user && user.nachname) || null;
+  auftrag.spielberichtHochgeladenAm = new Date().toISOString();
+
+  try {
+    const newRev = await writeJson(url, authHeader, doc, rev);
+    return json({ ok: true, auftrag, rev: newRev }, 200, corsHeaders);
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      // Datei liegt bereits erfolgreich in Nextcloud (PUT war schon erfolgreich) --
+      // nur das JSON-Update kollidierte. Client soll neu laden + erneut versuchen;
+      // ein wiederholter Upload überschreibt lediglich dieselbe Datei nochmal, harmlos.
+      return json({ error: "Auftrag wurde zwischenzeitlich verändert — bitte neu laden und erneut versuchen", conflict: true }, 409, corsHeaders);
+    }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 }
 
