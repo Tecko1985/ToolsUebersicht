@@ -1,4 +1,4 @@
-const APP_VERSION = "1.10";
+const APP_VERSION = "1.11";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -238,8 +238,7 @@ const TOOLS = [
     icon: "📸",
     category: "Verein",
     version: "1.0",
-    devices: ["mobile", "desktop"],
-    wip: true
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -344,6 +343,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.11",
+    groups: [
+      {
+        title: "Fotoaufträge",
+        items: [
+          "Die Kachel „Fotoaufträge“ ist jetzt vollständig freigegeben und nicht mehr als „in Bearbeitung“ markiert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.10",
     groups: [
