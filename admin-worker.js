@@ -65,6 +65,10 @@
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
 //   POST { action: "list-directory" } (jeder eingeloggte Nutzer)  -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
+//   POST { action: "list-tool-editors", app } + Authorization: Bearer -> { users:[{username,displayName}] }
+//     Mitglieder der Bearbeiter-Gruppen (editGroupIds) EINER bestimmten App, z.B. für einen "Vertreter"-Picker
+//     im Abwesenheitskalender-Formular — jeder mit Tool-Zugriff darf abrufen (gleiche Prüfung wie dav-load:
+//     userMayAccessTool), kein Admin-Gate. Keine sensiblen Felder, gleiche Vertrauensstufe wie list-directory.
 //   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften,vertragBenoetigt}] }
 //     für alle Nutzer mit gesetztem Vor-/Nachnamen — zentrales Trainerprofil (Lizenz + betreute Mannschaft(en)),
 //     damit Gateway-Apps (Personalkosten, Trainerdaten, Trainerkodex, Kadermanager, ...) NICHT nur das eigene
@@ -484,6 +488,8 @@ export default {
         return handleListGroups(request, env, authHeader, corsHeaders);
       case "list-directory":
         return handleListDirectory(request, env, authHeader, corsHeaders);
+      case "list-tool-editors":
+        return handleListToolEditors(request, body, env, authHeader, corsHeaders);
       case "list-trainer-profiles":
         return handleListTrainerProfiles(request, env, authHeader, corsHeaders);
       case "list-birthdays-today":
@@ -948,6 +954,36 @@ async function handleListDirectory(request, env, authHeader, corsHeaders) {
   }));
   const groups = Object.values(usersDoc.groups || {}).map((g) => ({ id: g.id, name: g.name }));
   return json({ users, groups }, 200, corsHeaders);
+}
+
+// Mitglieder der Bearbeiter-Gruppen (editGroupIds) einer bestimmten App -- z.B.
+// für einen "Vertreter"-Picker im Abwesenheitskalender-Formular. Wie
+// list-directory nur username+displayName, keine sensiblen Felder. Anders als
+// list-directory an eine konkrete App gebunden (userMayAccessTool-Check wie
+// dav-load), damit die Bearbeiter-Struktur einer App nicht an Nutzer ohne
+// jeglichen Zugriff auf diese App durchsickert.
+async function handleListToolEditors(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  if (!getOwn(DAV_APPS, app)) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, app);
+  const editGroupIds = (entry && Array.isArray(entry.editGroupIds)) ? entry.editGroupIds : [];
+  const usersDoc = session.usersDoc;
+  const usernames = new Set();
+  editGroupIds.forEach((gid) => {
+    const group = getOwn(usersDoc.groups || {}, gid);
+    if (group && Array.isArray(group.memberUsernames)) group.memberUsernames.forEach((u) => usernames.add(u));
+  });
+  const users = Array.from(usernames).map((username) => {
+    const u = getOwn(usersDoc.users, username);
+    return { username, displayName: (u && u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : username };
+  });
+  return json({ users }, 200, corsHeaders);
 }
 
 // Zentrales Trainerprofil (Lizenz + Mannschaften) für ALLE Nutzer, nicht nur den
