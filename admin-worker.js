@@ -201,6 +201,12 @@
 //      mannschaften-Profil enthält den Team-Namen. Fixer Dateiname Spielbericht.docx,
 //      Re-Upload überschreibt bewusst. text wird zusätzlich roh im Auftrag gespeichert,
 //      damit die App ihn ohne erneuten Datei-Download anzeigen kann.)
+//   POST { action: "fotoauftrag-loeschen", id } + Bearer -> { ok:true, rev } | 400 | 403 | 404 | 409 | 502
+//     (Fotoaufträge, Editor/Admin-only: löscht den JSON-Eintrag UND, falls vorhanden, den
+//      kompletten zugehörigen Nextcloud-Ordner samt Inhalt — WebDAV DELETE auf eine Collection
+//      ist implizit rekursiv, löscht Fotos+Spielbericht mit. Schlägt das DELETE mit einem
+//      echten Fehler fehl (nicht 404), wird der JSON-Eintrag NICHT entfernt, damit kein
+//      verwaister Ordner unbemerkt zurückbleibt.)
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
@@ -505,6 +511,8 @@ export default {
         return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-spielbericht-hochladen":
         return handleFotoauftragSpielberichtHochladen(request, body, env, authHeader, corsHeaders);
+      case "fotoauftrag-loeschen":
+        return handleFotoauftragLoeschen(request, body, env, authHeader, corsHeaders);
       case "dav-file-put":
         return handleDavFilePut(request, body, env, authHeader, corsHeaders);
       case "dav-file-get":
@@ -2329,6 +2337,66 @@ async function handleFotoauftragSpielberichtHochladen(request, body, env, authHe
       // Datei liegt bereits erfolgreich in Nextcloud (PUT war schon erfolgreich) --
       // nur das JSON-Update kollidierte. Client soll neu laden + erneut versuchen;
       // ein wiederholter Upload überschreibt lediglich dieselbe Datei nochmal, harmlos.
+      return json({ error: "Auftrag wurde zwischenzeitlich verändert — bitte neu laden und erneut versuchen", conflict: true }, 409, corsHeaders);
+    }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+}
+
+// Löscht einen Auftrag vollständig -- inkl. des zugehörigen Nextcloud-Ordners
+// (Fotos + Spielbericht), falls einer existiert. Editor-only (wie der
+// Löschen-Button clientseitig es schon war), anders als ordner-anlegen/
+// spielbericht-hochladen: das Entfernen echter Cloud-Daten ist bewusst NICHT
+// dem zuständigen Trainer selbst überlassen. Schlägt das Nextcloud-DELETE mit
+// einem echten Fehler fehl (nicht nur 404 = schon weg), wird NICHT trotzdem
+// der JSON-Eintrag entfernt -- sonst verliert man die einzige Spur zu einem
+// verwaisten, nicht wirklich gelöschten Ordner. WebDAV DELETE auf einen
+// Ordner (Collection) ist per Spec (RFC 4918) implizit rekursiv -- kein
+// zusätzlicher Depth-Header nötig, löscht Fotos+Spielbericht mit.
+async function handleFotoauftragLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const url = getOwn(DAV_APPS, "fotoauftraege");
+  if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool("fotoauftraege", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  if (!(await resolveEditPermission("fotoauftraege", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+
+  const id = String(body.id || "");
+  if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
+
+  const { data, rev } = await readJsonWithRev(url, authHeader, { meta: {}, auftraege: [] });
+  const doc = normalizeFotoauftraegeDoc(data);
+  const auftrag = doc.auftraege.find((a) => a && a.id === id);
+  if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
+
+  if (auftrag.ordnerPfad) {
+    const folderUrl = `${FOTOAUFTRAEGE_ORDNER_BASIS}/${auftrag.ordnerPfad}`;
+    let resp;
+    try {
+      resp = await fetch(folderUrl, { method: "DELETE", headers: { Authorization: authHeader } });
+    } catch (e) {
+      return json({ error: "Nextcloud-Ordner konnte nicht gelöscht werden: " + e.message }, 502, corsHeaders);
+    }
+    if (!resp.ok && resp.status !== 404) {
+      return json({ error: `Nextcloud-Ordner konnte nicht gelöscht werden (DELETE ${resp.status})` }, 502, corsHeaders);
+    }
+  }
+
+  doc.auftraege = doc.auftraege.filter((a) => !(a && a.id === id));
+  try {
+    const newRev = await writeJson(url, authHeader, doc, rev);
+    return json({ ok: true, rev: newRev }, 200, corsHeaders);
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      // Ein evtl. vorhandener Ordner ist zu diesem Zeitpunkt bereits geloescht --
+      // nur der JSON-Schreibvorgang kollidierte. Client soll neu laden und
+      // erneut versuchen; ein zweiter Versuch findet den Ordner dann per 404
+      // ohnehin nicht mehr vor (siehe oben, wird als Erfolg gewertet).
       return json({ error: "Auftrag wurde zwischenzeitlich verändert — bitte neu laden und erneut versuchen", conflict: true }, 409, corsHeaders);
     }
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
