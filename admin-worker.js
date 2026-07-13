@@ -181,6 +181,17 @@
 //      nächsten 14 Tagen. Logik spiegelt anstehendeOhneGegner() in E:\testspielplaner\app.js.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
+//   POST { action: "fotoauftrag-ordner-anlegen", id } + Bearer -> { ok:true, auftrag, rev } | 400 | 403 | 404 | 409 | 502
+//     (Fotoaufträge: legt für einen offenen Auftrag serverseitig einen dedizierten Nextcloud-Ordner an UND
+//      erzeugt darauf einen echten, eigenständigen öffentlichen Freigabelink über die Nextcloud OCS-Sharing-API
+//      (shareType=3, permissions=15 = Ansehen+Hochladen) — pro Auftrag ein eigener, einzeln funktionierender
+//      Link, kein gemeinsamer Link für alle Teams. Nur der zuständige Trainer (eigenes mannschaften-Profil
+//      enthält den Team-Namen des Auftrags) oder ein Editor/Admin darf das auslösen. Zweiphasig: Status
+//      offen->wird-angelegt zuerst als ETag-gesicherte Reservierung (verhindert doppelte Freigaben bei
+//      gleichzeitigen Klicks auf denselben Auftrag), erst danach MKCOL+OCS-Aufruf, dann
+//      wird-angelegt->ordner-angelegt. fotoauftraege steht zusätzlich in TEAM_FILTERED_APPS (siehe dort) —
+//      dav-load liefert Nicht-Editoren nur Aufträge der eigenen Mannschaft(en), und in
+//      WRITE_REQUIRES_EDIT_PERMISSION — generisches dav-save ist für Nicht-Editoren komplett gesperrt.)
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
@@ -203,6 +214,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8783", // Personalakte (Dev-Server)
   "http://localhost:8784", // Vereinswiki (Dev-Server)
   "http://localhost:8785", // Testspielplaner (Dev-Server)
+  "http://localhost:8786", // Fotoaufträge (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -227,8 +239,17 @@ const DAV_APPS = {
   "materialbedarf":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Materialbedarf/materialbedarf.json",
   "personalakte":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalakte/personalakte.json",
   "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json",
-  "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json"
+  "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json",
+  "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json"
 };
+
+// Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt
+// von DAV_APPS, da dort nur die JSON-Datendatei der App steht, nicht der
+// Foto-Baum). Unterstrich statt Leerzeichen im letzten Segment, wie überall in
+// DAV_APPS, um Encoding-Fallstricke über WebDAV-Client->Worker->Nextcloud zu
+// vermeiden. PLATZHALTER -- mit Michel abgestimmter Pfad, vor dem ersten
+// echten Ordner-Anlegen bestätigen/anpassen.
+const FOTOAUFTRAEGE_ORDNER_BASIS = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/Social_Media";
 
 // Belegeingang-Ordner von sc-heiligenstadt-budget (eigenes Repo/eigener Worker,
 // aber dasselbe Nextcloud-Konto -- volle Admin-WebDAV-Credentials reichen, kein
@@ -252,8 +273,15 @@ const BELEGE_EINGANG_DIR =
 const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   "vereinswiki",
   "materialliste", "trainercheckliste", "spielertool-test", "spielersichtung",
-  "personalkosten", "busplan", "vereinskalender", "kadermanager", "platzbelegung"
+  "personalkosten", "busplan", "vereinskalender", "kadermanager", "platzbelegung",
+  "fotoauftraege"
 ]);
+// fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
+// normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
+// nicht für eigene Aufträge) — ihr einziger Schreibzugriff ist die dedizierte,
+// eigens validierte Aktion fotoauftrag-ordner-anlegen. Anlegen/Löschen von
+// Aufträgen und "erledigt"-Markierung bleiben Editoren (Social-Media-Gruppe)
+// vorbehalten.
 // materialbedarf, testspielplaner: NICHT hier -- Selbstbedienungs-Muster wie
 // fahrtenbuch (jeder meldet/bucht eigene Einträge), siehe OWNER_FILTERED_APPS
 // unten statt hartem Block. digitaler-stempel: ebenfalls Selbstbedienung
@@ -308,6 +336,23 @@ const OWNER_FILTERED_APPS = {
   fahrtenbuch: { listField: "fahrten", ownerField: "erstelltVon" },
   materialbedarf: { listField: "meldungen", ownerField: "erstelltVon" },
   testspielplaner: { listField: "reservierungen", ownerField: "erstelltVon" }
+};
+
+// Wie OWNER_FILTERED_APPS, aber das Sichtbarkeitskriterium ist "eigene
+// mannschaften (nutzer.json) enthält item[teamField]" statt "item[ownerField]
+// === eigener Username" -- passend für Apps, bei denen Ersteller (Editor-
+// Rolle, hier: Social-Media-Team) und Betroffener (eine Mannschaft/deren
+// Trainer) zwei verschiedene Rollen sind. Bei fotoauftraege legt das
+// Social-Media-Team den Auftrag an, aber der zuständige Trainer (nicht der
+// Ersteller) muss ihn sehen/erfüllen dürfen -- OWNER_FILTERED_APPS würde ihm
+// per erstelltVon-Filter nichts anzeigen. Editoren (resolveEditPermission)
+// bekommen wie bei OWNER_FILTERED_APPS immer das volle Dokument. Wichtig auch
+// aus Sicherheitssicht: fotoauftraege.freigabeLink ist ein echter, funktions-
+// fähiger Bearer-Link -- ihn per dav-load an alle auszuliefern würde den
+// ganzen Sinn hinter "isolierte Links pro Team" unterlaufen (gleiche Logik
+// wie der Kommentar zu OWNER_FILTERED_APPS oben). Siehe handleDavLoad.
+const TEAM_FILTERED_APPS = {
+  fotoauftraege: { listField: "auftraege", teamField: "mannschaft" }
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -445,6 +490,8 @@ export default {
         return handleDavLoad(request, body, env, authHeader, corsHeaders);
       case "dav-save":
         return handleDavSave(request, body, env, authHeader, corsHeaders);
+      case "fotoauftrag-ordner-anlegen":
+        return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
       case "dav-file-put":
         return handleDavFilePut(request, body, env, authHeader, corsHeaders);
       case "dav-file-get":
@@ -1852,6 +1899,16 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
     data = { ...data, [ownerCfg.listField]: data[ownerCfg.listField].filter(
       (item) => item && item[ownerCfg.ownerField] === session.username) };
   }
+  const teamCfg = getOwn(TEAM_FILTERED_APPS, app);
+  if (teamCfg && data && Array.isArray(data[teamCfg.listField]) &&
+      !(await resolveEditPermission(app, session, env, authHeader))) {
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const user = getOwn(usersDoc.users, session.username);
+    const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
+    // Neues Objekt bauen statt in-place zu mutieren -- gleicher Cache-Grund wie beim ownerCfg-Block oben.
+    data = { ...data, [teamCfg.listField]: data[teamCfg.listField].filter(
+      (item) => item && meineMannschaften.has(item[teamCfg.teamField])) };
+  }
   return json({ data, rev }, 200, corsHeaders);
 }
 
@@ -1933,6 +1990,243 @@ async function handleOwnerFilteredSave(url, cfg, session, authHeader, submitted,
         return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
       }
       return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- Aktion: Fotoauftrag-Ordner anlegen (dedizierter Ordner + echter
+// Nextcloud-Freigabelink pro Auftrag, via OCS-Sharing-API) ----------
+
+function normalizeFotoauftraegeDoc(raw) {
+  const doc = raw && typeof raw === "object" ? raw : {};
+  return {
+    meta: doc.meta && typeof doc.meta === "object" ? doc.meta : {},
+    auftraege: Array.isArray(doc.auftraege) ? doc.auftraege : []
+  };
+}
+
+// mannschaft ist Freitext (kein Enum) -- transliterate() (ä/ö/ü/ß, siehe unten
+// bei den Gruppen-Helfern) plus Einkürzen auf [A-Za-z0-9-] neutralisiert dabei
+// automatisch jeden Path-Traversal-Versuch im Feld, ohne den String separat
+// gegen ein Blacklist-Muster prüfen zu müssen.
+function slugifyMannschaftForPath(str) {
+  const ascii = transliterate(String(str || "")).trim();
+  const cleaned = ascii.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return (cleaned || "Team").slice(0, 60);
+}
+
+function buildFotoauftragBasisPfad(mannschaft, datumIso) {
+  const jahr = datumIso.slice(0, 4);
+  return `${jahr}/${datumIso}_${slugifyMannschaftForPath(mannschaft)}`;
+}
+
+// Legt den Ziel-Ordner an. Anders als ensureCollection() wird ein bereits
+// existierender Name NICHT still wiederverwendet (405 heißt hier "Name schon
+// vergeben", nicht "passt schon") -- sonst könnten zwei verschiedene Aufträge
+// versehentlich denselben Nextcloud-Ordner (und dieselbe Freigabe) teilen.
+// Kollisionsprüfung läuft bewusst gegen das echte Nextcloud-Dateisystem, nicht
+// nur gegen JSON-Einträge (die könnten z.B. nach einem gelöschten Auftrag
+// fehlen, obwohl der Ordner noch existiert).
+async function ensureUniqueFotoauftragOrdner(basisFullUrl, authHeader) {
+  const parentUrl = basisFullUrl.slice(0, basisFullUrl.lastIndexOf("/"));
+  await ensureCollection(parentUrl, authHeader, 0); // gemeinsamer Jahres-Ordner -- Wiederverwendung hier korrekt
+
+  let suffix = 1;
+  let candidateUrl = basisFullUrl;
+  for (;;) {
+    let resp = await fetch(candidateUrl, { method: "MKCOL", headers: { Authorization: authHeader } });
+    if (resp.status === 201) return candidateUrl;
+    if (resp.status === 409) {
+      await ensureCollection(candidateUrl.slice(0, candidateUrl.lastIndexOf("/")), authHeader, 0);
+      resp = await fetch(candidateUrl, { method: "MKCOL", headers: { Authorization: authHeader } });
+      if (resp.status === 201) return candidateUrl;
+    }
+    if (resp.status === 405) {
+      suffix += 1;
+      if (suffix > 50) throw new NextcloudError("Konnte keinen freien Ordnernamen finden");
+      candidateUrl = `${basisFullUrl}_${suffix}`;
+      continue;
+    }
+    throw new NextcloudError(`Ordner anlegen fehlgeschlagen (MKCOL ${resp.status})`);
+  }
+}
+
+function nextcloudOrigin(url) {
+  return new URL(url).origin;
+}
+
+// Pfad relativ zum Nextcloud-Nutzer-Root, wie ihn die OCS-Share-API im
+// "path"-Parameter erwartet -- aus einer vollen WebDAV-URL
+// (.../remote.php/dav/files/<user>/<pfad>) extrahiert.
+function nextcloudRelativePath(url) {
+  const marker = "/remote.php/dav/files/";
+  const pathname = new URL(url).pathname;
+  const idx = pathname.indexOf(marker);
+  if (idx === -1) throw new NextcloudError("Unerwartetes Nextcloud-URL-Format");
+  const afterUser = pathname.slice(idx + marker.length);
+  const slash = afterUser.indexOf("/");
+  return decodeURIComponent(slash === -1 ? "" : afterUser.slice(slash));
+}
+
+// OCS-Sharing-API: erzeugt einen echten, eigenständigen Nextcloud-Freigabelink
+// für GENAU diesen einen Ordner (shareType=3 = öffentlicher Link). Komplett
+// NEU in dieser Flotte -- bisher nutzt jede App nur rohes WebDAV. Vor dem
+// produktiven Verlassen auf diese Funktion unbedingt per Live-Probe gegen
+// einen Wegwerf-Ordner verifizieren (siehe CLAUDE.md dieser App): die genauen
+// Feldnamen der Antwort, ob permissions=15 wirklich "Ansehen + Hochladen"
+// ergibt (nicht Drop-Box-Modus), und ob öffentliche Links auf diesem
+// Tarif/dieser Instanz überhaupt aktiviert sind.
+async function createPublicShare(folderWebdavUrl, authHeader) {
+  const ocsUrl = nextcloudOrigin(folderWebdavUrl) + "/ocs/v2.php/apps/files_sharing/api/v1/shares";
+  const form = new URLSearchParams();
+  form.set("path", nextcloudRelativePath(folderWebdavUrl));
+  form.set("shareType", "3");
+  form.set("permissions", "15"); // read+update+create+delete ("Hochladen und Bearbeiten erlauben"), NICHT 4 (Datei-Ablage)
+  let resp;
+  try {
+    resp = await fetch(ocsUrl, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "OCS-APIRequest": "true",
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form.toString()
+    });
+  } catch (e) {
+    throw new NextcloudError("Nextcloud-Freigabe nicht erreichbar: " + e.message);
+  }
+  if (!resp.ok) throw new NextcloudError(`Nextcloud-Freigabe fehlgeschlagen (OCS ${resp.status})`);
+  let parsed;
+  try {
+    parsed = await resp.json();
+  } catch (_) {
+    throw new NextcloudError("Unerwartete OCS-Antwort (kein JSON)");
+  }
+  const data = parsed && parsed.ocs && parsed.ocs.data;
+  if (!data || typeof data.url !== "string" || typeof data.token !== "string") {
+    throw new NextcloudError("OCS-Antwort enthält keine url/token — Response-Form gegen Live-Probe prüfen");
+  }
+  return { url: data.url, token: data.token };
+}
+
+async function rollbackFotoauftragToOffen(url, authHeader, id) {
+  try {
+    const { data, rev } = await readJsonWithRev(url, authHeader, { meta: {}, auftraege: [] });
+    const doc = normalizeFotoauftraegeDoc(data);
+    const a = doc.auftraege.find((x) => x && x.id === id);
+    if (!a || a.status !== "wird-angelegt") return; // schon anderweitig verändert -- nicht anfassen
+    a.status = "offen";
+    a.ordnerWirdAngelegtVon = null;
+    a.ordnerWirdAngelegtAm = null;
+    await writeJson(url, authHeader, doc, rev);
+  } catch (_) {
+    // best-effort -- ein fehlgeschlagener Rollback darf den ursprünglichen Fehler nicht verdecken
+  }
+}
+
+async function handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const url = getOwn(DAV_APPS, "fotoauftraege");
+  if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool("fotoauftraege", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const id = String(body.id || "");
+  if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
+
+  // Phase A: reservieren (offen -> wird-angelegt). Der ETag-If-Match-Write
+  // wirkt hier als Mutex -- wer den konditionalen Write verliert, bekommt 409,
+  // BEVOR irgendein MKCOL/OCS-Aufruf passiert (siehe CLAUDE.md für die
+  // Begründung, warum das bei dieser App nötig ist, anders als der sonst in
+  // dieser Flotte akzeptierte Doppelbuchungs-Race).
+  let { data, rev } = await readJsonWithRev(url, authHeader, { meta: {}, auftraege: [] });
+  let doc = normalizeFotoauftraegeDoc(data);
+  let auftrag = doc.auftraege.find((a) => a && a.id === id);
+  if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
+  if (auftrag.status !== "offen") {
+    return json({ error: "Auftrag ist nicht mehr offen", conflict: true }, 409, corsHeaders);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(auftrag.datum || ""))) {
+    return json({ error: "Auftrag hat ein ungültiges Datum" }, 400, corsHeaders);
+  }
+  if (!String(auftrag.mannschaft || "").trim()) {
+    return json({ error: "Auftrag hat keine Mannschaft" }, 400, corsHeaders);
+  }
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = getOwn(usersDoc.users, session.username);
+  const isEditor = await resolveEditPermission("fotoauftraege", session, env, authHeader);
+  if (!isEditor) {
+    const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
+    if (!meineMannschaften.has(auftrag.mannschaft)) {
+      return json({ error: "Keine Berechtigung, für dieses Team einen Ordner anzulegen" }, 403, corsHeaders);
+    }
+  }
+
+  auftrag.status = "wird-angelegt";
+  auftrag.ordnerWirdAngelegtVon = session.username;
+  auftrag.ordnerWirdAngelegtAm = new Date().toISOString();
+  try {
+    rev = await writeJson(url, authHeader, doc, rev);
+  } catch (e) {
+    if (e instanceof ConflictError) {
+      return json({ error: "Auftrag wird bereits von jemand anderem bearbeitet", conflict: true }, 409, corsHeaders);
+    }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  // Phase B: eigentliche Arbeit, genau einmal.
+  const basisPfad = buildFotoauftragBasisPfad(auftrag.mannschaft, auftrag.datum);
+  let fullUrl, share;
+  try {
+    fullUrl = await ensureUniqueFotoauftragOrdner(FOTOAUFTRAEGE_ORDNER_BASIS + "/" + basisPfad, authHeader);
+    share = await createPublicShare(fullUrl, authHeader);
+  } catch (e) {
+    await rollbackFotoauftragToOffen(url, authHeader, id);
+    return json({ error: "Ordner/Freigabe konnte nicht angelegt werden: " + e.message }, 502, corsHeaders);
+  }
+  const relPath = fullUrl.slice(FOTOAUFTRAEGE_ORDNER_BASIS.length + 1);
+
+  const applyFinal = (a) => {
+    a.status = "ordner-angelegt";
+    a.ordnerPfad = relPath;
+    a.freigabeLink = share.url;
+    a.freigabeToken = share.token;
+    a.ordnerErstelltVon = session.username;
+    a.ordnerErstelltVonVorname = (user && user.vorname) || null;
+    a.ordnerErstelltVonNachname = (user && user.nachname) || null;
+    a.ordnerErstelltAm = new Date().toISOString();
+  };
+  applyFinal(auftrag);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const newRev = await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, auftrag, rev: newRev }, 200, corsHeaders);
+    } catch (e) {
+      if (!(e instanceof ConflictError) || attempt === 3) {
+        return json({
+          error: "Ordner/Freigabe angelegt, aber Speichern fehlgeschlagen: " + e.message,
+          ordnerPfad: relPath, freigabeLink: share.url
+        }, 502, corsHeaders);
+      }
+      const fresh = await readJsonWithRev(url, authHeader, { meta: {}, auftraege: [] });
+      doc = normalizeFotoauftraegeDoc(fresh.data);
+      rev = fresh.rev;
+      const freshAuftrag = doc.auftraege.find((a) => a && a.id === id);
+      if (!freshAuftrag || freshAuftrag.status !== "wird-angelegt" || freshAuftrag.ordnerWirdAngelegtVon !== session.username) {
+        return json({
+          error: "Auftrag wurde zwischenzeitlich verändert", conflict: true,
+          ordnerPfad: relPath, freigabeLink: share.url
+        }, 409, corsHeaders);
+      }
+      auftrag = freshAuftrag;
+      applyFinal(auftrag);
     }
   }
 }

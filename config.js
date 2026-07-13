@@ -1,4 +1,4 @@
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.10";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -229,6 +229,17 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["desktop"]
+  },
+  {
+    id: "fotoauftraege",
+    name: "Fotoaufträge",
+    description: "Das Social-Media-Team fragt Fotos von einer Mannschaft an; der zuständige Trainer legt per Klick einen eigenen, freigegebenen Nextcloud-Ordner für den Bilder-Upload an und bekommt einen teilbaren Link.",
+    url: "https://tecko1985.github.io/fotoauftraege/",
+    icon: "📸",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"],
+    wip: true
   }
 ];
 
@@ -333,6 +344,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.10",
+    groups: [
+      {
+        title: "Fotoaufträge",
+        items: [
+          "Neue Kachel „Fotoaufträge“ (vorerst als „in Bearbeitung“ markiert): Social-Media-Team fragt Fotos von einer Mannschaft an, der zuständige Trainer legt selbst einen freigegebenen Nextcloud-Ordner samt teilbarem Link an."
+        ]
+      }
+    ]
+  },
   {
     version: "1.9",
     groups: [
