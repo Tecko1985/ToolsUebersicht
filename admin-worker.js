@@ -230,6 +230,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8784", // Vereinswiki (Dev-Server)
   "http://localhost:8785", // Testspielplaner (Dev-Server)
   "http://localhost:8786", // Fotoaufträge (Dev-Server)
+  "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -255,7 +256,8 @@ const DAV_APPS = {
   "personalakte":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalakte/personalakte.json",
   "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json",
   "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json",
-  "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json"
+  "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json",
+  "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json"
 };
 
 // Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt
@@ -353,6 +355,21 @@ const OWNER_FILTERED_APPS = {
   fahrtenbuch: { listField: "fahrten", ownerField: "erstelltVon" },
   materialbedarf: { listField: "meldungen", ownerField: "erstelltVon" },
   testspielplaner: { listField: "reservierungen", ownerField: "erstelltVon" }
+};
+
+// Wie OWNER_FILTERED_APPS, aber NUR fürs Schreiben: das Sichtbarkeitsmodell dieser
+// App ist "voller Lesezugriff für jeden mit Tool-Sichtbarkeit" (jede:r soll alle
+// Abwesenheiten sehen, damit eine interne Vertretungsregelung greift), kombiniert mit
+// "Nicht-Bearbeiter dürfen nur eigene Einträge anlegen/ändern/löschen". Bewusst NICHT
+// in OWNER_FILTERED_APPS aufgenommen: das würde in handleDavLoad auch das Lesen auf
+// eigene Einträge einschränken, was hier falsch wäre. handleDavLoad wertet diese Map
+// NICHT aus (kein Read-Filter); nur handleDavSave prüft sie zusätzlich und routet bei
+// Treffer zur selben handleOwnerFilteredSave() (die kennt ohnehin keine
+// Read-Filterung, kümmert sich rein ums Schreiben). Der Client bekommt beim Laden
+// IMMER den vollen Array; ein Nicht-Bearbeiter muss vor dav-save selbst auf eigene
+// Einträge filtern, sonst 400 "fremde oder ungültige Einträge".
+const OWNER_WRITE_APPS = {
+  abwesenheitskalender: { listField: "abwesenheiten", ownerField: "erstelltVon" }
 };
 
 // Wie OWNER_FILTERED_APPS, aber das Sichtbarkeitskriterium ist "eigene
@@ -1952,12 +1969,17 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
   }
 
-  const ownerCfg = getOwn(OWNER_FILTERED_APPS, app);
+  const ownerCfg = getOwn(OWNER_FILTERED_APPS, app) || getOwn(OWNER_WRITE_APPS, app);
   if (ownerCfg && !(await resolveEditPermission(app, session, env, authHeader))) {
-    // Nutzer ohne Bearbeiten-Recht hat beim Load nur die eigenen Einträge bekommen
-    // (siehe handleDavLoad) — body.data[listField] enthaelt deshalb bestenfalls nur
-    // die eigenen. NICHT wie unten das ganze Dokument wholesale schreiben (würde
-    // alle fremden Einträge löschen, die dieser Client nie im Speicher hatte).
+    // Nutzer ohne Bearbeiten-Recht: bei OWNER_FILTERED_APPS hat handleDavLoad bereits
+    // nur die eigenen Einträge geliefert (body.data[listField] enthält bestenfalls nur
+    // eigene). Bei OWNER_WRITE_APPS (z.B. abwesenheitskalender, siehe Kommentar dort)
+    // sieht der Client beim Laden dagegen ALLE Einträge -- body.data[listField] kann
+    // hier fremde Einträge enthalten und wird von handleOwnerFilteredSave direkt
+    // darunter geprüft (400 bei jedem fremden Eintrag; der Client muss selbst
+    // vorfiltern). In beiden Fällen NICHT wie unten das ganze Dokument wholesale
+    // schreiben (würde fremde Einträge löschen bzw. überschreiben, die dieser Client
+    // nie oder nur veraltet im Speicher hatte).
     return handleOwnerFilteredSave(url, ownerCfg, session, authHeader, body.data[ownerCfg.listField], corsHeaders);
   }
 

@@ -137,7 +137,7 @@ function logout() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  loadCalendarWidget();
+  loadSidebarWidget();
 }
 
 async function loadAndRenderUsers() {
@@ -1178,13 +1178,34 @@ function renderNews() {
   if (nextBtn) nextBtn.addEventListener("click", () => { newsCarouselIndex = Math.min(items.length - 1, newsCarouselIndex + 1); renderNews(); });
 }
 
-// ---- Vereinskalender-Widget: nächste Termine links neben den Kacheln ----
+// ---- Sidebar-Widget: nächste Termine + Abwesenheiten links neben den Kacheln ----
 // Nutzt dieselbe Sichtbarkeitsregel wie die Tool-Karte (isVisibleToUser) und
-// dieselbe Gateway-Aktion (dav-load) wie die Vereinskalender-App selbst — rein
-// lesend, kein eigener Worker-Code nötig. Ohne Login/Zugriff wird das Widget
-// einfach ausgeblendet statt einen Fehler zu zeigen.
+// dieselbe Gateway-Aktion (dav-load) wie die jeweilige App selbst — rein
+// lesend, kein eigener Worker-Code nötig. Kalender- und Abwesenheiten-Teil sind
+// UNABHÄNGIG voneinander sichtbar (unterschiedliche Apps, unterschiedliche
+// Sichtbarkeits-Gruppen) — ein Nutzer mit nur einer der beiden Berechtigungen
+// sieht trotzdem den für ihn zutreffenden Teil, siehe loadSidebarWidget.
 const CALENDAR_WIDGET_APP_ID = "vereinskalender";
 const CALENDAR_WIDGET_COUNT = 8;
+const ABSENCE_WIDGET_APP_ID = "abwesenheitskalender";
+const ABSENCE_WIDGET_COUNT = 4;
+
+function absenceSortKey(a) { return `${a.von}_${a.bis}`; }
+
+// Kompakte Zeitraum-Anzeige ohne Jahr (analog formatCalendarDate) -- "17.–20.08."
+// bzw. "28.02.–02.03." bzw. nur "17.08." bei eintägiger Abwesenheit (von===bis).
+function formatAbsenceRange(von, bis) {
+  const mv = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(von || ""));
+  const mb = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(bis || ""));
+  if (!mv) return "";
+  if (!mb || bis === von) return `${mv[3]}.${mv[2]}.`;
+  if (mv[2] === mb[2]) return `${mv[3]}.–${mb[3]}.${mv[2]}.`;
+  return `${mv[3]}.${mv[2]}.–${mb[3]}.${mb[2]}.`;
+}
+
+function absencePersonName(a) {
+  return (a.vorname || a.nachname) ? `${a.vorname || ""} ${a.nachname || ""}`.trim() : (a.erstelltVon || "Unbekannt");
+}
 
 function calendarTerminEndIso(t) {
   return t.endDatum && /^\d{4}-\d{2}-\d{2}$/.test(t.endDatum) && t.endDatum >= t.datum ? t.endDatum : t.datum;
@@ -1281,40 +1302,75 @@ async function loadTestspielplanerStatus() {
   renderToolGrid();
 }
 
-async function loadCalendarWidget() {
+async function loadSidebarWidget() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
-  if (!currentUser || !isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser)) {
+
+  const showCalendar = !!currentUser && isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser);
+  const showAbsences = !!currentUser && isVisibleToUser(ABSENCE_WIDGET_APP_ID, currentUser);
+  if (!showCalendar && !showAbsences) {
     widget.dataset.hasContent = "0";
     widget.style.display = "none";
     widget.innerHTML = "";
     return;
   }
-  try {
-    const [res, geburtstage] = await Promise.all([
-      callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID }),
-      loadBirthdaysToday()
-    ]);
-    const data = res && res.data && typeof res.data === "object" ? res.data : {};
-    const termine = Array.isArray(data.termine) ? data.termine : [];
-    const kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
-    const today = new Date().toISOString().slice(0, 10);
-    const upcoming = termine
-      .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.datum || "") && calendarTerminEndIso(t) >= today)
-      .filter((t) => calendarTerminVisibleFor(t, currentUser))
-      .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
-    const oeffentlich = upcoming.filter((t) => !t.privat).slice(0, CALENDAR_WIDGET_COUNT);
-    const privat = upcoming.filter((t) => t.privat).slice(0, CALENDAR_WIDGET_COUNT);
-    renderCalendarWidget(widget, oeffentlich, privat, kategorien, geburtstage);
-  } catch (e) {
-    console.warn("Vereinskalender-Widget nicht ladbar:", e);
+
+  let oeffentlich = [], privat = [], kategorien = [], geburtstage = [];
+  let absences = [], absenceKategorien = [];
+  let calendarFailed = false, absenceFailed = false;
+
+  const calendarPromise = showCalendar
+    ? Promise.all([callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID }), loadBirthdaysToday()])
+        .then(([res, namen]) => {
+          const data = res && res.data && typeof res.data === "object" ? res.data : {};
+          const termine = Array.isArray(data.termine) ? data.termine : [];
+          kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
+          const today = new Date().toISOString().slice(0, 10);
+          const upcoming = termine
+            .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.datum || "") && calendarTerminEndIso(t) >= today)
+            .filter((t) => calendarTerminVisibleFor(t, currentUser))
+            .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
+          oeffentlich = upcoming.filter((t) => !t.privat).slice(0, CALENDAR_WIDGET_COUNT);
+          privat = upcoming.filter((t) => t.privat).slice(0, CALENDAR_WIDGET_COUNT);
+          geburtstage = namen;
+        })
+        .catch((e) => { console.warn("Vereinskalender-Widget nicht ladbar:", e); calendarFailed = true; })
+    : Promise.resolve();
+
+  const absencePromise = showAbsences
+    ? callWorker("dav-load", { app: ABSENCE_WIDGET_APP_ID })
+        .then((res) => {
+          const data = res && res.data && typeof res.data === "object" ? res.data : {};
+          const abwesenheiten = Array.isArray(data.abwesenheiten) ? data.abwesenheiten : [];
+          absenceKategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
+          const today = new Date().toISOString().slice(0, 10);
+          absences = abwesenheiten
+            .filter((a) => /^\d{4}-\d{2}-\d{2}$/.test(a.bis || "") && a.bis >= today)
+            .sort((a, b) => absenceSortKey(a).localeCompare(absenceSortKey(b)))
+            .slice(0, ABSENCE_WIDGET_COUNT);
+        })
+        .catch((e) => { console.warn("Abwesenheitskalender-Widget nicht ladbar:", e); absenceFailed = true; })
+    : Promise.resolve();
+
+  await Promise.all([calendarPromise, absencePromise]);
+
+  const calendarOk = showCalendar && !calendarFailed;
+  const absenceOk = showAbsences && !absenceFailed;
+  if (!calendarOk && !absenceOk) {
     widget.dataset.hasContent = "0";
     widget.style.display = "none";
     widget.innerHTML = "";
+    return;
   }
+
+  renderSidebarWidget(widget, {
+    showCalendar: calendarOk, oeffentlich, privat, kategorien, geburtstage,
+    showAbsences: absenceOk, absences, absenceKategorien
+  });
 }
 
-function renderCalendarWidget(widget, termine, privatTermine, kategorien, geburtstage) {
+function renderSidebarWidget(widget, opts) {
+  const { showCalendar, oeffentlich, privat, kategorien, geburtstage, showAbsences, absences, absenceKategorien } = opts;
   const tool = toolById(CALENDAR_WIDGET_APP_ID);
   const url = tool ? tool.url : "#";
   const katFarbe = (id) => {
@@ -1338,23 +1394,59 @@ function renderCalendarWidget(widget, termine, privatTermine, kategorien, geburt
           <span class="cw-title">${escapeHtml(name)} hat Geburtstag</span>
         </div>
       `;
-  const rows = (geburtstage.length || termine.length)
-    ? geburtstage.map(birthdayRowHtml).join("") + termine.map(rowHtml).join("")
-    : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
-  // Private Termine (nur für den eingeloggten Nutzer sichtbar, siehe
-  // calendarTerminVisibleFor) stehen als eigener Abschnitt UNTER den normalen
-  // Terminen — der Abschnitt fehlt ganz, wenn der Nutzer keine hat.
-  const privateSection = privatTermine.length ? `
+
+  let calendarHtml = "";
+  if (showCalendar) {
+    const rows = (geburtstage.length || oeffentlich.length)
+      ? geburtstage.map(birthdayRowHtml).join("") + oeffentlich.map(rowHtml).join("")
+      : '<p class="muted" style="padding:4px 0;">Keine anstehenden Termine.</p>';
+    // Private Termine (nur für den eingeloggten Nutzer sichtbar, siehe
+    // calendarTerminVisibleFor) stehen als eigener Abschnitt UNTER den normalen
+    // Terminen — der Abschnitt fehlt ganz, wenn der Nutzer keine hat.
+    const privateSection = privat.length ? `
       <h2 class="calendar-widget-sub-heading">🔒 Private Termine</h2>
-      <div class="calendar-widget-list">${privatTermine.map(rowHtml).join("")}</div>
+      <div class="calendar-widget-list">${privat.map(rowHtml).join("")}</div>
     ` : "";
-  widget.innerHTML = `
-    <div class="card">
+    calendarHtml = `
       <h2>📅 Nächste Termine</h2>
       <div class="calendar-widget-list">${rows}</div>
       ${privateSection}
-    </div>
-  `;
+    `;
+  }
+
+  // Abwesenheiten-Abschnitt: eigene App/Sichtbarkeit, daher unabhängig vom
+  // Kalender-Teil gerendert (siehe loadSidebarWidget) — nutzt dasselbe
+  // .calendar-widget-item/.cw-date/.cw-dot/.cw-title-Markup für optische
+  // Konsistenz mit den Termin-Zeilen darüber.
+  let absenceHtml = "";
+  if (showAbsences) {
+    const absTool = toolById(ABSENCE_WIDGET_APP_ID);
+    const absUrl = absTool ? absTool.url : "#";
+    const absKatFarbe = (id) => {
+      const k = absenceKategorien.find((k2) => k2.id === id);
+      return k ? k.farbe : "#6b7280";
+    };
+    const absKatName = (id) => {
+      const k = absenceKategorien.find((k2) => k2.id === id);
+      return k ? k.name : "Sonstiges";
+    };
+    const absRowHtml = (a) => `
+      <a class="calendar-widget-item" href="${escapeHtml(absUrl)}">
+        <span class="cw-date">${escapeHtml(formatAbsenceRange(a.von, a.bis))}</span>
+        <span class="cw-dot" style="background:${escapeHtml(absKatFarbe(a.kategorie))}"></span>
+        <span class="cw-title">${escapeHtml(absencePersonName(a))} (${escapeHtml(absKatName(a.kategorie))})</span>
+      </a>
+    `;
+    const absRows = absences.length
+      ? absences.map(absRowHtml).join("")
+      : '<p class="muted" style="padding:4px 0;">Keine anstehenden Abwesenheiten.</p>';
+    absenceHtml = `
+      <h2 class="calendar-widget-sub-heading">🧳 Nächste Abwesenheiten</h2>
+      <div class="calendar-widget-list">${absRows}</div>
+    `;
+  }
+
+  widget.innerHTML = `<div class="card">${calendarHtml}${absenceHtml}</div>`;
   widget.dataset.hasContent = "1";
   widget.style.display = isUebersichtTabActive() ? "block" : "none";
 }
@@ -2185,7 +2277,7 @@ function activateTab(name) {
   if (btn) btn.classList.add("active");
   const section = document.getElementById("tab-" + name);
   if (section) section.classList.add("active");
-  // Kalender-Widget hängt außerhalb von #tab-uebersicht (siehe loadCalendarWidget) —
+  // Kalender-Widget hängt außerhalb von #tab-uebersicht (siehe loadSidebarWidget) —
   // beim Tab-Wechsel Sichtbarkeit anhand des geladenen Inhalts neu bewerten.
   const widget = document.getElementById("calendar-widget");
   if (widget) widget.style.display = (name === "uebersicht" && widget.dataset.hasContent === "1") ? "block" : "none";
@@ -2366,7 +2458,7 @@ async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
@@ -2675,7 +2767,7 @@ async function init() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadCalendarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
     // anhand von groupsState, das also schon geladen sein muss, bevor

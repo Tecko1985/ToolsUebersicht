@@ -1,4 +1,4 @@
-const APP_VERSION = "1.11";
+const APP_VERSION = "1.12";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -239,6 +239,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "abwesenheitskalender",
+    name: "Abwesenheitskalender",
+    description: "Übersicht, wer wann abwesend ist (Urlaub, Krankheit, Fortbildung u.a.) — jede:r Berechtigte trägt eigene Abwesenheiten ein, alle mit Tool-Zugriff sehen die komplette Übersicht.",
+    url: "https://tecko1985.github.io/abwesenheitskalender/",
+    icon: "🧳",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -343,6 +353,18 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.12",
+    groups: [
+      {
+        title: "Abwesenheitskalender",
+        items: [
+          "Neue Kachel „Abwesenheitskalender“: Trainer:innen und weitere berechtigte Gruppen tragen eigene Abwesenheiten (Urlaub, Krankheit, Fortbildung/Lehrgang, Sonstiges) mit Zeitraum ein — alle mit Tool-Zugriff sehen die komplette Übersicht, jede:r verwaltet aber nur die eigenen Einträge (Bearbeiter-Gruppen dürfen wie gewohnt alle verwalten).",
+          "Dashboard-Widget zeigt zusätzlich die 4 nächsten anstehenden Abwesenheiten."
+        ]
+      }
+    ]
+  },
   {
     version: "1.11",
     groups: [
