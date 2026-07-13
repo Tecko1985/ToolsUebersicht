@@ -245,11 +245,13 @@ const DAV_APPS = {
 
 // Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt
 // von DAV_APPS, da dort nur die JSON-Datendatei der App steht, nicht der
-// Foto-Baum). Unterstrich statt Leerzeichen im letzten Segment, wie überall in
-// DAV_APPS, um Encoding-Fallstricke über WebDAV-Client->Worker->Nextcloud zu
-// vermeiden. PLATZHALTER -- mit Michel abgestimmter Pfad, vor dem ersten
-// echten Ordner-Anlegen bestätigen/anpassen.
-const FOTOAUFTRAEGE_ORDNER_BASIS = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/Social_Media";
+// Foto-Baum). "06_Social Media" ist ein eigenständiger Ordner auf oberster
+// Ebene (Geschwister von 05_Nachwuchsbereich/02_Geschäftsstelle/etc.), NICHT
+// unter 05_Nachwuchsbereich verschachtelt -- mit Michel am 2026-07-13
+// bestätigt. Muss nicht vorher manuell angelegt werden: ensureCollection()
+// legt fehlende Ebenen (auch diesen Ordner selbst) beim ersten Ordner-Anlegen
+// automatisch an, wie überall sonst in dieser Datei.
+const FOTOAUFTRAEGE_ORDNER_BASIS = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/06_Social Media";
 
 // Belegeingang-Ordner von sc-heiligenstadt-budget (eigenes Repo/eigener Worker,
 // aber dasselbe Nextcloud-Konto -- volle Admin-WebDAV-Credentials reichen, kein
