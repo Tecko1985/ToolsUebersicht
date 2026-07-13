@@ -503,6 +503,27 @@ main { flex: 1; min-width: 0; }
   font-family: inherit;
 }
 
+/* ---------- Admin: Zugriffsübersicht ---------- */
+
+.access-row {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.access-row .ar-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.access-row .ar-name { font-weight: 700; }
+.access-row .ar-cols { display: flex; flex-wrap: wrap; gap: 16px; }
+.access-row .ar-col { flex: 1; min-width: 200px; }
+.access-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.access-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--border);
+  font-size: 12px;
+}
+
 .pin-gate { max-width: 420px; margin: 40px auto; text-align: center; }
 .pin-gate .card { text-align: left; }
 

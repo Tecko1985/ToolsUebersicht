@@ -1,4 +1,4 @@
-const APP_VERSION = "1.8";
+const APP_VERSION = "1.9";
 
 // WhatsApp-Kontakt für die Hilfe-Kachel im Feedback-Tab (intl. Format ohne "+"/Leerzeichen,
 // direkt für eine wa.me-URL nutzbar — siehe setupWhatsappLink() in app.js).
@@ -333,6 +333,17 @@ const NEWS = [
 ];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.9",
+    groups: [
+      {
+        title: "Zugriffsübersicht",
+        items: [
+          "Neues Admin-Panel „Zugriffsübersicht“ neben Gruppen und Sichtbarkeit: zeigt pro App auf einen Blick, welche Gruppen sie sehen bzw. bearbeiten dürfen — reine Lese-Ansicht, fasst die Daten aus den beiden anderen Panels zusammen statt sie erneut zu pflegen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.8",
     groups: [

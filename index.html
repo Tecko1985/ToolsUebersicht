@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.2" />
+<link rel="stylesheet" href="style.css?v=1.3" />
 </head>
 <body>
 
@@ -302,6 +302,13 @@
       <p class="muted" id="groups-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
     </details>
 
+    <!-- Zugriffsübersicht: reine Lese-Ansicht, fasst Gruppen- und Sichtbarkeits-Panel zusammen (nur Admin) -->
+    <details class="card collapsible" id="admin-access-panel" style="display:none;">
+      <summary>Zugriffsübersicht</summary>
+      <p class="muted" style="margin-bottom:14px;">Wer darf welche App sehen bzw. bearbeiten — nur zum Nachlesen, ändern geht über "Gruppen" oder "Sichtbarkeit der Tools".</p>
+      <div id="access-overview-list"></div>
+    </details>
+
     <!-- Sichtbarkeits-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-visibility-panel" style="display:none;">
       <summary>Sichtbarkeit der Tools</summary>
@@ -469,6 +476,6 @@
 </div>
 
 <script src="config.js?v=1.13"></script>
-<script src="app.js?v=1.9"></script>
+<script src="app.js?v=1.10"></script>
 </body>
 </html>

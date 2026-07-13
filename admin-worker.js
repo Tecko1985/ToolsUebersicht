@@ -241,11 +241,26 @@ const BELEGE_EINGANG_DIR =
 // Apps, bei denen Schreiben (dav-save/dav-file-put/dav-file-delete) zusätzlich zur
 // reinen Tool-Sichtbarkeit ein explizites Bearbeiten-Recht voraussetzt (editGroupIds,
 // serverseitig über resolveEditPermission geprüft) — nicht nur ein UI-Hinweis wie
-// bisher bei den anderen Apps mit canEdit(). Für alle DAV_APPS, die NICHT hier stehen,
-// bleibt das gewollte Verhalten: wer das Tool sehen darf, darf auch schreiben (z.B.
-// Materialbedarf-Meldungen, Kleiderbestellungen) — dort ist das kein Bearbeiten-Recht-
-// Konzept, sondern die eigentliche Nutzung des Tools.
-const WRITE_REQUIRES_EDIT_PERMISSION = new Set(["vereinswiki"]);
+// bisher bei den anderen Apps mit canEdit(). Wer sehen, aber nicht bearbeiten darf,
+// bekommt hier ein hartes 403 statt zu schreiben. Für Apps mit echtem Selbstbedienungs-
+// Muster (jeder legt/verwaltet nur eigene Einträge, z.B. Fahrtenbuch, Materialbedarf,
+// Testspielplaner) ist das NICHT die richtige Schublade — die stehen stattdessen in
+// OWNER_FILTERED_APPS weiter unten (Nicht-Editoren schreiben weiterhin, aber nur ihre
+// eigenen Einträge). Apps, die in KEINEM der beiden Sets stehen (z.B. kleiderbestellung,
+// digitaler-stempel), behalten das alte Verhalten: wer das Tool sehen darf, darf auch
+// das ganze Dokument schreiben — dort ist Bearbeiten-Recht bisher nur eine UI-Blende.
+const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
+  "vereinswiki",
+  "materialliste", "trainercheckliste", "spielertool-test", "spielersichtung",
+  "personalkosten", "busplan", "vereinskalender", "kadermanager", "platzbelegung"
+]);
+// materialbedarf, testspielplaner: NICHT hier -- Selbstbedienungs-Muster wie
+// fahrtenbuch (jeder meldet/bucht eigene Einträge), siehe OWNER_FILTERED_APPS
+// unten statt hartem Block. digitaler-stempel: ebenfalls Selbstbedienung
+// (stempelt eigene Dokumente), aber stampedBy ist ein verschachteltes Objekt
+// {username,...} statt eines flachen ownerField-Strings -- passt nicht ins
+// bestehende OWNER_FILTERED_APPS-Schema ohne Erweiterung, bleibt vorerst nur
+// client-seitig gegated (wie kleiderbestellung).
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
 // bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: Trainerdaten
@@ -290,7 +305,9 @@ const RESTRICTED_FILE_APPS = {
 // Admin (resolveEditPermission) bekommen weiterhin das volle Dokument, unveraendert.
 // Siehe handleDavLoad/handleOwnerFilteredSave für die Umsetzung.
 const OWNER_FILTERED_APPS = {
-  fahrtenbuch: { listField: "fahrten", ownerField: "erstelltVon" }
+  fahrtenbuch: { listField: "fahrten", ownerField: "erstelltVon" },
+  materialbedarf: { listField: "meldungen", ownerField: "erstelltVon" },
+  testspielplaner: { listField: "reservierungen", ownerField: "erstelltVon" }
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -1633,6 +1650,7 @@ async function handleArchiveTrainer(request, body, env, authHeader, corsHeaders)
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  if (!(await resolveEditPermission("personalakte", session, env, authHeader))) return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
 
   const username = normalizeUsername(body.username);
   const usersDoc = session.usersDoc;
@@ -1684,6 +1702,7 @@ async function handleReactivateTrainer(request, body, env, authHeader, corsHeade
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   if (!(await mayViewPersonalakte(session, env, authHeader))) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  if (!(await resolveEditPermission("personalakte", session, env, authHeader))) return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
 
   const username = normalizeUsername(body.username);
   const usersDoc = session.usersDoc;
