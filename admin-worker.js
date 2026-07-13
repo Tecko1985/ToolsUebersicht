@@ -2029,11 +2029,10 @@ function slugifyMannschaftForPath(str) {
 }
 
 function buildFotoauftragBasisPfad(mannschaft, datumIso, gegner) {
-  const jahr = datumIso.slice(0, 4);
   const mannschaftSlug = slugifyMannschaftForPath(mannschaft);
   const gegnerSlug = gegner ? slugifyMannschaftForPath(gegner) : "";
   const teil = gegnerSlug ? `${mannschaftSlug}_${gegnerSlug}` : mannschaftSlug;
-  return `${jahr}/${datumIso}_${teil}`;
+  return `${datumIso}_${teil}`;
 }
 
 // Legt den Ziel-Ordner an. Anders als ensureCollection() wird ein bereits
@@ -2045,7 +2044,7 @@ function buildFotoauftragBasisPfad(mannschaft, datumIso, gegner) {
 // fehlen, obwohl der Ordner noch existiert).
 async function ensureUniqueFotoauftragOrdner(basisFullUrl, authHeader) {
   const parentUrl = basisFullUrl.slice(0, basisFullUrl.lastIndexOf("/"));
-  await ensureCollection(parentUrl, authHeader, 0); // gemeinsamer Jahres-Ordner -- Wiederverwendung hier korrekt
+  await ensureCollection(parentUrl, authHeader, 0); // gemeinsamer Basis-Ordner (06_Social Media) -- Wiederverwendung hier korrekt
 
   let suffix = 1;
   let candidateUrl = basisFullUrl;
