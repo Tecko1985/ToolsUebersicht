@@ -1000,10 +1000,17 @@ function visibilityMode(entry) {
   return "groups";
 }
 
+// Vereinswiki hat seit 1.3 keine eigene Kachel mehr, braucht aber weiterhin eine
+// Sichtbarkeits-Konfiguration fuer die Frage-Box in "Feedback & Hilfe" (siehe
+// renderFeedbackTab) -- sonst kann ein Admin sie nie (wieder) einstellen.
+const VIRTUAL_VISIBILITY_ENTRIES = [
+  { id: "vereinswiki", name: "Toolbox Wiki (Frage-Funktion in „Feedback & Hilfe“)", icon: "📚", category: "Verein" }
+];
+
 function renderVisibilityList() {
   const container = document.getElementById("visibility-list");
   container.innerHTML = "";
-  TOOLS.forEach((t) => {
+  TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES).forEach((t) => {
     const entry = visibilityState[t.id] || {};
     const mode = visibilityMode(entry);
     const groupIds = entry.groupIds || [];
@@ -1062,7 +1069,7 @@ function renderAccessOverview() {
   const container = document.getElementById("access-overview-list");
   if (!container) return;
   container.innerHTML = "";
-  TOOLS.forEach((t) => {
+  TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES).forEach((t) => {
     const entry = visibilityState[t.id] || {};
     const mode = visibilityMode(entry);
     const editGroupIds = entry.editGroupIds || [];
@@ -2564,6 +2571,7 @@ function setupAuthForms() {
       await callWorker("save-visibility", { tools });
       visibilityState = tools;
       renderToolGrid();
+      renderFeedbackTab();
       successEl.style.display = "block";
     } catch (err) {
       errorEl.textContent = err.message;
