@@ -110,11 +110,11 @@
 //   POST { action: "save-feedback", entries } (admin)            -> ersetzt alle Feedback-Einträge (Array, serverseitig
 //     validiert) — für "erledigt"-Status togglen und Einträge löschen (kompletter Array-Ersatz wie save-news)
 //   POST { action: "get-admin-stats" } (admin)                   -> { users, trainerGroup, trainervertrag, trainerkodex,
-//     feedbackOpen, materialbedarfOpen, busplanOpen } — sechs Kennzahlen fürs Admin-Dashboard, aus bestehenden
+//     jugendschutz, feedbackOpen, materialbedarfOpen, busplanOpen } — Kennzahlen fürs Admin-Dashboard, aus bestehenden
 //     Datenquellen berechnet (nutzer.json, feedback.json, trainerdaten/trainerkodex/materialbedarf/busplan via
-//     DAV_APPS/PROVISION_ONLY_PATHS). Trainervertrag-/Trainerkodex-Quote beziehen sich auf Mitglieder der Gruppe
-//     TRAINER_GROUP_NAME ("Trainer") — existiert diese Gruppe noch nicht, liefert trainerGroup.exists:false.
-//     Archivierte Trainer zählen NICHT zum Nenner dieser beiden Quoten (siehe archiviert-Feld unten).
+//     DAV_APPS/PROVISION_ONLY_PATHS). Trainervertrag-/Trainerkodex-/Jugendschutzkonzept-Quote beziehen sich auf Mitglieder
+//     der Gruppe TRAINER_GROUP_NAME ("Trainer") — existiert diese Gruppe noch nicht, liefert trainerGroup.exists:false.
+//     Archivierte Trainer zählen NICHT zum Nenner dieser Quoten (siehe archiviert-Feld unten).
 //   POST { action: "personalakte-overview" } (Personalakte-Sichtrecht, siehe mayViewPersonalakte) -> { trainerGroupExists, trainers:[...] }
 //     Seit 1.3: ein Datensatz je Nutzerkonto in nutzer.json, NICHT mehr auf Mitglieder der Trainer-Gruppe
 //     beschränkt (`trainerGroupExists` bleibt aus Client-Kompatibilität immer `true`, ist aber bedeutungslos
@@ -1466,13 +1466,18 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
     trainervertragStatusCounts[status] = (trainervertragStatusCounts[status] || 0) + 1;
   });
 
-  // Trainerkodex: bestätigt sich der Trainer ausschließlich selbst im eigenen
-  // Login-Bereich (kein Admin-Batch-Äquivalent wie beim Vertrag oben) — ein
-  // Datensatz ohne username kann daher nie kodexBestaetigtAm tragen, die
-  // einfachere username-Map genügt hier weiterhin.
+  // Trainerkodex + Jugendschutzkonzept: bestätigt sich der Trainer ausschließlich
+  // selbst im eigenen Login-Bereich (kein Admin-Batch-Äquivalent wie beim Vertrag
+  // oben) — ein Datensatz ohne username kann daher nie kodex-/jugendschutzBestaetigtAm
+  // tragen, die einfachere username-Map genügt hier weiterhin. Beide Quoten zählen
+  // (wie schon der Kodex) reines "jemals bestätigt", nicht die 6-Monats-Gültigkeit.
   const trainerkodexBestaetigt = trainerUsernames.filter((uname) => {
     const t = trainerdatenByUsername.get(uname);
     return !!(t && t.kodexBestaetigtAm);
+  }).length;
+  const jugendschutzBestaetigt = trainerUsernames.filter((uname) => {
+    const t = trainerdatenByUsername.get(uname);
+    return !!(t && t.jugendschutzBestaetigtAm);
   }).length;
 
   const meldungen = Array.isArray(materialbedarfDoc.meldungen) ? materialbedarfDoc.meldungen : [];
@@ -1502,6 +1507,9 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   })), 5);
   const recentTrainerkodex = topRecent(trainerUsernames.map((uname) => ({
     username: uname, at: trainerdatenByUsername.has(uname) ? trainerdatenByUsername.get(uname).kodexBestaetigtAm : null
+  })), 5);
+  const recentJugendschutz = topRecent(trainerUsernames.map((uname) => ({
+    username: uname, at: trainerdatenByUsername.has(uname) ? trainerdatenByUsername.get(uname).jugendschutzBestaetigtAm : null
   })), 5);
 
   const feedbackEntries = Array.isArray(feedbackDoc.entries) ? feedbackDoc.entries : [];
@@ -1535,13 +1543,15 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
       unvollstaendig: trainervertragStatusCounts.unvollstaendig
     },
     trainerkodex: { confirmed: trainerkodexBestaetigt, total: trainerUsernames.length },
+    jugendschutz: { confirmed: jugendschutzBestaetigt, total: trainerUsernames.length },
     feedbackOpen: feedbackOffen,
     materialbedarfOpen: materialbedarfOffen,
     busplanOpen: busplanOffen,
     testspielplanerAngefragt,
     recentLogins,
     recentTrainervertrag,
-    recentTrainerkodex
+    recentTrainerkodex,
+    recentJugendschutz
   }, 200, corsHeaders);
 }
 

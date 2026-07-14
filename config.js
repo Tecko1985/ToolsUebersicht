@@ -354,6 +354,18 @@ const NEWS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.13",
+    groups: [
+      {
+        title: "Admin-Dashboard",
+        items: [
+          "Neue Kachel „Jugendschutzkonzept-Quote“: zeigt analog zur Trainerkodex-Quote, wie viele Trainer:innen der Gruppe „Trainer“ das Kinder- und Jugendschutzkonzept bestätigt haben.",
+          "Das Dropdown „Zuletzt aktiv“ kennt zusätzlich „Jugendschutzkonzept zuletzt bestätigt“."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.12",
     groups: [
       {

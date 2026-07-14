@@ -1705,6 +1705,7 @@ function renderAdminStats(data) {
     document.getElementById("stat-trainervertrag").textContent = "–";
     document.getElementById("stat-trainervertrag-sub").textContent = "erstellt";
     document.getElementById("stat-trainerkodex").textContent = "–";
+    document.getElementById("stat-jugendschutz").textContent = "–";
   } else {
     trainerNote.style.display = "none";
     const tv = data.trainervertrag;
@@ -1712,6 +1713,8 @@ function renderAdminStats(data) {
     document.getElementById("stat-trainervertrag-sub").textContent =
       `erstellt · ${tv.ausstehend} ausstehend · ${tv.unvollstaendig} unvollständig`;
     document.getElementById("stat-trainerkodex").textContent = `${data.trainerkodex.confirmed} von ${data.trainerkodex.total}`;
+    // Fallback "–", solange der Worker das Feld noch nicht liefert (alter Deploy).
+    document.getElementById("stat-jugendschutz").textContent = data.jugendschutz ? `${data.jugendschutz.confirmed} von ${data.jugendschutz.total}` : "–";
   }
 
   document.getElementById("stat-feedback").textContent = String(data.feedbackOpen);
@@ -1735,7 +1738,7 @@ function renderRecentActivity() {
   if (!list) return;
   const select = document.getElementById("admin-dashboard-recent-select");
   const kind = select ? select.value : "logins";
-  const key = kind === "trainervertrag" ? "recentTrainervertrag" : kind === "trainerkodex" ? "recentTrainerkodex" : "recentLogins";
+  const key = kind === "trainervertrag" ? "recentTrainervertrag" : kind === "trainerkodex" ? "recentTrainerkodex" : kind === "jugendschutz" ? "recentJugendschutz" : "recentLogins";
   const entries = (adminStatsState && Array.isArray(adminStatsState[key])) ? adminStatsState[key] : [];
   if (entries.length === 0) {
     list.innerHTML = '<li class="muted">Keine Daten vorhanden.</li>';
@@ -2322,6 +2325,7 @@ function setupTabs() {
     "stat-tile-feedback": () => jumpToAdminPanel("admin-feedback-panel"),
     "stat-tile-trainervertrag": () => openTool("trainerdaten"),
     "stat-tile-trainerkodex": () => openTool("trainerdaten"),
+    "stat-tile-jugendschutz": () => openTool("trainerdaten"),
     "stat-tile-materialbedarf": () => openTool("materialbedarf"),
     "stat-tile-busplan": () => openTool("busplan"),
     "stat-tile-testspielplaner": () => openTool("testspielplaner")
