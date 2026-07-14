@@ -1267,9 +1267,12 @@ async function loadBirthdaysToday() {
 
 // Lädt den Ampel-Status für die Trainerdaten-Kachel (my-trainerdaten-status,
 // siehe admin-worker.js) — analog loadBirthdaysToday: Fehler werden geschluckt
-// (Badge verschwindet dann einfach statt die Kachel zu blockieren). Kein Badge,
-// solange kein Trainerdaten-Datensatz existiert (vorhanden:false) -- das ist
-// kein Fehlerfall, sondern z.B. ein Nutzer ohne Trainerrolle.
+// (Badge verschwindet dann einfach statt die Kachel zu blockieren). Der Server
+// entscheidet per trainerdatenGesamtOk===null, ob überhaupt ein Badge kommt (kein
+// Trainerdaten-Datensatz UND nicht vertragspflichtig, z.B. ein Nutzer ohne
+// Trainerrolle) -- NICHT mehr res.vorhanden allein: eine vertragspflichtige Person
+// ohne jeden Datensatz soll trotzdem ein rotes "Daten unvollständig" sehen statt
+// gar nichts (seit 2026-07-14, siehe admin-worker.js).
 async function loadTrainerdatenStatus() {
   _trainerdatenStatusLastFetch = Date.now();
   if (!currentUser || !isVisibleToUser("trainerdaten", currentUser)) {
@@ -1278,7 +1281,7 @@ async function loadTrainerdatenStatus() {
   }
   try {
     const res = await callWorker("my-trainerdaten-status", {});
-    trainerdatenStatus = (res && res.vorhanden) ? res : null;
+    trainerdatenStatus = (res && res.trainerdatenGesamtOk !== null) ? res : null;
   } catch (e) {
     console.warn("Trainerdaten-Status nicht ladbar:", e);
     trainerdatenStatus = null;

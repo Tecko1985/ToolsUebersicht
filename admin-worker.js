@@ -80,11 +80,15 @@
 //   POST { action: "my-trainerdaten-status" } (jeder eingeloggte Nutzer) -> { vorhanden, trainerdatenGesamtOk, ...restliche
 //     Trainerdaten-Statusfelder (gleiche Zusammenfassung wie personalakte-overview, aber NUR für den eigenen
 //     Datensatz, kein Admin-Gate) } — für das grüne/rote Ampel-Badge auf der Trainerdaten-Kachel im Dashboard.
-//     trainerdatenGesamtOk ist `null`, solange gar kein Trainerdaten-Datensatz existiert (kein rotes Kreuz für
-//     "bin gar kein Trainer"), sonst ein serverseitig berechnetes bool (Daten eingereicht + Lizenz oder "keine
-//     Lizenz" + Lizenz nicht abgelaufen + Führerschein < 6 Monate alt + Führungszeugnis eingereicht + Kodex
-//     < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von Trainerdaten geworden, siehe unten;
-//     + Jugendschutzkonzept < 6 Monate alt bestätigt, seit Trainerdaten 1.7, gleiche Ablauflogik wie Kodex).
+//     trainerdatenGesamtOk ist `null`, wenn WEDER ein Trainerdaten-Datensatz existiert NOCH die Person
+//     vertragspflichtig ist (Gruppe "Trainer" oder vertragBenoetigt-Flag, siehe isVertragspflichtig) — dann
+//     zeigt die Kachel bewusst kein Badge ("bin gar kein Trainer"). Ist die Person vertragspflichtig, ist es
+//     ein serverseitig berechnetes bool, auch wenn noch gar kein Datensatz existiert (dann false = rotes
+//     Kreuz "Daten unvollständig", seit 2026-07-14 — vorher fälschlich gar kein Badge in diesem Fall): Daten
+//     eingereicht + Lizenz oder "keine Lizenz" + Lizenz nicht abgelaufen + Führerschein < 6 Monate alt +
+//     Führungszeugnis eingereicht + Kodex < 6 Monate alt bestätigt, seit 1.6 — Trainerkodex ist Teil von
+//     Trainerdaten geworden, siehe unten; + Jugendschutzkonzept < 6 Monate alt bestätigt, seit Trainerdaten
+//     1.7, gleiche Ablauflogik wie Kodex.
 //   POST { action: "my-trainercheckliste-status" } (jeder eingeloggte Nutzer) -> { vorhanden, zugang, abgang }
 //     eigener TrainerCheckliste-Eintrag (Namensabgleich wie personalakte-overview), NUR der eigene Datensatz,
 //     kein Admin-Gate (gleiche Vertrauensstufe wie my-trainerdaten-status) — für die read-only Anzeige "meine
@@ -1127,13 +1131,30 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
   return json({ namen }, 200, corsHeaders);
 }
 
+// Ist dieser Nutzer "vertragspflichtig" (braucht einen Trainervertrag/Trainerdaten)?
+// Gruppe "Trainer" ODER individuelles vertragBenoetigt-Flag (z.B. Helfer/Betreuer ohne
+// Trainer-Rolle) -- gleiche Definition wie vertragspflichtigeUsernames weiter unten in
+// handleGetAdminStats, hier als gemeinsamer Helfer für EINEN einzelnen Nutzer (siehe
+// handleMyTrainerdatenStatus). Bewusst OHNE archiviert-Filter (anders als dort): ein
+// archiviertes/gesperrtes Konto kommt über getVerifiedSession ohnehin nicht mehr hierher.
+function isVertragspflichtig(usersDoc, username) {
+  const trainerGroup = Object.values((usersDoc && usersDoc.groups) || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
+  const inTrainerGroup = !!(trainerGroup && (trainerGroup.memberUsernames || []).includes(username));
+  const user = getOwn(usersDoc && usersDoc.users, username);
+  return inTrainerGroup || !!(user && user.vertragBenoetigt);
+}
+
 // Status-Badge auf der Trainerdaten-Kachel (Dashboard) -- bewusst wie
 // list-birthdays-today/list-trainer-profiles für JEDEN eingeloggten Nutzer
 // offen (nur der eigene Datensatz, kein Admin-Gate wie mayViewPersonalakte).
 // trainerdatenGesamtOk ist die einzige Ampel-Bedingung, serverseitig berechnet,
-// damit die Logik nicht im Client dupliziert wird. null (nicht false), wenn
-// gar kein Trainerdaten-Datensatz existiert -- die Kachel zeigt dann bewusst
-// KEIN rotes Kreuz ("bin gar kein Trainer"), sondern gar kein Badge.
+// damit die Logik nicht im Client dupliziert wird. null (nicht false), wenn WEDER
+// ein Trainerdaten-Datensatz existiert NOCH die Person vertragspflichtig ist -- die
+// Kachel zeigt dann bewusst KEIN rotes Kreuz ("bin gar kein Trainer"), sondern gar
+// kein Badge. Ist die Person vertragspflichtig, aber es existiert (noch) gar kein
+// Datensatz, zeigt die Kachel trotzdem ein rotes Kreuz ("Daten unvollständig") statt
+// gar nichts -- Michel-Feedback 2026-07-14: "nicht vollständig sollte auch angezeigt
+// werden", nicht nur stillschweigend fehlen.
 async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -1154,7 +1175,8 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     summary.trainerlizenzHochgeladenAm &&
     (!summary.trainerlizenzGueltigBis || summary.trainerlizenzGueltigBis >= heuteBerlin)
   );
-  const trainerdatenGesamtOk = summary.vorhanden ? !!(
+  const zeigeBadge = summary.vorhanden || isVertragspflichtig(session.usersDoc, session.username);
+  const trainerdatenGesamtOk = zeigeBadge ? !!(
     summary.unterschriftAm &&
     lizenzOk &&
     summary.fuehrerscheinGueltig === true &&
