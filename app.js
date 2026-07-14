@@ -938,6 +938,9 @@ function renderToolGrid() {
       const card = document.createElement("a");
       card.className = "tool-card" + (t.wip ? " wip" : "");
       card.href = t.url;
+      // Optionales newTab-Flag (config.js): Tool in neuem Tab öffnen, Dashboard
+      // bleibt offen — z.B. für die Besprechung (Sprach-/Videoraum).
+      if (t.newTab) { card.target = "_blank"; card.rel = "noopener"; }
       card.dataset.toolId = t.id;
       card.innerHTML = `
         <div class="tool-card-badges">

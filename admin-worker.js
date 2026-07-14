@@ -561,6 +561,10 @@ export default {
         return handleFahrtenbuchBelegFileGet(request, body, env, authHeader, corsHeaders);
       case "livekit-token":
         return handleLivekitToken(request, body, env, authHeader, corsHeaders);
+      case "livekit-kick":
+        return handleLivekitKick(request, body, env, authHeader, corsHeaders);
+      case "livekit-mute":
+        return handleLivekitMute(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -1038,10 +1042,65 @@ async function handleLivekitToken(request, body, env, authHeader, corsHeaders) {
     apiSecret: env.LIVEKIT_API_SECRET,
     identity: session.username,
     name,
-    room,
+    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
     ttlSeconds: 6 * 60 * 60 // 6h -- deckt eine lange Versammlung ohne Token-Refresh-Logik ab
   });
   return json({ token, url: env.LIVEKIT_URL, identity: session.username, name }, 200, corsHeaders);
+}
+
+// Gate für die Moderations-Aktionen der Besprechung (kicken/stummschalten):
+// eingeloggt + Bearbeiter-Recht (resolveEditPermission = "bestimmte Gruppen",
+// dieselbe editGroupIds-Logik wie bei den anderen Apps) + LiveKit serverseitig
+// konfiguriert. Liefert { session } oder { error: <Response> }.
+async function requireBesprechungModerator(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { error: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (!(await resolveEditPermission("besprechung", session, env, authHeader))) {
+    return { error: json({ error: "Keine Moderationsrechte für die Besprechung" }, 403, corsHeaders) };
+  }
+  if (!env.LIVEKIT_URL || !env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET) {
+    return { error: json({ error: "LiveKit ist serverseitig noch nicht konfiguriert." }, 500, corsHeaders) };
+  }
+  return { session };
+}
+
+function validateBesprechungRoom(room) {
+  const r = String(room || "").trim();
+  return /^[a-zA-Z0-9_-]{1,100}$/.test(r) ? r : null;
+}
+
+// Entfernt einen Teilnehmer aus dem Besprechungsraum (LiveKit RemoveParticipant).
+async function handleLivekitKick(request, body, env, authHeader, corsHeaders) {
+  const gate = await requireBesprechungModerator(request, env, authHeader, corsHeaders);
+  if (gate.error) return gate.error;
+  const room = validateBesprechungRoom(body.room);
+  const identity = String(body.identity || "").trim();
+  if (!room) return json({ error: "Ungültiger Raumname" }, 400, corsHeaders);
+  if (!identity) return json({ error: "Kein Teilnehmer angegeben" }, 400, corsHeaders);
+  try {
+    await livekitRoomService(env, "RemoveParticipant", { room, identity });
+  } catch (e) {
+    return json({ error: e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+// Schaltet einen einzelnen publizierten Track eines Teilnehmers stumm
+// (LiveKit MutePublishedTrack). track_sid kommt vom moderierenden Client.
+async function handleLivekitMute(request, body, env, authHeader, corsHeaders) {
+  const gate = await requireBesprechungModerator(request, env, authHeader, corsHeaders);
+  if (gate.error) return gate.error;
+  const room = validateBesprechungRoom(body.room);
+  const identity = String(body.identity || "").trim();
+  const trackSid = String(body.trackSid || "").trim();
+  if (!room) return json({ error: "Ungültiger Raumname" }, 400, corsHeaders);
+  if (!identity || !trackSid) return json({ error: "Teilnehmer oder Track fehlt" }, 400, corsHeaders);
+  try {
+    await livekitRoomService(env, "MutePublishedTrack", { room, identity, track_sid: trackSid, muted: true });
+  } catch (e) {
+    return json({ error: e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
 }
 
 // Wer heute (Tag+Monat) laut Trainerdaten Geburtstag hat -- nur Vor-/Nachname,
@@ -3555,23 +3614,48 @@ async function verifyToken(token, secret) {
 // eigenen Session-Tokens dieses Workers). LiveKit Cloud selbst verifiziert
 // dieses Token und erwartet echtes JWT mit "video"-Grant-Claim, deshalb der
 // eigene, vollständige Header+Payload-Aufbau hier.
-async function buildLivekitToken({ apiKey, apiSecret, identity, name, room, ttlSeconds }) {
+async function buildLivekitToken({ apiKey, apiSecret, identity, name, video, ttlSeconds }) {
   const enc = new TextEncoder();
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "HS256", typ: "JWT" };
   const payload = {
-    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
-    name,
+    video, // Grant-Objekt: Teilnehmer {room, roomJoin, canPublish, ...} ODER Moderation {roomAdmin, room}
     iss: apiKey,
     sub: identity,
     iat: now,
     nbf: now,
     exp: now + ttlSeconds
   };
+  if (name) payload.name = name;
   const signingInput = bytesToBase64Url(enc.encode(JSON.stringify(header))) + "." + bytesToBase64Url(enc.encode(JSON.stringify(payload)));
   const key = await crypto.subtle.importKey("raw", enc.encode(apiSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(signingInput));
   return signingInput + "." + bytesToBase64Url(new Uint8Array(sig));
+}
+
+// Ruft die LiveKit-Server-API (Twirp/RoomService) mit einem kurzlebigen
+// roomAdmin-Token auf — für die Moderations-Aktionen kicken/stummschalten.
+// LIVEKIT_URL ist die wss://-Client-Adresse; die HTTP-API sitzt auf demselben
+// Host über https://.
+async function livekitRoomService(env, method, payload) {
+  const adminToken = await buildLivekitToken({
+    apiKey: env.LIVEKIT_API_KEY,
+    apiSecret: env.LIVEKIT_API_SECRET,
+    identity: "besprechung-moderation",
+    video: { roomAdmin: true, room: payload.room },
+    ttlSeconds: 60
+  });
+  const httpBase = env.LIVEKIT_URL.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:").replace(/\/+$/, "");
+  const resp = await fetch(`${httpBase}/twirp/livekit.RoomService/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + adminToken },
+    body: JSON.stringify(payload)
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`LiveKit ${method} (HTTP ${resp.status})${txt ? ": " + txt.slice(0, 200) : ""}`);
+  }
+  return resp.json().catch(() => ({}));
 }
 
 async function getSession(request, env) {
