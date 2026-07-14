@@ -240,6 +240,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8786", // Fotoaufträge (Dev-Server)
   "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
   "http://localhost:8788", // Besprechung (Dev-Server)
+  "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -266,7 +267,8 @@ const DAV_APPS = {
   "vereinswiki":       "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinswiki/vereinswiki.json",
   "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json",
   "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json",
-  "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json"
+  "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json",
+  "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json"
 };
 
 // Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt

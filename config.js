@@ -260,6 +260,16 @@ const TOOLS = [
     version: "1.5",
     devices: ["mobile", "desktop"],
     newTab: true
+  },
+  {
+    id: "dokumentenvorlagen",
+    name: "Dokumentenvorlagen",
+    description: "Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele Empfänger befüllen — Daten aus dem Trainerprofil oder (mit App-Passwort) aus den Trainerdaten inkl. Adresse/Bankverbindung; Ausgabe als Word-Dokumente, originalgetreue PDFs über ein beiliegendes Skript (nur für berechtigte Gruppe).",
+    url: "https://tecko1985.github.io/dokumentenvorlagen/",
+    icon: "📄",
+    category: "Verein",
+    version: "1.0",
+    devices: ["desktop"]
   }
 ];
 
