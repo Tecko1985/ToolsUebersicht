@@ -235,6 +235,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8785", // Testspielplaner (Dev-Server)
   "http://localhost:8786", // Fotoaufträge (Dev-Server)
   "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
+  "http://localhost:8788", // Trainerraum (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -558,6 +559,8 @@ export default {
         return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-beleg-file-get":
         return handleFahrtenbuchBelegFileGet(request, body, env, authHeader, corsHeaders);
+      case "livekit-token":
+        return handleLivekitToken(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
@@ -1006,6 +1009,39 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
       vertragBenoetigt: !!u.vertragBenoetigt
     }));
   return json({ profiles }, 200, corsHeaders);
+}
+
+// Stellt ein kurzlebiges LiveKit-Zugangstoken für den Trainerraum aus (Sprach-/
+// Screenshare-Treffpunkt, siehe E:\trainerraum). Trainerraum speichert selbst
+// NICHTS in Nextcloud -- diese Aktion ist seine einzige Server-Berührung.
+// LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET sind bewusst NICHT Teil von
+// requiredSecrets oben (das würde bei fehlendem Secret die GESAMTE Gateway für
+// alle Apps mit 500 blockieren) -- die Prüfung ist hier lokal auf diese eine
+// Aktion beschränkt, ein fehlendes Secret bricht nur "livekit-token".
+async function handleLivekitToken(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("trainerraum", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf den Trainerraum" }, 403, corsHeaders);
+  }
+  if (!env.LIVEKIT_URL || !env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET) {
+    return json({ error: "LiveKit ist serverseitig noch nicht konfiguriert." }, 500, corsHeaders);
+  }
+  const room = String(body.room || "").trim();
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(room)) {
+    return json({ error: "Ungültiger Raumname" }, 400, corsHeaders);
+  }
+  const user = getOwn(session.usersDoc.users, session.username);
+  const name = (user && user.vorname && user.nachname) ? `${user.vorname} ${user.nachname}` : session.username;
+  const token = await buildLivekitToken({
+    apiKey: env.LIVEKIT_API_KEY,
+    apiSecret: env.LIVEKIT_API_SECRET,
+    identity: session.username,
+    name,
+    room,
+    ttlSeconds: 6 * 60 * 60 // 6h -- deckt eine lange Versammlung ohne Token-Refresh-Logik ab
+  });
+  return json({ token, url: env.LIVEKIT_URL, identity: session.username, name }, 200, corsHeaders);
 }
 
 // Wer heute (Tag+Monat) laut Trainerdaten Geburtstag hat -- nur Vor-/Nachname,
@@ -3511,6 +3547,31 @@ async function verifyToken(token, secret) {
   }
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
   return payload;
+}
+
+// Baut ein echtes, standardkonformes LiveKit-JWT (3 Teile: header.payload.sig)
+// von Hand über Web-Crypto -- bewusst NICHT das signToken()-Format oben
+// (das ist ein bewusst simplifiziertes 2-Teile-Eigenformat nur für die
+// eigenen Session-Tokens dieses Workers). LiveKit Cloud selbst verifiziert
+// dieses Token und erwartet echtes JWT mit "video"-Grant-Claim, deshalb der
+// eigene, vollständige Header+Payload-Aufbau hier.
+async function buildLivekitToken({ apiKey, apiSecret, identity, name, room, ttlSeconds }) {
+  const enc = new TextEncoder();
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: "HS256", typ: "JWT" };
+  const payload = {
+    video: { room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+    name,
+    iss: apiKey,
+    sub: identity,
+    iat: now,
+    nbf: now,
+    exp: now + ttlSeconds
+  };
+  const signingInput = bytesToBase64Url(enc.encode(JSON.stringify(header))) + "." + bytesToBase64Url(enc.encode(JSON.stringify(payload)));
+  const key = await crypto.subtle.importKey("raw", enc.encode(apiSecret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(signingInput));
+  return signingInput + "." + bytesToBase64Url(new Uint8Array(sig));
 }
 
 async function getSession(request, env) {
