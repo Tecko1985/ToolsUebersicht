@@ -251,13 +251,13 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
-    id: "trainerraum",
-    name: "Trainerraum",
+    id: "besprechung",
+    name: "Besprechung",
     description: "Digitaler Treffpunkt für Trainer: Sprachraum direkt im Browser, inklusive Bildschirm teilen — z. B. für die hybride Trainerversammlung.",
-    url: "https://tecko1985.github.io/trainerraum/",
+    url: "https://tecko1985.github.io/besprechung/",
     icon: "🎙️",
     category: "Verein",
-    version: "1.0",
+    version: "1.1",
     devices: ["mobile", "desktop"]
   }
 ];
@@ -367,9 +367,9 @@ const APP_CHANGELOG = [
     version: "1.14",
     groups: [
       {
-        title: "Trainerraum",
+        title: "Besprechung",
         items: [
-          "Neue Kachel „Trainerraum“: Sprach-Treffpunkt direkt im Browser mit Bildschirm-Teilen-Funktion — für spontane Absprachen und die hybride Trainerversammlung."
+          "Neue Kachel „Besprechung“: Sprach-Treffpunkt direkt im Browser mit Bildschirm-Teilen-Funktion — für spontane Absprachen und die hybride Trainerversammlung."
         ]
       }
     ]

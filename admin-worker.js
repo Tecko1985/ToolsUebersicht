@@ -235,7 +235,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8785", // Testspielplaner (Dev-Server)
   "http://localhost:8786", // Fotoaufträge (Dev-Server)
   "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
-  "http://localhost:8788", // Trainerraum (Dev-Server)
+  "http://localhost:8788", // Besprechung (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -1011,9 +1011,9 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
   return json({ profiles }, 200, corsHeaders);
 }
 
-// Stellt ein kurzlebiges LiveKit-Zugangstoken für den Trainerraum aus (Sprach-/
-// Screenshare-Treffpunkt, siehe E:\trainerraum). Trainerraum speichert selbst
-// NICHTS in Nextcloud -- diese Aktion ist seine einzige Server-Berührung.
+// Stellt ein kurzlebiges LiveKit-Zugangstoken für die Besprechung aus (Sprach-/
+// Screenshare-Treffpunkt, siehe E:\besprechung). Die Besprechung speichert
+// selbst NICHTS in Nextcloud -- diese Aktion ist ihre einzige Server-Berührung.
 // LIVEKIT_URL/LIVEKIT_API_KEY/LIVEKIT_API_SECRET sind bewusst NICHT Teil von
 // requiredSecrets oben (das würde bei fehlendem Secret die GESAMTE Gateway für
 // alle Apps mit 500 blockieren) -- die Prüfung ist hier lokal auf diese eine
@@ -1021,8 +1021,8 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
 async function handleLivekitToken(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await userMayAccessTool("trainerraum", session, env, authHeader))) {
-    return json({ error: "Kein Zugriff auf den Trainerraum" }, 403, corsHeaders);
+  if (!(await userMayAccessTool("besprechung", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf die Besprechung" }, 403, corsHeaders);
   }
   if (!env.LIVEKIT_URL || !env.LIVEKIT_API_KEY || !env.LIVEKIT_API_SECRET) {
     return json({ error: "LiveKit ist serverseitig noch nicht konfiguriert." }, 500, corsHeaders);
