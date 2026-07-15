@@ -257,7 +257,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/besprechung/",
     icon: "🎙️",
     category: "Verein",
-    version: "1.5",
+    version: "1.6",
     devices: ["mobile", "desktop"],
     newTab: true
   },
