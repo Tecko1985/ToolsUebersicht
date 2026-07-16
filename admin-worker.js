@@ -20,7 +20,6 @@
 //   PW_CHECKLISTE_SPERRE    = TrainerCheckliste: Checkliste entsperren / Eintrag mit gesperrter Checkliste löschen
 //   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung-Anmeldung: Teilnehmer-Tab in verwaltung.html öffnen
 //   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
-//   PW_TRAINERKODEX_LOESCHEN = Trainerkodex: Bestätigungen löschen (einzeln/alle)
 //   PW_BUDGET_EINGANG_ZUGANG = sc-heiligenstadt-beleg-upload-Worker (eigenes Cloudflare-Deploy!): Zugriffscode in beleg-eingang.html
 //
 // Die letzte wird nicht vom Browser-Client, sondern vom EIGENEN Cloudflare Worker
@@ -98,6 +97,8 @@
 //     unterschriftTrainer, unterschriftFunktionaer } — volle eigene Personendaten inkl. Unterschriften sind hier
 //     unbedenklich (es ist ausschließlich der eigene Eintrag, gleiche Vertrauensstufe wie die eigene
 //     Trainerdaten-Einreichung), NICHT das ganze trainerEintraege-Array (Minimal-Disclosure, siehe CLAUDE.md).
+//     Seit TrainerCheckliste 1.2 liegen Unterschriften als eigene Dateien (dateien/<fileId>) statt inline —
+//     dieser Handler lädt sie für den eigenen Eintrag serverseitig nach (attachChecklistSignaturen).
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -224,7 +225,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8771", // Spielertool (Dev-Server)
   "http://localhost:8772", // Vereinsbudget (Dev-Server)
   "http://localhost:8774", // Trainerversammlung-Anmeldung (Dev-Server)
-  "http://localhost:8775", // Trainerkodex (Dev-Server)
   "http://localhost:8779", // Spielersichtung (Dev-Server)
   "http://localhost:8777", // Vereinskalender (Dev-Server)
   "http://localhost:8792", // Busplan (Dev-Server)
@@ -252,7 +252,6 @@ const DAV_APPS = {
   "materialliste":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/06_Zeugwart/Materiallisten/materialdaten.json",
   "trainercheckliste": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/TrainerCheckin/trainercheckin.json",
   "spielertool-test":  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spieler_Bewertung/spielerdaten.json",
-  "trainerkodex":      "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Trainerkodex/trainerkodex.json",
   "spielersichtung":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Spielersichtung/spielersichtung.json",
   "platzbelegung":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Platzbelegung/platzbelegung.json",
   "personalkosten":    "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Personalkosten/personalkosten.json",
@@ -1190,6 +1189,39 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   return json({ ...summary, trainerdatenGesamtOk }, 200, corsHeaders);
 }
 
+// Lädt eine ausgelagerte TrainerCheckliste-Unterschrift (dateien/<fileId> der App,
+// seit TrainerCheckliste 1.2 eigene PNG-Dateien statt inline-DataURL in der JSON)
+// und liefert sie als PNG-DataURL — "" bei fehlender Datei/Fehler.
+const CHECKLIST_SIG_FILE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function loadChecklistSignaturDataUrl(fileId, authHeader) {
+  if (typeof fileId !== "string" || !CHECKLIST_SIG_FILE_RE.test(fileId)) return "";
+  const jsonUrl = DAV_APPS.trainercheckliste;
+  const fileUrl = jsonUrl.slice(0, jsonUrl.lastIndexOf("/")) + "/dateien/" + fileId;
+  try {
+    const resp = await fetch(fileUrl, { method: "GET", headers: { Authorization: authHeader } });
+    if (!resp.ok) return "";
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    if (!buf.length) return "";
+    let bin = "";
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    return "data:image/png;base64," + btoa(bin);
+  } catch (_) { return ""; }
+}
+
+// Hängt die (ausgelagerten) Unterschriften einer Checklisten-Sektion wieder inline an
+// die Antwort — nur für den EIGENEN Eintrag (kein Größenproblem), gleiche Idee wie
+// handleMySubmission in Trainerdatens submit-worker. Alt-Einträge mit noch inline
+// gespeicherter Unterschrift bleiben unberührt (out-Feld ist dann schon belegt).
+async function attachChecklistSignaturen(out, rohSection, authHeader) {
+  const s = rohSection || {};
+  if (!out.unterschriftTrainer && s.unterschriftTrainerFileId) {
+    out.unterschriftTrainer = await loadChecklistSignaturDataUrl(s.unterschriftTrainerFileId, authHeader);
+  }
+  if (!out.unterschriftFunktionaer && s.unterschriftFunktionaerFileId) {
+    out.unterschriftFunktionaer = await loadChecklistSignaturDataUrl(s.unterschriftFunktionaerFileId, authHeader);
+  }
+}
+
 // Trainer-Selbstbedienungs-Pendant zum Admin-only "TrainerCheckliste-Status"-Feld
 // in Trainerdaten (dort per Admin-WebDAV gelesen, siehe TRAINERCHECKLISTE_WEBDAV_URL
 // in Trainerdatens config.js) — dieselbe Quelle (DAV_APPS.trainercheckliste), aber
@@ -1227,11 +1259,14 @@ async function handleMyTrainerchecklisteStatus(request, env, authHeader, corsHea
     };
   };
 
-  return json({
-    vorhanden: true,
-    zugang: sectionOut(eintrag.zugang),
-    abgang: sectionOut(eintrag.abgang)
-  }, 200, corsHeaders);
+  const zugang = sectionOut(eintrag.zugang);
+  const abgang = sectionOut(eintrag.abgang);
+  // Ausgelagerte Unterschriften (FileId statt inline) für die Anzeige in
+  // Trainerdatens "Meine Checkliste" wieder inline anhängen.
+  await attachChecklistSignaturen(zugang, eintrag.zugang, authHeader);
+  await attachChecklistSignaturen(abgang, eintrag.abgang, authHeader);
+
+  return json({ vorhanden: true, zugang, abgang }, 200, corsHeaders);
 }
 
 // Badge auf der Testspielplaner-Kachel (Dashboard): Anzahl EIGENER genehmigter
@@ -2002,7 +2037,6 @@ const ACTION_PASSWORD_SECRETS = {
   "checkliste-sperre": "PW_CHECKLISTE_SPERRE",       // TrainerCheckliste: Entsperren/Löschen gesperrter Checklisten
   "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
-  "trainerkodex-loeschen": "PW_TRAINERKODEX_LOESCHEN", // Trainerkodex: Bestätigungen löschen (einzeln/alle)
   "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG", // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
   "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN" // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
 };
