@@ -1609,8 +1609,10 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   // "Zuletzt aktiv"-Listen für das Dropdown im Admin-Dashboard — dieselben
   // bereits geladenen Datenquellen, nur nach Datum sortiert statt gezählt.
   // trainervertragEingereichtAm() spiegelt E:\Trainerdaten\app.js::_eingereichtAm
-  // (unterschriftAm seit 1.5, davor nur erstelltAm als Näherung).
-  const trainervertragEingereichtAm = (t) => t.unterschriftAm || (t.signatureDataUrl ? t.erstelltAm : null);
+  // (unterschriftAm seit 1.5, davor nur erstelltAm als Näherung). signaturVorhanden ist
+  // das Flag seit dem Auslagern der Unterschriften aus der JSON; signatureDataUrl bleibt
+  // als Fallback für noch nicht migrierte Alt-Einträge (deploy-reihenfolge-unabhängig).
+  const trainervertragEingereichtAm = (t) => t.unterschriftAm || ((t.signaturVorhanden || t.signatureDataUrl) ? t.erstelltAm : null);
   const topRecent = (entries, limit) => entries
     .filter((e) => e.at)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)))
@@ -1746,7 +1748,7 @@ function buildTrainerdatenSummary(td) {
     // submit-worker 1.5 (2026-07-07) haben eine echte Signatur, aber noch kein
     // unterschriftAm-Feld -- ohne den Fallback blieb die Ampel fuer solche Trainer
     // dauerhaft rot, obwohl Admin-Liste/Detail (mit Fallback) "eingereicht" zeigen.
-    unterschriftAm: td.unterschriftAm || (td.signatureDataUrl ? td.erstelltAm : null) || null,
+    unterschriftAm: td.unterschriftAm || ((td.signaturVorhanden || td.signatureDataUrl) ? td.erstelltAm : null) || null,
     erstelltAm: td.erstelltAm || null,
     vertragsGeneriert: !!td.vertragsGeneriert,
     // vertragPdfBereitgestelltAm/vertragUnterschriebenAm (seit Trainerdaten 1.10):
