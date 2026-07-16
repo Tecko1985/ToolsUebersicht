@@ -305,7 +305,6 @@ function renderUsersList(users) {
           await applyUserGroupMembership(username, effectiveUsername, desiredGroupIds);
           await loadAndRenderGroups();
           await loadAndRenderUsers();
-          renderAccessOverview();
           if (rename) {
             errorEl.style.color = rename.applied ? "#2c5e2e" : "#c0392b";
             errorEl.textContent = rename.applied
@@ -346,7 +345,6 @@ function renderUsersList(users) {
         await callWorker("delete-user", { username });
         await loadAndRenderGroups();
         await loadAndRenderUsers();
-        renderAccessOverview();
       } catch (e) {
         errorEl.textContent = e.message;
         errorEl.style.display = "block";
@@ -720,7 +718,6 @@ function renderGroupsList() {
           visibilityState = updatedTools;
           renderToolGrid();
           renderVisibilityList();
-          renderAccessOverview();
           panel.style.display = "none";
         } catch (e) {
           errorEl.textContent = e.message;
@@ -777,7 +774,6 @@ function renderGroupsList() {
           await callWorker("update-group-members", { groupId, memberUsernames });
           await loadAndRenderGroups();
           await loadAndRenderUsers();
-          renderAccessOverview();
         } catch (e) {
           errorEl.textContent = e.message;
           errorEl.style.display = "block";
@@ -798,7 +794,6 @@ function renderGroupsList() {
         await loadAndRenderGroups();
         await loadAndRenderUsers();
         renderVisibilityList();
-        renderAccessOverview();
       } catch (e) {
         errorEl.textContent = e.message;
         errorEl.style.display = "block";
@@ -1053,50 +1048,6 @@ function renderVisibilityList() {
       row.querySelector('[data-field="groupIds"]').style.display = isGroups ? "block" : "none";
       if (isGroups) row.querySelector(".visibility-groups").open = true;
     });
-  });
-}
-
-// Reine Lese-Ansicht "wer hat worauf Zugriff" -- fasst zusammen, was Gruppen- und
-// Sichtbarkeits-Panel bereits einzeln speichern, ohne das nochmal zusammenzurechnen
-// (dieselben visibilityState/groupsState-Daten, kein neuer Worker-Aufruf nötig).
-function groupChipsHtml(ids) {
-  if (!ids || ids.length === 0) return "";
-  return ids.map((id) => {
-    const g = groupsState.find((x) => x.id === id);
-    const label = g ? `${g.name} (${g.memberUsernames.length})` : id;
-    return `<span class="access-chip">${escapeHtml(label)}</span>`;
-  }).join("");
-}
-
-function renderAccessOverview() {
-  const container = document.getElementById("access-overview-list");
-  if (!container) return;
-  container.innerHTML = "";
-  TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES).forEach((t) => {
-    const entry = visibilityState[t.id] || {};
-    const mode = visibilityMode(entry);
-    const editGroupIds = entry.editGroupIds || [];
-    const modeLabel = {
-      hidden: "Versteckt",
-      public: "Öffentlich (auch ohne Login)",
-      loggedin: "Alle eingeloggten Nutzer",
-      groups: ""
-    }[mode];
-    const seeHtml = mode === "groups" ? groupChipsHtml(entry.groupIds) : `<span class="muted">${modeLabel}</span>`;
-    const editHtml = editGroupIds.length > 0 ? groupChipsHtml(editGroupIds) : `<span class="muted">Nur Admin</span>`;
-    const row = document.createElement("div");
-    row.className = "access-row";
-    row.innerHTML = `
-      <div class="ar-header">
-        <span class="tool-icon">${t.icon || "🔗"}</span>
-        <span class="ar-name">${escapeHtml(t.name)}</span>
-      </div>
-      <div class="ar-cols">
-        <div class="ar-col"><div class="gp-label">Sehen</div><div class="access-chips">${seeHtml}</div></div>
-        <div class="ar-col"><div class="gp-label">Bearbeiten</div><div class="access-chips">${editHtml}</div></div>
-      </div>
-    `;
-    container.appendChild(row);
   });
 }
 
@@ -2427,7 +2378,6 @@ function renderAdminPanels() {
   document.getElementById("admin-logged-in-panel").style.display = "none";
   document.getElementById("admin-users-panel").style.display = "none";
   document.getElementById("admin-groups-panel").style.display = "none";
-  document.getElementById("admin-access-panel").style.display = "none";
   document.getElementById("admin-visibility-panel").style.display = "none";
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
@@ -2439,7 +2389,6 @@ function renderAdminPanels() {
     if (currentUser.isAdmin) {
       document.getElementById("admin-users-panel").style.display = "block";
       document.getElementById("admin-groups-panel").style.display = "block";
-      document.getElementById("admin-access-panel").style.display = "block";
       document.getElementById("admin-visibility-panel").style.display = "block";
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
@@ -2473,7 +2422,6 @@ async function afterAuthChange() {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
-    renderAccessOverview();
     renderNewsAdmin();
     await loadAndRenderFeedback();
   }
@@ -2626,7 +2574,6 @@ function setupAuthForms() {
       successEl.style.display = "block";
       await loadAndRenderGroups();
       await loadAndRenderUsers();
-      renderAccessOverview();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
@@ -2643,7 +2590,6 @@ function setupAuthForms() {
       document.getElementById("new-group-name").value = "";
       await loadAndRenderGroups();
       renderVisibilityList();
-      renderAccessOverview();
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.style.display = "block";
@@ -2786,7 +2732,6 @@ async function init() {
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();
-    renderAccessOverview();
     renderNewsAdmin();
     await loadAndRenderFeedback();
   }

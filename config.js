@@ -375,6 +375,17 @@ const NEWS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.15",
+    groups: [
+      {
+        title: "Zugriffsübersicht",
+        items: [
+          "Das Admin-Panel „Zugriffsübersicht“ ist wieder entfernt — es hat nur wiederholt, was „Gruppen“ und „Sichtbarkeit der Tools“ ohnehin schon zeigen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.14",
     groups: [
       {
