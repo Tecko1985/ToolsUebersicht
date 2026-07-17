@@ -28,6 +28,12 @@
 // (beleg-scanner nutzte diesen Weg vorübergehend ebenfalls, seit 2026-07-05 wieder
 // eigenständig mit lokalen Secrets SEARCH_PASSWORD/UPLOAD_PASSWORD - siehe dort.)
 //
+// Optionales Secret für den E-Mail-Versand (Aktion "notify-user", siehe unten).
+// Fehlt es, meldet nur diese eine Aktion einen Konfigurationsfehler, der Rest
+// des Workers läuft normal (gleiches Prinzip wie bei den LIVEKIT_*-Secrets):
+//   BREVO_API_KEY = API-Key aus dem Brevo-Konto (Einzel-Absender-Verifizierung
+//     der unten als NOTIFY_FROM_EMAIL hinterlegten Adresse dort vorher nötig)
+//
 // BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
 // Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
 // Admin-Tab automatisch ein "Admin-Konto einrichten"-Formular. Dort einmal
@@ -82,6 +88,13 @@
 //     wer laut Trainerdaten (PROVISION_ONLY_PATHS, Tag+Monat, Europe/Berlin) heute Geburtstag hat — nur der
 //     Name, nie das Geburtsjahr oder andere Trainerdaten-Felder (die bleiben exklusiv personalakte-overview
 //     vorbehalten). Fürs "Nächste Termine"-Widget in app.js.
+//   POST { action: "notify-user", username, subject, message } (jeder eingeloggte Nutzer) -> { ok:true, sent:bool }
+//     E-Mail-Benachrichtigung an einen ANDEREN Nutzer, erster Verwendungszweck: Vereinskalender-Teilen-Hinweis
+//     bei privaten Terminen (Vorbereitung fürs geplante Mail-Tool, siehe [[project-vereinskalender]]). Die
+//     Zieladresse wird SERVERSEITIG über Trainerdaten aufgelöst (PROVISION_ONLY_PATHS, gleiches Prinzip wie
+//     list-birthdays-today) — der Client nennt nur einen Nutzernamen, kann also nie eine beliebige Adresse
+//     erzwingen. Hat die Zielperson keine E-Mail hinterlegt, stiller No-Op (sent:false), kein Fehler. Versand
+//     über Brevo (Secret BREVO_API_KEY), Absender = NOTIFY_FROM_EMAIL/-NAME-Konstanten bei PROVISION_ONLY_PATHS.
 //   POST { action: "my-trainerdaten-status" } (jeder eingeloggte Nutzer) -> { vorhanden, trainerdatenGesamtOk, ...restliche
 //     Trainerdaten-Statusfelder (gleiche Zusammenfassung wie personalakte-overview, aber NUR für den eigenen
 //     Datensatz, kein Admin-Gate) } — für das grüne/rote Ampel-Badge auf der Trainerdaten-Kachel im Dashboard.
@@ -333,6 +346,13 @@ const PROVISION_ONLY_PATHS = {
   "trainerdaten": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Trainerdaten/trainerdaten.json"
 };
 
+// Absender für handleNotifyUser (E-Mail-Adresse selbst ist nicht geheim, deshalb
+// Konstante statt Secret). TODO Michel: echte Nachwuchs-Adresse eintragen UND bei
+// Brevo als Einzel-Absender verifizieren (Bestätigungslink an genau diese Adresse),
+// sonst lehnt Brevo den Versand ab.
+const NOTIFY_FROM_EMAIL = "nachwuchs@sc1911-heiligenstadt.de";
+const NOTIFY_FROM_NAME = "SC 1911 Heiligenstadt";
+
 // Feedback & Wünsche aus dem Feedback-Tab (seit 1.10) — eigene Datei, damit ein
 // einfacher eingeloggter Nutzer per submit-feedback schreiben darf (Einzeleintrag,
 // serverseitig zusammengebaut) ohne Zugriff auf sichtbarkeit.json/nutzer.json zu
@@ -508,6 +528,8 @@ export default {
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
       case "my-trainerdaten-status":
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
+      case "notify-user":
+        return handleNotifyUser(request, body, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
@@ -1219,6 +1241,62 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
   }
 
   return json({ ...summary, trainerdatenGesamtOk, vertragspflichtig }, 200, corsHeaders);
+}
+
+// E-Mail-Benachrichtigung an einen anderen Nutzer, siehe Doku-Kommentar bei
+// "notify-user" oben. Adresse wird HIER serverseitig aufgelöst (nie vom Client
+// entgegengenommen) -- PROVISION_ONLY_PATHS.trainerdaten darf laut Kommentar dort
+// nie direkt an eingeloggte Nutzer durchgereicht werden, deshalb wird aus dem
+// vollen buildTrainerdatenSummary()-Ergebnis ausschließlich das email-Feld
+// verwendet und auch in der Antwort nie zurückgegeben.
+async function handleNotifyUser(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const username = normalizeUsername(String(body.username || ""));
+  const subject = String(body.subject || "").trim().slice(0, 200);
+  const message = String(body.message || "").trim().slice(0, 4000);
+  if (!username || !subject || !message) {
+    return json({ error: "Ungültige Daten" }, 400, corsHeaders);
+  }
+
+  const targetUser = getOwn(session.usersDoc.users, username);
+  if (!targetUser) return json({ ok: true, sent: false }, 200, corsHeaders);
+
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const td = findTrainerdatenRecord(trainerdatenDoc, targetUser);
+  const email = buildTrainerdatenSummary(td).email;
+  if (!email) return json({ ok: true, sent: false }, 200, corsHeaders);
+
+  if (!env.BREVO_API_KEY) {
+    return json({ error: "E-Mail-Versand ist serverseitig noch nicht konfiguriert." }, 500, corsHeaders);
+  }
+
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email }],
+        subject,
+        textContent: message
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("Brevo-Versand fehlgeschlagen", resp.status, errText);
+      return json({ error: "Mail-Versand fehlgeschlagen (HTTP " + resp.status + ")" }, 502, corsHeaders);
+    }
+  } catch (e) {
+    return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, sent: true }, 200, corsHeaders);
 }
 
 // Lädt eine ausgelagerte TrainerCheckliste-Unterschrift (dateien/<fileId> der App,
