@@ -67,15 +67,21 @@
 //     -save, canEdit, Personalakte-Sicht, ...), nicht nur auf die Landingpage selbst — kein Redeploy der
 //     einzelnen Apps nötig, die lesen ohnehin nur isAdmin/groupIds aus der me()-Antwort. Persistiert je Nutzer
 //     als viewAsGroupId in nutzer.json (überlebt also auch einen Reload/Gerätewechsel, bis explizit zurückgesetzt).
-//   POST { action: "create-user", vorname, nachname, isAdmin, groupIds } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
+//   POST { action: "create-user", vorname, nachname, isAdmin, groupIds, art? } (admin) -> generiert Nutzername, legt Nutzer mit mustSetPassword=true an
+//     art: "personal" (Vorgabe) | "spieler" -- trennt Vereinspersonal von Spielern/Eltern, siehe userArt()/istPersonal().
+//     Spieler sind nie Admin (isAdmin wird ignoriert), erscheinen NICHT in personalakte-overview/list-directory/
+//     list-trainer-profiles/get-admin-stats.users und kommen nur über explizit gesetzte groupIds an ein Tool
+//     (der "keine Gruppe = alle eingeloggten"-Default gilt für sie nicht). Provisioning: nur kadermanager.
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
 //   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden); zieht bei Namensänderung den Login-Nutzernamen automatisch mit um (Response-Feld usernameRename), außer die Zielkennung ist durch ein anderes Konto belegt
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
-//   POST { action: "list-directory" } (jeder eingeloggte Nutzer)  -> { users:[{username,displayName}], groups:[{id,name}] } ohne
+//   POST { action: "list-directory" } (jedes eingeloggte PERSONAL) -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
+//     Liefert nur Personal; Spielerkonten bekommen 403 (kein Spieler-Tool hat einen Picker, und die vollständige
+//     Namensliste des Vereins ist für ein Spielerkonto nichts zu holen).
 //   POST { action: "list-tool-editors", app } + Authorization: Bearer -> { users:[{username,displayName}] }
 //     Mitglieder der Bearbeiter-Gruppen (editGroupIds) EINER bestimmten App, z.B. für einen "Vertreter"-Picker
 //     im Abwesenheitskalender-Formular — jeder mit Tool-Zugriff darf abrufen (gleiche Prüfung wie dav-load:
@@ -785,10 +791,17 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
   const usersDoc = session.usersDoc;
   if (!usersDoc.groups) usersDoc.groups = {};
 
+  // Namenskollision gegen den GESAMTEN Bestand prüfen, nicht nur gegen die
+  // eigene Art -- Spieler und Personal teilen sich einen Namensraum (Login).
   const username = generateUsername(vorname, nachname, new Set(Object.keys(usersDoc.users)));
+  const art = normalizeArt(body.art);
   usersDoc.users[username] = {
     username, vorname, nachname, passwordHash: null, salt: null, iterations: null,
-    isAdmin: !!body.isAdmin, mustSetPassword: true,
+    art,
+    // Ein Spieler ist nie Admin -- ein durchgereichtes isAdmin:true würde die
+    // Art-Trennung sofort aushebeln (Admin umgeht jeden Sichtbarkeits-Check).
+    isAdmin: art === USER_ART_SPIELER ? false : !!body.isAdmin,
+    mustSetPassword: true,
     lizenz: normalizeLizenz(body.lizenz), mannschaften: normalizeMannschaften(body.mannschaften),
     vertragBenoetigt: !!body.vertragBenoetigt,
     createdAt: new Date().toISOString(), passwordSetAt: null
@@ -808,11 +821,12 @@ async function handleCreateUser(request, body, env, authHeader, corsHeaders) {
   let provisioned = {};
   try {
     const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-    const apps = provisionAppsForGroups(config, getUserGroupIds(usersDoc, username));
+    const apps = provisionAppsForGroups(config, getUserGroupIds(usersDoc, username))
+      .filter((app) => provisionErlaubtFuerArt(app, art));
     if (apps.length) provisioned = await provisionUsers([usersDoc.users[username]], apps, env, authHeader);
   } catch (_) { /* Provisioning ist best effort */ }
 
-  return json({ username, vorname, nachname, mustSetPassword: true, provisioned }, 201, corsHeaders);
+  return json({ username, vorname, nachname, art, mustSetPassword: true, provisioned }, 201, corsHeaders);
 }
 
 async function handleListUsers(request, env, authHeader, corsHeaders) {
@@ -825,6 +839,7 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
     vorname: u.vorname || null,
     nachname: u.nachname || null,
     displayName: (u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : u.username,
+    art: userArt(u),
     isAdmin: !!u.isAdmin,
     mustSetPassword: !!u.mustSetPassword,
     createdAt: u.createdAt,
@@ -873,7 +888,14 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   const nachname = String(body.nachname || "").trim();
   if (!vorname || !nachname) return json({ error: "Vorname und Nachname erforderlich" }, 400, corsHeaders);
 
-  const isAdmin = !!body.isAdmin;
+  // art ist OPTIONAL: fehlt es im Body (älterer Client), bleibt die bisherige Art
+  // stehen. Ein normalizeArt(undefined) würde "personal" liefern und damit jeden
+  // Spieler beim ersten Bearbeiten stillschweigend zum Personal befördern -- inkl.
+  // Wiederauftauchen in Personalakte und Teilen-Pickern.
+  const art = body.art === undefined ? userArt(user) : normalizeArt(body.art);
+  // Ein Spieler ist nie Admin (gleiche Invariante wie in handleCreateUser). Beim
+  // Umstufen Personal -> Spieler wird ein bestehender Admin-Status entzogen.
+  const isAdmin = art === USER_ART_SPIELER ? false : !!body.isAdmin;
   if (user.isAdmin && !isAdmin) {
     const adminCount = Object.values(usersDoc.users).filter((u) => u.isAdmin).length;
     if (adminCount <= 1) return json({ error: "Letztem Admin kann der Admin-Status nicht entzogen werden" }, 400, corsHeaders);
@@ -881,6 +903,7 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
 
   user.vorname = vorname;
   user.nachname = nachname;
+  user.art = art;
   user.isAdmin = isAdmin;
   user.lizenz = normalizeLizenz(body.lizenz);
   user.mannschaften = normalizeMannschaften(body.mannschaften);
@@ -993,8 +1016,17 @@ async function handleListDirectory(request, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
+  // Spieler bekommen das Verzeichnis gar nicht: es gibt kein Spieler-Tool mit
+  // Teilen-Picker, und die vollständige Namensliste des Vereins ist nichts, was
+  // ein Spielerkonto abrufen können muss. Braucht ein Spieler-Feature später
+  // Namen, bekommt es eine eigene, schmale Aktion (Minimal-Disclosure) statt
+  // einer Aufweichung hier.
+  if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
   const usersDoc = session.usersDoc;
-  const users = Object.values(usersDoc.users).map((u) => ({
+  // Nur Personal: der Picker (z.B. Vereinskalender "Teilen mit") soll nicht durch
+  // 200 Spielernamen unbenutzbar werden -- und Spieler sind dort nie das Ziel.
+  const users = Object.values(usersDoc.users).filter(istPersonal).map((u) => ({
     username: u.username,
     displayName: (u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : u.username
   }));
@@ -1041,7 +1073,15 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const usersDoc = session.usersDoc;
+  // Nur Personal. Zwei Gründe: ein Spieler HAT kein Trainerprofil (Lizenz/
+  // Mannschaften sind Personal-Felder), und der Kadermanager joint diese Liste
+  // per linkedUsername an seine Kadereinträge -- stünden Spieler drin, bekäme
+  // jeder Spieler-Kaderplatz ein sinnloses Lizenz-Badge.
+  // Bewusst KEIN 403 für Spieler (anders als list-directory): der Kadermanager
+  // ruft diese Aktion beim Laden für die Trainer-Badges auf, und db.js wirft bei
+  // 403 -- ein Spieler bekäme sonst eine kaputte App statt einer Kaderliste.
   const profiles = Object.values(usersDoc.users)
+    .filter(istPersonal)
     .filter((u) => u.vorname && u.nachname)
     .map((u) => ({
       username: u.username,
@@ -1672,9 +1712,16 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
   const usersDoc = session.usersDoc;
-  const users = Object.values(usersDoc.users);
+  // Alle Quoten dieser Statistik (Vertrag, Kodex, Jugendschutz, Passwort gesetzt)
+  // meinen Personal -- ein Spieler zieht sie sonst dauerhaft nach unten, ohne dass
+  // es je etwas zu erfüllen gäbe. Spieler bekommen ihre eigene, schlichte Zahl.
+  const alleUsers = Object.values(usersDoc.users);
+  const users = alleUsers.filter(istPersonal);
   const usersTotal = users.length;
   const usersPasswordSet = users.filter((u) => u.mustSetPassword === false).length;
+  const spielerAlle = alleUsers.filter((u) => !istPersonal(u));
+  const spielerTotal = spielerAlle.length;
+  const spielerPasswordSet = spielerAlle.filter((u) => u.mustSetPassword === false).length;
 
   const trainerGroup = Object.values(usersDoc.groups || {}).find((g) => g.name === TRAINER_GROUP_NAME) || null;
   // Archivierte Trainer (Personalakte) werden hier ausgeklammert: sie reichen
@@ -1800,7 +1847,11 @@ async function handleGetAdminStats(request, env, authHeader, corsHeaders) {
   }
 
   return json({
+    // users zählt ab sofort nur noch Personal. Solange keine Spielerkonten
+    // existieren (spieler.total === 0), sind das exakt dieselben Zahlen wie vorher --
+    // die Kachel im Admin-UI ändert sich also erst, wenn es wirklich Spieler gibt.
     users: { total: usersTotal, passwordSet: usersPasswordSet },
+    spieler: { total: spielerTotal, passwordSet: spielerPasswordSet },
     trainerGroup: { exists: !!trainerGroup, memberCount: trainerUsernames.length },
     trainervertrag: {
       total: vertragspflichtigeUsernames.length,
@@ -2037,7 +2088,11 @@ async function handlePersonalakteOverview(request, env, authHeader, corsHeaders)
   const sources = await loadPersonalakteSources(env, authHeader);
   // Seit 1.3: alle Nutzerkonten, nicht mehr nur Mitglieder der Gruppe TRAINER_GROUP_NAME
   // (Wunsch: Personalakte soll wirklich jeden zeigen, nicht nur wer in der Trainer-Gruppe steckt).
+  // "Jeden" meinte dabei jeden MITARBEITER -- damals war jeder Login Personal. Mit
+  // Spielerkonten bekäme die Personalakte sonst 200 Karteileichen, jede dauerhaft rot
+  // (kein Vertrag/Führungszeugnis/Kodex -- und bei Kindern auch nie).
   const trainers = Object.values(usersDoc.users || {})
+    .filter(istPersonal)
     .map((user) => buildTrainerRecord(user, usersDoc, sources));
 
   return json({ trainerGroupExists: true, trainers }, 200, corsHeaders);
@@ -2190,7 +2245,16 @@ async function userMayAccessTool(app, session, env, authHeader) {
   if (!entry || entry.visible === false) return false; // versteckt/unkonfiguriert -> nur Admin
   if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
   const gids = Array.isArray(entry.groupIds) ? entry.groupIds : [];
-  if (gids.length === 0) return true;                  // "alle eingeloggten Nutzer"
+  if (gids.length === 0) {
+    // "Alle eingeloggten Nutzer" -- gemeint war immer "das ganze Personal", denn
+    // bisher WAR jeder Login Personal. Für Spieler gilt dieser Komfort-Default
+    // deshalb nicht: sie kommen ausschließlich über eine explizit gesetzte Gruppe
+    // an ein Tool. Sonst würde jedes Tool, bei dem die Gruppe mal vergessen wird,
+    // sofort für alle Spieler offenstehen -- und zwar unbemerkt, weil ein zu weit
+    // sichtbares Tool niemandem auffällt. So fällt der Fehler in die sichere
+    // Richtung: das Tool bleibt für Spieler leer, statt zu viel zu zeigen.
+    return session.art !== USER_ART_SPIELER;
+  }
   return gids.some((g) => session.groupIds.includes(g));
 }
 
@@ -3441,6 +3505,19 @@ function provisionDefault(app) {
   }
 }
 
+// Welche Provisioning-Adapter für einen Spieler überhaupt laufen dürfen.
+// trainerdaten/personalkosten/trainercheckliste sind Personal-Sachen: ein
+// Spieler bekommt dort niemals einen Stub, auch wenn seine Gruppe versehentlich
+// in provisionGroupIds dieser Tools steht. Sicherheitsnetz gegen einen
+// Konfigurationsfehler, der sonst 200 Trainerdaten-Leichen anlegt -- die dann
+// über den Namensfallback (findTrainerdatenRecord) auch noch mit echten
+// Trainern gleichen Namens verwechselt werden könnten.
+const PROVISION_APPS_SPIELER = new Set(["kadermanager"]);
+
+function provisionErlaubtFuerArt(app, art) {
+  return art === USER_ART_SPIELER ? PROVISION_APPS_SPIELER.has(app) : true;
+}
+
 function provisionProfile(user) {
   return {
     username: user.username,
@@ -3617,6 +3694,37 @@ async function provisionUsers(members, apps, env, authHeader) {
     }
   }
   return report;
+}
+
+// ---------- Nutzer-Art (Personal vs. Spieler) ----------
+// Trennt Vereinspersonal (Trainer, Betreuer, Geschäftsstelle, Vorstand) von
+// Spielern/Eltern. Grund: nutzer.json kannte bisher nur "Nutzer", weil jeder
+// Login Personal WAR. Sobald Spielerkonten dazukommen, würden sie sonst
+// automatisch in der Personalakte (ein Datensatz je Konto), in jedem
+// Teilen-Picker (list-directory) und im Namensfallback der Trainerdaten-
+// Zuordnung landen — überall dort, wo "Nutzer" implizit "Personal" meinte.
+//
+// Der Default steht bewusst im LESEPFAD, nicht als Migration in der Datei:
+// jedes Konto ohne art-Feld ist "personal". Damit bleiben alle bestehenden
+// Konten unverändert gültig und nutzer.json muss nicht angefasst werden --
+// ein Konto wird erst dann zum Spieler, wenn es explizit so angelegt wird.
+// WICHTIG: Neue Auswertungen, die "alle Nutzer" durchgehen, müssen sich
+// entscheiden -- Vorgabe ist istPersonal(), Spieler sind die Ausnahme.
+const USER_ART_SPIELER = "spieler";
+const USER_ART_PERSONAL = "personal";
+
+function userArt(user) {
+  return (user && user.art === USER_ART_SPIELER) ? USER_ART_SPIELER : USER_ART_PERSONAL;
+}
+
+function istPersonal(user) {
+  return userArt(user) === USER_ART_PERSONAL;
+}
+
+// Nimmt nur die beiden bekannten Werte an; alles andere (fehlt/Tippfehler/null)
+// fällt auf "personal" zurück -- nie versehentlich zum Spieler degradieren.
+function normalizeArt(raw) {
+  return String(raw || "").trim() === USER_ART_SPIELER ? USER_ART_SPIELER : USER_ART_PERSONAL;
 }
 
 // ---------- Trainerprofil-Helfer (Lizenz + Mannschaften) ----------
@@ -3858,7 +3966,11 @@ async function getVerifiedSession(request, env, authHeader) {
     if (Number.isFinite(setAt) && (Number(payload.iat) || 0) < setAt) return null;
   }
   const identity = deriveIdentity(user, usersDoc);
-  return { username: user.username, usersDoc, ...identity };
+  // art bewusst NACH ...identity und aus dem echten Datensatz: anders als isAdmin/
+  // groupIds ist die Art nicht Teil der Testansicht (set-view-as). Ein Admin, der
+  // sich testweise als Gruppe ausgibt, bleibt Personal -- sonst würde die
+  // Testansicht die Personal/Spieler-Trennung aushebeln statt sie zu zeigen.
+  return { username: user.username, usersDoc, ...identity, art: userArt(user) };
 }
 
 // ---------- sonstige Helfer ----------

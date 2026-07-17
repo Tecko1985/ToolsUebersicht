@@ -182,6 +182,7 @@ function buildUserRow(u) {
     <div class="ur-main">
       <span class="ur-name">${escapeHtml(u.displayName || u.username)}</span>
       <span class="muted">(${escapeHtml(u.username)})</span>
+      ${u.art === "spieler" ? '<span class="badge-spieler">Spieler</span>' : ""}
       ${u.isAdmin ? '<span class="badge-admin">Admin</span>' : ""}
       ${u.mustSetPassword ? '<span class="badge-warning">Passwort nicht gesetzt</span>' : ""}
       <button type="button" class="btn secondary small" data-toggle-edit-user="${escapeHtml(u.username)}">Bearbeiten</button>
@@ -252,6 +253,13 @@ function renderUsersList(users) {
         <div class="group-picker"></div>
         <div class="form-grid" style="align-items:flex-end; margin-top:12px;">
           <div class="form-field">
+            <label>Art</label>
+            <select data-edit-user-art>
+              <option value="personal" ${(user.art !== "spieler") ? "selected" : ""}>Personal</option>
+              <option value="spieler" ${(user.art === "spieler") ? "selected" : ""}>Spieler / Eltern</option>
+            </select>
+          </div>
+          <div class="form-field">
             <label>Vorname</label>
             <input type="text" data-edit-user-vorname value="${escapeHtml(user.vorname || "")}" />
           </div>
@@ -283,6 +291,7 @@ function renderUsersList(users) {
       renderGroupCheckboxes(panel.querySelector(".group-picker"), user ? user.groupIds : []);
       panel.style.display = "block";
       panel.querySelector("[data-save-edit-user]").addEventListener("click", async () => {
+        const art = panel.querySelector("[data-edit-user-art]").value;
         const vorname = panel.querySelector("[data-edit-user-vorname]").value.trim();
         const nachname = panel.querySelector("[data-edit-user-nachname]").value.trim();
         const isAdmin = panel.querySelector("[data-edit-user-is-admin]").checked;
@@ -294,7 +303,7 @@ function renderUsersList(users) {
         const errorEl = document.getElementById("users-error");
         errorEl.style.display = "none";
         try {
-          const result = await callWorker("update-user", { username, vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt });
+          const result = await callWorker("update-user", { username, art, vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt });
           // Bei Namensänderung zieht der Worker den Login-Nutzernamen automatisch mit
           // (usernameRename.applied) — die Gruppenmitgliedschaft muss dann unter dem
           // NEUEN Nutzernamen gepflegt werden, sonst fällt der Nutzer beim folgenden
@@ -2547,8 +2556,31 @@ function setupAuthForms() {
   const backfillBtn = document.getElementById("btn-backfill-personalkosten");
   if (backfillBtn) backfillBtn.addEventListener("click", openBackfillFromPersonalkosten);
 
+  // Trainerlizenz, Mannschaften, Admin-Rechte und "Vertrag benötigt" sind
+  // Personal-Felder -- bei einem Spielerkonto ignoriert der Worker sie ohnehin
+  // (art === "spieler" erzwingt isAdmin:false). Sie auszublenden macht sichtbar,
+  // dass die Art die Bedeutung des Formulars ändert, statt sie nur wirkungslos
+  // anzubieten.
+  const artSelect = document.getElementById("new-user-art");
+  if (artSelect) {
+    const personalFelder = ["new-user-lizenz", "new-user-mannschaften", "new-user-is-admin", "new-user-vertrag-benoetigt"];
+    const syncArtFelder = () => {
+      const istSpieler = artSelect.value === "spieler";
+      personalFelder.forEach((id) => {
+        const el = document.getElementById(id);
+        // Das umschließende .form-field ausblenden, nicht nur das Eingabefeld --
+        // sonst bleibt das Label allein stehen.
+        const feld = el && el.closest(".form-field");
+        if (feld) feld.style.display = istSpieler ? "none" : "";
+      });
+    };
+    artSelect.addEventListener("change", syncArtFelder);
+    syncArtFelder();
+  }
+
   document.getElementById("create-user-form").addEventListener("submit", async (e) => {
     e.preventDefault();
+    const art = document.getElementById("new-user-art").value;
     const vorname = document.getElementById("new-user-vorname").value;
     const nachname = document.getElementById("new-user-nachname").value;
     const isAdmin = document.getElementById("new-user-is-admin").checked;
@@ -2562,13 +2594,17 @@ function setupAuthForms() {
     errorEl.style.display = "none";
     successEl.style.display = "none";
     try {
-      const data = await callWorker("create-user", { vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt, groupIds });
+      const data = await callWorker("create-user", { art, vorname, nachname, isAdmin, lizenz, mannschaften, vertragBenoetigt, groupIds });
       document.getElementById("new-user-vorname").value = "";
       document.getElementById("new-user-nachname").value = "";
       document.getElementById("new-user-lizenz").value = "";
       document.getElementById("new-user-mannschaften").value = "";
       document.getElementById("new-user-is-admin").checked = false;
       document.getElementById("new-user-vertrag-benoetigt").checked = false;
+      // Art bewusst NICHT zurücksetzen: Konten werden in Serie angelegt (erst der
+      // Trainerstab, später eine ganze Mannschaft) -- die Auswahl stehen zu lassen
+      // spart bei 20 Spielern hintereinander 20 Umstellungen und den Fehler, den
+      // 21. versehentlich wieder als Personal anzulegen.
       const prov = summarizeProvisionReport(data.provisioned);
       successEl.textContent = `Angelegt: ${data.username}` + (prov ? ` · Auto-Einträge → ${prov}` : "");
       successEl.style.display = "block";
