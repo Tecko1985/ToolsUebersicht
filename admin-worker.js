@@ -51,6 +51,15 @@
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
 //   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true } | 401
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
+//   POST { action: "km-reg-oeffnen", teamId } + Bearer (Bearbeiten-Recht kadermanager) -> { token, teamName, expiresAt, ttlSeconds, freieSpieler }
+//     Öffnet ein 15-Minuten-Registrierungsfenster für eine Mannschaft. Zustandslos: das Fenster IST das
+//     signierte Token (typ "km-reg"), nichts wird gespeichert -- dafür nicht vorzeitig widerrufbar.
+//   POST { action: "km-reg-info", token }        (OHNE Auth) -> { teamName, spieler:[{id,name}], expiresAt } | 401
+//     Nur die noch freien Kaderplätze, nur id+name. Der Spieler hat noch kein Konto; das Token ist der Ausweis.
+//   POST { action: "km-reg-abschliessen", token, spielerId, password } (OHNE Auth) -> { token, username, verknuepft, ... } | 401 | 409
+//     Legt das Spielerkonto an (art:"spieler", Gruppe "Spieler", Passwort direkt gesetzt) und verknüpft es per
+//     linkedUsername mit dem Kaderplatz. verknuepft:false = Konto steht, Verknüpfung kollidierte -> "Das bin ich".
+//     Die Gruppe "Spieler" muss in sichtbarkeit.json bei kadermanager.groupIds stehen, sonst bleibt die App leer.
 //   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId, vertragspflichtig } (+ canEdit, wenn app übergeben und bekannt)
 //     isAdmin/groupIds sind die EFFEKTIVE Identität (siehe set-view-as); realIsAdmin ist immer der echte
 //     Admin-Status aus nutzer.json, unabhängig von einer aktiven Testansicht — die Testansicht-Umschaltung
@@ -506,6 +515,14 @@ export default {
         return handleLogin(body, env, authHeader, corsHeaders);
       case "set-password":
         return handleSetPassword(body, env, authHeader, corsHeaders);
+      // Spieler-Registrierung: -info/-abschliessen bewusst OHNE Auth (der Spieler
+      // hat noch kein Konto), das Registrierungs-Token ist der Ausweis.
+      case "km-reg-oeffnen":
+        return handleKmRegOeffnen(request, body, env, authHeader, corsHeaders);
+      case "km-reg-info":
+        return handleKmRegInfo(body, env, authHeader, corsHeaders);
+      case "km-reg-abschliessen":
+        return handleKmRegAbschliessen(body, env, authHeader, corsHeaders);
       case "me":
         return handleMe(request, body, env, authHeader, corsHeaders);
       case "set-view-as":
@@ -1092,6 +1109,196 @@ async function handleListTrainerProfiles(request, env, authHeader, corsHeaders) 
       vertragBenoetigt: !!u.vertragBenoetigt
     }));
   return json({ profiles }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Spieler-Registrierung (Kadermanager) ----------
+//
+// Onboarding für ~200 Spielerkonten, ohne dass jemand 200 Zugänge einzeln
+// verteilen und nachhalten muss. Der Auth-Faktor ist die physische Anwesenheit
+// im Training: der Trainer öffnet ein kurzes Zeitfenster, zeigt den Link (QR
+// oder Mannschafts-Chat), die Spieler tragen sich selbst ein.
+//
+// Bewusst ZUSTANDSLOS: das Fenster ist allein das signierte Token, es wird
+// nirgends gespeichert. Damit gibt es keinen Registrierungs-State in
+// spielerplus.json, der mit dem normalen Speichern der App um dieselbe Datei
+// konkurriert (LWW), und ein Fenster kann nicht "hängenbleiben" -- es läuft
+// durch exp von selbst ab. Preis: ein einmal ausgegebenes Fenster lässt sich
+// nicht vorzeitig widerrufen (KM_REG_TTL_SECONDS deshalb kurz halten).
+//
+// Restrisiko, bewusst getragen: wer den Link innerhalb des Fensters hat, kann
+// sich als JEDER noch freie Spieler dieser Mannschaft eintragen. Genau dagegen
+// ist das Fenster kurz und der Trainer sieht die Neuzugänge live in seiner
+// Kaderliste -- trägt sich jemand als "Leon" ein, während Leon danebensteht,
+// fliegt das sofort auf. Diese soziale Kontrolle ersetzt hier eine
+// E-Mail-Verifikation, die es bei Kindern schlicht nicht gibt.
+const KM_REG_TOKEN_TYP = "km-reg";
+const KM_REG_TTL_SECONDS = 15 * 60;
+const SPIELER_GROUP_NAME = "Spieler";
+
+// Prüft ein Registrierungs-Token. Der typ-Check ist nicht optional: verifyToken
+// validiert nur Signatur+exp, und beide Token-Sorten sind mit demselben
+// SESSION_SECRET signiert. Ohne ihn wäre jedes gültige Session-Token als
+// Registrierungs-Token einsetzbar (und umgekehrt).
+async function verifyKmRegToken(token, env) {
+  const payload = await verifyToken(String(token || ""), env.SESSION_SECRET);
+  if (!payload || payload.typ !== KM_REG_TOKEN_TYP || !payload.teamId) return null;
+  return payload;
+}
+
+// Kadereintrag -> Vor-/Nachname. Der Kader führt EINEN Namensstring; erster Teil
+// ist der Vorname, der Rest der Nachname ("Max von Mustermann" -> "Max" / "von
+// Mustermann"). Ein einzelnes Wort ergibt einen leeren Nachnamen -- bewusst
+// toleriert statt abgelehnt: ein unvollständig gepflegter Kadername darf die
+// Registrierung im Training nicht blockieren (baseUsernameFor kommt damit klar).
+function splitKaderName(name) {
+  const teile = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (teile.length === 0) return null;
+  return { vorname: teile[0], nachname: teile.slice(1).join(" ") };
+}
+
+// Öffnet das Registrierungsfenster für eine Mannschaft. Verlangt Bearbeiten-Recht
+// am Kadermanager -- wer den Kader nicht pflegen darf, darf auch keine Konten
+// dafür entstehen lassen.
+async function handleKmRegOeffnen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("kadermanager", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  if (!(await resolveEditPermission("kadermanager", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+
+  const teamId = String(body.teamId || "");
+  const doc = await readJson(DAV_APPS["kadermanager"], authHeader, { meta: {}, teams: [] });
+  const team = (doc.teams || []).find((t) => t && t.id === teamId);
+  if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
+
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + KM_REG_TTL_SECONDS;
+  const token = await signToken(
+    { typ: KM_REG_TOKEN_TYP, teamId, iat: now, exp, von: session.username },
+    env.SESSION_SECRET
+  );
+  const freie = (team.kader || []).filter((s) => s && !s.linkedUsername).length;
+  return json({ token, teamName: team.name || "", expiresAt: exp * 1000, ttlSeconds: KM_REG_TTL_SECONDS, freieSpieler: freie }, 200, corsHeaders);
+}
+
+// Was der Spieler nach dem Scannen sieht. OHNE Auth -- er hat ja noch kein Konto;
+// das Token IST der Ausweis. Liefert bewusst nur id+name der noch freien
+// Kaderplätze: keine Rollen, keine Fotos, keine Termine, und nichts über die
+// bereits registrierten Mitspieler.
+async function handleKmRegInfo(body, env, authHeader, corsHeaders) {
+  const payload = await verifyKmRegToken(body.token, env);
+  if (!payload) return json({ error: "Dieser Anmelde-Link ist abgelaufen oder ungültig. Bitte den Trainer um einen neuen." }, 401, corsHeaders);
+
+  const doc = await readJson(DAV_APPS["kadermanager"], authHeader, { meta: {}, teams: [] });
+  const team = (doc.teams || []).find((t) => t && t.id === payload.teamId);
+  if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
+
+  const spieler = (team.kader || [])
+    .filter((s) => s && !s.linkedUsername && String(s.name || "").trim())
+    .map((s) => ({ id: s.id, name: s.name }));
+  return json({ teamName: team.name || "", spieler, expiresAt: (payload.exp || 0) * 1000 }, 200, corsHeaders);
+}
+
+// Legt das Spielerkonto an und verknüpft es mit dem Kaderplatz. OHNE Auth, das
+// Token trägt die Berechtigung.
+//
+// Reihenfolge (nutzer.json ZUERST, dann spielerplus.json) ist bewusst gewählt --
+// die beiden Schreibvorgänge sind nicht atomar, und einer der Fehlerfälle ist
+// deutlich milder als der andere:
+//   Konto ohne Kaderplatz  -> Spieler ist eingeloggt und hakt sich per "Das bin
+//                             ich" selbst ein. Heilt sich selbst.
+//   Kaderplatz ohne Konto  -> Platz ist dauerhaft blockiert, niemand kann sich
+//                             mehr darauf registrieren, und nur der Trainer
+//                             könnte es (wenn er es merkt) wieder lösen.
+// Deshalb: erst das Konto. Schlägt danach die Verknüpfung fehl, kommt der
+// Spieler trotzdem mit gültiger Sitzung raus, nur mit verknuepft:false.
+async function handleKmRegAbschliessen(body, env, authHeader, corsHeaders) {
+  const payload = await verifyKmRegToken(body.token, env);
+  if (!payload) return json({ error: "Dieser Anmelde-Link ist abgelaufen oder ungültig. Bitte den Trainer um einen neuen." }, 401, corsHeaders);
+
+  const pwError = validatePasswordStrength(body.password);
+  if (pwError) return json({ error: pwError }, 400, corsHeaders);
+
+  const spielerId = String(body.spielerId || "");
+  const { data: kmDoc, rev } = await readJsonWithRev(DAV_APPS["kadermanager"], authHeader, { meta: {}, teams: [] });
+  const team = (kmDoc.teams || []).find((t) => t && t.id === payload.teamId);
+  if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
+  const spieler = (team.kader || []).find((s) => s && s.id === spielerId);
+  if (!spieler) return json({ error: "Dieser Eintrag steht nicht mehr im Kader." }, 404, corsHeaders);
+  // Doppelregistrierung: Erstprüfung gegen den gelesenen Stand. Die eigentliche
+  // Absicherung gegen zwei gleichzeitige Anmeldungen auf denselben Platz ist das
+  // If-Match beim Schreiben weiter unten -- diese Prüfung hier erspart nur den
+  // sinnlosen Kontoanlage-Versuch im Normalfall.
+  if (spieler.linkedUsername) return json({ error: "Für diesen Spieler gibt es schon ein Konto." }, 409, corsHeaders);
+
+  const namen = splitKaderName(spieler.name);
+  if (!namen) return json({ error: "Dieser Kadereintrag hat keinen Namen. Bitte den Trainer, ihn zu ergänzen." }, 400, corsHeaders);
+
+  // --- Schritt 1: Konto anlegen ---
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  if (!usersDoc.groups) usersDoc.groups = {};
+  const username = generateUsername(namen.vorname, namen.nachname, new Set(Object.keys(usersDoc.users)));
+  const { hash, salt, iterations } = await hashNewPassword(String(body.password || ""));
+  const nowIso = new Date().toISOString();
+  usersDoc.users[username] = {
+    username, vorname: namen.vorname, nachname: namen.nachname,
+    passwordHash: hash, salt, iterations,
+    art: USER_ART_SPIELER,
+    isAdmin: false,
+    // Das Passwort wird hier direkt gesetzt (nicht mustSetPassword:true wie bei
+    // create-user): der Spieler steht gerade davor und vergibt es selbst -- ein
+    // zweiter "jetzt Passwort setzen"-Schritt ohne Auth wäre genau die Lücke,
+    // die dieser ganze Ablauf ersetzt.
+    mustSetPassword: false,
+    lizenz: "", mannschaften: [], vertragBenoetigt: false,
+    createdAt: nowIso, passwordSetAt: nowIso, lastLoginAt: nowIso
+  };
+  // Ohne Gruppe sähe der Spieler nach dem Login kein einziges Tool -- der
+  // "keine Gruppe = alle eingeloggten"-Default gilt für Spieler nicht
+  // (userMayAccessTool). Die Gruppe wird bei Bedarf angelegt; sie muss in
+  // sichtbarkeit.json bei kadermanager.groupIds stehen, sonst bleibt die App leer.
+  const spielerGruppe = ensureSpielerGruppe(usersDoc);
+  addUserToGroups(usersDoc, username, [spielerGruppe.id]);
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Konto konnte nicht angelegt werden: " + e.message }, 502, corsHeaders);
+  }
+
+  const sessionToken = await signToken(makeSessionPayload(username, false), env.SESSION_SECRET);
+
+  // --- Schritt 2: Kaderplatz verknüpfen ---
+  // If-Match: hat in der Zwischenzeit jemand anders gespeichert (anderer Spieler,
+  // Trainer im selben Moment), schlägt das fehl statt dessen Änderung zu
+  // überschreiben. Das Konto steht dann schon -- deshalb verknuepft:false statt
+  // eines Fehlers, der den Spieler ratlos zurückließe.
+  spieler.linkedUsername = username;
+  try {
+    await writeJson(DAV_APPS["kadermanager"], authHeader, kmDoc, rev);
+  } catch (e) {
+    return json({
+      token: sessionToken, username, verknuepft: false,
+      hinweis: "Dein Konto ist angelegt und du bist angemeldet. Bitte wähle im Kader noch selbst deinen Namen aus („Das bin ich“)."
+    }, 200, corsHeaders);
+  }
+
+  return json({ token: sessionToken, username, verknuepft: true, teamName: team.name || "", spielerName: spieler.name || "" }, 200, corsHeaders);
+}
+
+// Legt die Spieler-Gruppe an, falls es sie noch nicht gibt. Gleiche Idee wie
+// TRAINER_GROUP_NAME: über den Namen auffindbar, damit der Ablauf nicht an einer
+// hartkodierten Id hängt, die in nutzer.json vielleicht nie angelegt wurde.
+function ensureSpielerGruppe(usersDoc) {
+  if (!usersDoc.groups) usersDoc.groups = {};
+  const vorhanden = Object.values(usersDoc.groups).find((g) => g && g.name === SPIELER_GROUP_NAME);
+  if (vorhanden) return vorhanden;
+  const id = uniqueGroupId(slugifyGroupName(SPIELER_GROUP_NAME), new Set(Object.keys(usersDoc.groups)));
+  usersDoc.groups[id] = { id, name: SPIELER_GROUP_NAME, memberUsernames: [] };
+  return usersDoc.groups[id];
 }
 
 // Stellt ein kurzlebiges LiveKit-Zugangstoken für die Besprechung aus (Sprach-/
