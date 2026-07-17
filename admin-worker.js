@@ -45,10 +45,16 @@
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
 //   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true } | 401
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
-//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } (+ canEdit, wenn app übergeben und bekannt)
+//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId, vertragspflichtig } (+ canEdit, wenn app übergeben und bekannt)
 //     isAdmin/groupIds sind die EFFEKTIVE Identität (siehe set-view-as); realIsAdmin ist immer der echte
 //     Admin-Status aus nutzer.json, unabhängig von einer aktiven Testansicht — die Testansicht-Umschaltung
 //     selbst muss also realIsAdmin prüfen, nicht isAdmin, sonst kann ein Admin sich nicht zurückschalten.
+//     vertragspflichtig (bool, seit 2026-07-17): Gruppe "Trainer" ODER vertragBenoetigt-Flag, siehe
+//     isVertragspflichtig. Trainerdaten gated daran Bankverbindung/Nebentätigkeit/Unterschrift/Dokumente —
+//     wer keinen Vertrag braucht (z.B. Geschäftsführung), hinterlegt dort nur Kontaktdaten. Bewusst die
+//     ECHTE Identität (session.username), NICHT die effektive: identisch zu handleMyTrainerdatenStatus,
+//     damit Ampel-Badge und Formular nie auseinanderlaufen. Folge: eine aktive set-view-as-Testansicht
+//     ändert vertragspflichtig NICHT — die reduzierte Ansicht lässt sich damit nicht durchspielen.
 //   POST { action: "set-view-as", groupId } (nur wenn realIsAdmin) -> { ok:true, isAdmin, groupIds, realIsAdmin, viewAsGroupId }
 //     Admin-Testansicht: ein echter Admin kann sich testweise als Mitglied einer Gruppe ausgeben (groupId:null
 //     zum Zurückschalten). Wirkt zentral über getVerifiedSession() auf JEDE Aktion jeder Gateway-App (dav-load/
@@ -703,7 +709,13 @@ async function handleMe(request, body, env, authHeader, corsHeaders) {
     vorname: (user && user.vorname) || null,
     nachname: (user && user.nachname) || null,
     lizenz: (user && user.lizenz) || "",
-    mannschaften: (user && Array.isArray(user.mannschaften)) ? user.mannschaften : []
+    mannschaften: (user && Array.isArray(user.mannschaften)) ? user.mannschaften : [],
+    // Braucht diese Person einen Trainervertrag? Der Client kann das NICHT selbst
+    // ableiten: er sieht in groupIds nur IDs, nicht den Gruppennamen "Trainer", und
+    // list-groups ist Admin-only. Trainerdaten blendet daran Bankverbindung/
+    // Nebentätigkeit/Unterschrift/Dokumente aus (Geschäftsführung o.ä. hinterlegt dort
+    // nur Kontaktdaten). Ein bool über die EIGENE Person -- keine fremden Daten.
+    vertragspflichtig: isVertragspflichtig(usersDoc, session.username)
   };
   if (body && body.app) {
     result.canEdit = await resolveEditPermission(String(body.app), session, env, authHeader);
@@ -1156,6 +1168,9 @@ function isVertragspflichtig(usersDoc, username) {
 // Datensatz, zeigt die Kachel trotzdem ein rotes Kreuz ("Daten unvollständig") statt
 // gar nichts -- Michel-Feedback 2026-07-14: "nicht vollständig sollte auch angezeigt
 // werden", nicht nur stillschweigend fehlen.
+// Seit 2026-07-17 zweistufig: für NICHT-Vertragspflichtige (die in Trainerdaten nur
+// noch Kontaktdaten sehen) ist die Ampel allein "E-Mail hinterlegt". Das mitgelieferte
+// vertragspflichtig-Flag sagt dem Dashboard, welche der beiden Ampeln es anzeigt.
 async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -1176,17 +1191,34 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     summary.trainerlizenzHochgeladenAm &&
     (!summary.trainerlizenzGueltigBis || summary.trainerlizenzGueltigBis >= heuteBerlin)
   );
-  const zeigeBadge = summary.vorhanden || isVertragspflichtig(session.usersDoc, session.username);
-  const trainerdatenGesamtOk = zeigeBadge ? !!(
-    summary.unterschriftAm &&
-    lizenzOk &&
-    summary.fuehrerscheinGueltig === true &&
-    summary.fuehrungszeugnisEingereichtAm &&
-    summary.kodexGueltig === true &&
-    summary.jugendschutzGueltig === true
-  ) : null;
+  const vertragspflichtig = isVertragspflichtig(session.usersDoc, session.username);
+  const zeigeBadge = summary.vorhanden || vertragspflichtig;
 
-  return json({ ...summary, trainerdatenGesamtOk }, 200, corsHeaders);
+  // Zwei Ampeln, weil es zwei Populationen gibt (seit 2026-07-17): Wer keinen
+  // Trainervertrag braucht (Geschäftsführung o.ä.), sieht in Trainerdaten gar keine
+  // Bankverbindung/Unterschrift/Dokumente mehr und kann die volle Bedingung deshalb
+  // NIE erfüllen -- er bekäme dauerhaft ein rotes Kreuz für etwas, das er weder sieht
+  // noch soll. Für ihn zählt allein die E-Mail: der einzige Grund, warum er das
+  // Formular überhaupt ausfüllt (Kontaktaufnahme), und clientseitig sein einziges
+  // zusätzliches Pflichtfeld -- Anzeige und Ampel bleiben so deckungsgleich, siehe
+  // [[feedback-status-fallback-parity]].
+  let trainerdatenGesamtOk;
+  if (!zeigeBadge) {
+    trainerdatenGesamtOk = null;
+  } else if (!vertragspflichtig) {
+    trainerdatenGesamtOk = !!summary.email;
+  } else {
+    trainerdatenGesamtOk = !!(
+      summary.unterschriftAm &&
+      lizenzOk &&
+      summary.fuehrerscheinGueltig === true &&
+      summary.fuehrungszeugnisEingereichtAm &&
+      summary.kodexGueltig === true &&
+      summary.jugendschutzGueltig === true
+    );
+  }
+
+  return json({ ...summary, trainerdatenGesamtOk, vertragspflichtig }, 200, corsHeaders);
 }
 
 // Lädt eine ausgelagerte TrainerCheckliste-Unterschrift (dateien/<fileId> der App,
