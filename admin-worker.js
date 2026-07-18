@@ -1301,6 +1301,67 @@ async function handleKmRegAbschliessen(body, env, authHeader, corsHeaders) {
   return json({ token: sessionToken, username, verknuepft: true, teamName: team.name || "", spielerName: spieler.name || "" }, 200, corsHeaders);
 }
 
+// Reduzierte Kadermanager-Sicht für Spielerkonten.
+//
+// Die App selbst kennt bewusst keine abgestufte Sichtbarkeit ("nur das Bearbeiten
+// ist granular, nicht das Sehen") -- bei ~20 Trainern war das richtig, bei ~200
+// Spielern nicht: sonst sieht jeder Jugendliche die Mannschaftskasse aller
+// (wer wie viel Strafe schuldet), wer wann krank war, und die Kader sämtlicher
+// anderer Mannschaften.
+//
+// Serverseitig statt im Client, weil der Client umgehbar ist -- gefiltert wird, was
+// gar nicht erst ausgeliefert wird. Das ist hier gefahrlos möglich, weil ein Spieler
+// dav-save NIE aufrufen darf (kadermanager steht in WRITE_REQUIRES_EDIT_PERMISSION,
+// Spieler haben kein Bearbeiten-Recht): die gekürzte Kopie kann also nicht
+// zurückgeschrieben werden und dabei fremde Daten löschen. Der einzige Schreibweg
+// für Spieler ist km-self, und das arbeitet serverseitig immer auf dem VOLLEN Doc.
+function kmSpielerSicht(doc, username) {
+  const teams = Array.isArray(doc.teams) ? doc.teams : [];
+  const gehoertMir = (t) => (Array.isArray(t && t.kader) ? t.kader : [])
+    .some((s) => s && s.linkedUsername && sameText(s.linkedUsername, username));
+  const meine = teams.filter(gehoertMir);
+
+  // Noch keinem Kaderplatz zugeordnet -- seltener Fall, tritt nur auf, wenn die
+  // Verknüpfung bei der Registrierung kollidierte (verknuepft:false). Dann genau so
+  // viel ausliefern, dass "Das bin ich" möglich ist: Mannschafts- und Kadernamen,
+  // sonst nichts. Ohne das säße der Spieler in einer leeren App fest.
+  if (meine.length === 0) {
+    return {
+      meta: {},
+      teams: teams.map((t) => ({
+        id: t.id, name: t.name, farbe: t.farbe,
+        kader: (Array.isArray(t.kader) ? t.kader : [])
+          .map((s) => ({ id: s.id, name: s.name, linkedUsername: s.linkedUsername || "" })),
+        termine: [], umfragen: [], abwesenheiten: [],
+        kasse: { strafenkatalog: [], buchungen: [] }
+      }))
+    };
+  }
+
+  return {
+    // meta mitnehmen: meta.rollenRechte steuert hasRecht() im Client.
+    meta: (doc.meta && typeof doc.meta === "object") ? doc.meta : {},
+    teams: meine.map((t) => {
+      const ich = (t.kader || []).find((s) => s && s.linkedUsername && sameText(s.linkedUsername, username));
+      const meineId = ich ? ich.id : null;
+      const kasse = (t.kasse && typeof t.kasse === "object") ? t.kasse : {};
+      return Object.assign({}, t, {
+        // Urlaub/Krank ist gesundheitsnah -- nur der eigene Eintrag.
+        abwesenheiten: (Array.isArray(t.abwesenheiten) ? t.abwesenheiten : [])
+          .filter((a) => a && a.spielerId === meineId),
+        kasse: {
+          // Der Strafenkatalog ist nur die Preisliste ("Zu spät: 2 €") -- die darf
+          // und soll jeder sehen, sie enthält keine Personendaten.
+          strafenkatalog: Array.isArray(kasse.strafenkatalog) ? kasse.strafenkatalog : [],
+          // Buchungen nur die eigenen: was ein Mitspieler schuldet, geht niemanden an.
+          buchungen: (Array.isArray(kasse.buchungen) ? kasse.buchungen : [])
+            .filter((b) => b && b.spielerId === meineId)
+        }
+      });
+    })
+  };
+}
+
 // ---------- Aktion: Spieler-Selbstbedienung im Kadermanager ("Briefschlitz") ----------
 //
 // Ein Spieler darf genau seine EIGENEN Einträge ändern: zusagen/absagen, abstimmen,
@@ -2759,6 +2820,13 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
     // Neues Objekt bauen statt in-place zu mutieren -- gleicher Cache-Grund wie beim ownerCfg-Block oben.
     data = { ...data, [teamCfg.listField]: data[teamCfg.listField].filter(
       (item) => item && meineMannschaften.has(item[teamCfg.teamField])) };
+  }
+  // Kadermanager für Spielerkonten: nur die eigene Mannschaft, eigene Kassen-
+  // buchungen, eigene Urlaub/Krank-Einträge (siehe kmSpielerSicht). Baut wie die
+  // Blöcke oben ein NEUES Objekt -- der jsonCache hält sonst die gekürzte Sicht
+  // und liefert sie im selben 5-Sekunden-Fenster auch Trainern aus.
+  if (app === "kadermanager" && session.art === USER_ART_SPIELER && data && typeof data === "object") {
+    data = kmSpielerSicht(data, session.username);
   }
   return json({ data, rev }, 200, corsHeaders);
 }
