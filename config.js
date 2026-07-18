@@ -257,7 +257,7 @@ const TOOLS = [
     url: "https://tecko1985.github.io/besprechung/",
     icon: "🎙️",
     category: "Verein",
-    version: "1.7",
+    version: "1.0",
     devices: ["mobile", "desktop"],
     newTab: true
   },
@@ -375,184 +375,6 @@ const NEWS = [
 
 const APP_CHANGELOG = [
   {
-    version: "1.15",
-    groups: [
-      {
-        title: "Zugriffsübersicht",
-        items: [
-          "Das Admin-Panel „Zugriffsübersicht“ ist wieder entfernt — es hat nur wiederholt, was „Gruppen“ und „Sichtbarkeit der Tools“ ohnehin schon zeigen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.14",
-    groups: [
-      {
-        title: "Besprechung",
-        items: [
-          "Neue Kachel „Besprechung“: Sprach-Treffpunkt direkt im Browser mit Bildschirm-Teilen-Funktion — für spontane Absprachen und die hybride Trainerversammlung."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.13",
-    groups: [
-      {
-        title: "Admin-Dashboard",
-        items: [
-          "Neue Kachel „Jugendschutzkonzept-Quote“: zeigt analog zur Trainerkodex-Quote, wie viele Trainer:innen der Gruppe „Trainer“ das Kinder- und Jugendschutzkonzept bestätigt haben.",
-          "Das Dropdown „Zuletzt aktiv“ kennt zusätzlich „Jugendschutzkonzept zuletzt bestätigt“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.12",
-    groups: [
-      {
-        title: "Abwesenheitskalender",
-        items: [
-          "Neue Kachel „Abwesenheitskalender“: Trainer:innen und weitere berechtigte Gruppen tragen eigene Abwesenheiten (Urlaub, Krankheit, Fortbildung/Lehrgang, Sonstiges) mit Zeitraum ein — alle mit Tool-Zugriff sehen die komplette Übersicht, jede:r verwaltet aber nur die eigenen Einträge (Bearbeiter-Gruppen dürfen wie gewohnt alle verwalten).",
-          "Dashboard-Widget zeigt zusätzlich die 4 nächsten anstehenden Abwesenheiten."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.11",
-    groups: [
-      {
-        title: "Fotoaufträge",
-        items: [
-          "Die Kachel „Fotoaufträge“ ist jetzt vollständig freigegeben und nicht mehr als „in Bearbeitung“ markiert."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.10",
-    groups: [
-      {
-        title: "Fotoaufträge",
-        items: [
-          "Neue Kachel „Fotoaufträge“ (vorerst als „in Bearbeitung“ markiert): Social-Media-Team fragt Fotos von einer Mannschaft an, der zuständige Trainer legt selbst einen freigegebenen Nextcloud-Ordner samt teilbarem Link an."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.9",
-    groups: [
-      {
-        title: "Zugriffsübersicht",
-        items: [
-          "Neues Admin-Panel „Zugriffsübersicht“ neben Gruppen und Sichtbarkeit: zeigt pro App auf einen Blick, welche Gruppen sie sehen bzw. bearbeiten dürfen — reine Lese-Ansicht, fasst die Daten aus den beiden anderen Panels zusammen statt sie erneut zu pflegen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.8",
-    groups: [
-      {
-        title: "Nutzerverwaltung: „Vertrag benötigt“",
-        items: [
-          "Neue Checkbox „Vertrag benötigt“ beim Anlegen und Bearbeiten eines Nutzers — unabhängig von der Gruppe „Trainer“, für Personen, die keine Trainer im engeren Sinn sind, aber trotzdem einen Trainervertrag bekommen sollen.",
-          "Die Trainervertrag-Quote im Admin-Dashboard zählt jetzt Gruppe-Trainer-Mitglieder UND individuell markierte Nutzer zusammen. Die Trainerkodex-Quote bleibt unverändert auf die Gruppe „Trainer“ beschränkt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.7",
-    groups: [
-      {
-        title: "Testspielplaner",
-        items: [
-          "Neue Kachel „Testspielplaner“: Testspiele und Leistungsvergleiche mit Platz-Reservierung, Genehmigungs-Workflow und Saison-Kontingent.",
-          "Kachel-Badge erinnert, wenn ein genehmigter Termin in den nächsten 14 Tagen noch keinen Gegner hat.",
-          "Admin-Dashboard zählt offene Testspiel-Anfragen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.6",
-    groups: [
-      {
-        title: "Trainervertrag-Quote",
-        items: [
-          "Die Kachel zeigte nur, wie viele Trainer das Datenformular selbst mit Unterschrift eingereicht haben — Verträge, die der Admin per Stapel-Zuweisung erstellt hat, ohne dass sich der Trainer je selbst angemeldet hat, zählten nirgends mit. Kachel zeigt jetzt „erstellt von Gesamt“ plus Aufschlüsselung nach ausstehend/unvollständig."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.5",
-    groups: [
-      {
-        title: "Trainerdaten-Ampel-Badge",
-        items: [
-          "Kleiner ⟳-Knopf direkt im Badge löst eine sofortige Neuabfrage aus, ohne dass die Seite neu geladen werden muss."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.4",
-    groups: [
-      {
-        title: "Trainerdaten-Ampel-Badge",
-        items: [
-          "Der Status auf der Trainerdaten-Kachel wird jetzt automatisch neu abgefragt, sobald man in den Dashboard-Tab zurückkehrt — vorher blieb er bis zu einem manuellen Neuladen der Seite auf dem Stand vom letzten Login stehen, auch wenn zwischenzeitlich z.B. eine fehlende Unterschrift nachgeholt wurde."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
-      {
-        title: "Feedback & Hilfe",
-        items: [
-          "Eigene Kachel „Toolbox Wiki“ entfernt — die Frage-Funktion steht seit 1.2 direkt oben im Tab „Feedback & Hilfe“, eine zusätzliche Kachel dafür ist nicht mehr nötig. Dokumente verwalten geht weiterhin direkt über die App."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Feedback & Hilfe",
-        items: [
-          "Ganz oben im Tab „Feedback & Hilfe“ lässt sich jetzt direkt eine Frage ans Toolbox Wiki stellen (kein Umweg über die eigene App) — bevor man Feedback gibt oder Hilfe anfragt, kann man sich so erst selbst helfen lassen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Trainerdaten-Kachel",
-        items: [
-          "Die Trainerdaten-Kachel zeigt jetzt ein Ampel-Badge (✓/✗): grün, wenn bei der eigenen Person Stammdaten, Trainerlizenz (oder \"keine Lizenz\"), Führerschein, Führungszeugnis und Trainerkodex vollständig, nicht abgelaufen und bestätigt hinterlegt sind, sonst rot. Kein Badge, wenn noch gar kein Trainerdaten-Datensatz existiert.",
-          "Trainerkodex ist keine eigene Kachel mehr — Kodex lesen und mit Unterschrift bestätigen läuft jetzt direkt in Trainerdaten, inklusive einer alle 6 Monate erneut fälligen Bestätigung (wie beim Führerschein)."
-        ]
-      },
-      {
-        title: "Export-Sammlung im Admin-Dashboard",
-        items: [
-          "Neue Karte „📦 Exporte“ im Admin-Dashboard sammelt die Export-Funktionen mehrerer Apps an einem Ort: Materialliste (JSON), Personalkosten (Text/PDF), Busplan (PDF), Kleiderbestellung (Text/PDF), Materialbedarf (Text/PDF) und Spielerbewertung (JSON) lassen sich jetzt direkt hier auslösen, ohne die jeweilige App einzeln zu öffnen.",
-          "Für Apps mit eigenem, aber (noch) nicht zentral eingebundenem Export (Trainerdaten, Vereinsbudget, Trainerversammlung-Anmeldung, Kassenbuch) verlinkt die Karte direkt auf die jeweilige App."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
       {
@@ -570,7 +392,7 @@ const APP_CHANGELOG = [
         title: "Dashboard: Neuigkeiten & Termine",
         items: [
           "Neuigkeiten-Bereich über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. '2 / 5'), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten direkt im Einstellungen-Tab (anlegen, bearbeiten, löschen — Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Tool-Verknüpfung), zentral in Nextcloud gespeichert und sofort für alle sichtbar.",
-          "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
+          "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten anstehenden Einträge aus dem Abwesenheitskalender, sofern Zugriff besteht. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
           "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr."
         ]
       },
@@ -581,7 +403,7 @@ const APP_CHANGELOG = [
           "Anmeldung ist zweistufig: erst nur Nutzername eingeben, danach je nach Ergebnis entweder Passwortfeld (bestehender Account) oder das Formular 'Konto einrichten' (erster Login) — beide Schritte mit 'Zurück'-Button zur Nutzernamen-Eingabe.",
           "Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- und Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten.",
           "Passwörter werden mit PBKDF2 (Web Crypto, 100.000 Iterationen, Salt pro Nutzer) gehasht, niemals im Klartext gespeichert. Sessions sind signierte Bearer-Token (30 Tage gültig).",
-          "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
+          "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status, „Vertrag benötigt“ unabhängig von der Gruppe „Trainer“), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
           "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
           "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt.",
           "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint."
@@ -609,16 +431,29 @@ const APP_CHANGELOG = [
       {
         title: "Admin-Dashboard",
         items: [
-          "Eigene Dashboard-Ansicht (Zugang über einen zentrierten Button in der Kopfzeile, nur für Admins sichtbar) zeigt sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe „Trainer“), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison.",
+          "Eigene Dashboard-Ansicht (Zugang über einen zentrierten Button in der Kopfzeile, nur für Admins sichtbar) zeigt Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag-, Trainerkodex- und Jugendschutzkonzept-Quote (bezogen auf die Gruppe „Trainer“, Trainervertrag zählt Gruppen-Mitglieder und individuell markierte Nutzer zusammen), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen, offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison sowie offene Testspiel-Anfragen.",
           "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.",
-          "Die sechs Kennzahlen-Kacheln sind anklickbar und springen direkt zum jeweiligen Bereich (Nutzerverwaltung, Feedback & Wünsche in den Einstellungen, bzw. das jeweilige Tool bei Trainervertrag/Trainerkodex/Materialbedarf/Busplan).",
-          "Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen oder Trainerkodex-Bestätigungen mit Name und Zeitpunkt."
+          "Die Kennzahlen-Kacheln sind anklickbar und springen direkt zum jeweiligen Bereich.",
+          "Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen, Trainerkodex- oder Jugendschutzkonzept-Bestätigungen mit Name und Zeitpunkt.",
+          "Karte „📦 Exporte“ sammelt die Export-Funktionen mehrerer Apps an einem Ort (Materialliste, Personalkosten, Busplan, Kleiderbestellung, Materialbedarf, Spielerbewertung); Apps mit eigenem, nicht zentral eingebundenem Export verlinken direkt auf die jeweilige App."
         ]
       },
       {
         title: "Admin-Testansicht",
         items: [
           "Umschalter oben rechts im Header (nur für Admins): eine Gruppe wählen, um Dashboard UND alle verlinkten Apps genau so zu sehen, wie ein echtes Mitglied dieser Gruppe sie sehen würde — inklusive echter Zugriffsbeschränkungen (z. B. Personalakte, Bearbeiten-Rechte). Spart das ständige Aus- und Wieder-Einloggen mit einem Test-Account. Ein deutlich sichtbarer Badge („🎭 Testansicht“) erinnert daran, dass gerade eine simulierte Rolle aktiv ist; „👑 Admin (echt)“ schaltet jederzeit zurück."
+        ]
+      },
+      {
+        title: "Tool-Kacheln: Status-Hinweise",
+        items: [
+          "Einzelne Tool-Kacheln zeigen zusätzlich einen eigenen Status- oder Erinnerungs-Badge, wenn dort für die eigene Person etwas ansteht — z. B. ein Ampel-Badge bei Trainerdaten (Stammdaten, Lizenz, Führerschein, Führungszeugnis, Kodex vollständig/aktuell?) mit manuellem Neulade-Knopf, oder ein Hinweis bei Testspielplaner, wenn ein genehmigter Termin bald keinen Gegner hat."
+        ]
+      },
+      {
+        title: "Feedback & Hilfe",
+        items: [
+          "Ganz oben im Tab „Feedback & Hilfe“ lässt sich direkt eine Frage ans Toolbox Wiki stellen, bevor man Feedback gibt oder Hilfe anfragt."
         ]
       },
       {
