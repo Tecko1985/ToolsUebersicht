@@ -60,6 +60,14 @@
 //     Legt das Spielerkonto an (art:"spieler", Gruppe "Spieler", Passwort direkt gesetzt) und verknüpft es per
 //     linkedUsername mit dem Kaderplatz. verknuepft:false = Konto steht, Verknüpfung kollidierte -> "Das bin ich".
 //     Die Gruppe "Spieler" muss in sichtbarkeit.json bei kadermanager.groupIds stehen, sonst bleibt die App leer.
+//   POST { action: "km-self", art, teamId, ... } + Bearer (nur Tool-SICHTBARKEIT nötig, kein Bearbeiten-Recht)
+//     Spieler-Selbstbedienung im Kadermanager ("Briefschlitz"): ändert serverseitig genau EINEN eigenen Eintrag.
+//     art = "teilnahme" {terminId,status,grund?} | "umfrage" {umfrageId,optionIds[]} | "aufgabe" {terminId,aufgabeId,erledigt}
+//         | "fahrt-angebot" {terminId,plaetze} | "fahrt-gesuch" {terminId,an} | "urlaub-add" {id?,von,bis,grund?,typ}
+//         | "urlaub-del" {abwesenheitId} | "claim" {spielerId} | "unclaim"
+//     Der eigene Kaderplatz kommt IMMER aus linkedUsername, nie aus dem Body -- ein manipulierter Request
+//     trifft deshalb keinen fremden Eintrag. Ersetzt dav-save für Spieler: das würde die GANZE Datei
+//     (alle Mannschaften, Kasse) schreiben und ist für sie per WRITE_REQUIRES_EDIT_PERMISSION gesperrt.
 //   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId, vertragspflichtig } (+ canEdit, wenn app übergeben und bekannt)
 //     isAdmin/groupIds sind die EFFEKTIVE Identität (siehe set-view-as); realIsAdmin ist immer der echte
 //     Admin-Status aus nutzer.json, unabhängig von einer aktiven Testansicht — die Testansicht-Umschaltung
@@ -523,6 +531,10 @@ export default {
         return handleKmRegInfo(body, env, authHeader, corsHeaders);
       case "km-reg-abschliessen":
         return handleKmRegAbschliessen(body, env, authHeader, corsHeaders);
+      // Spieler-Selbstbedienung: schreibt NUR den eigenen Eintrag, deshalb bewusst
+      // ohne Bearbeiten-Recht nutzbar (siehe Kommentar bei handleKmSelf).
+      case "km-self":
+        return handleKmSelf(request, body, env, authHeader, corsHeaders);
       case "me":
         return handleMe(request, body, env, authHeader, corsHeaders);
       case "set-view-as":
@@ -1287,6 +1299,225 @@ async function handleKmRegAbschliessen(body, env, authHeader, corsHeaders) {
   }
 
   return json({ token: sessionToken, username, verknuepft: true, teamName: team.name || "", spielerName: spieler.name || "" }, 200, corsHeaders);
+}
+
+// ---------- Aktion: Spieler-Selbstbedienung im Kadermanager ("Briefschlitz") ----------
+//
+// Ein Spieler darf genau seine EIGENEN Einträge ändern: zusagen/absagen, abstimmen,
+// eine ihm zugewiesene Aufgabe abhaken, Mitfahrt anbieten/suchen, Urlaub/Krank
+// melden -- alles OHNE Bearbeiten-Recht am Tool.
+//
+// Warum eine eigene Aktion statt einfach Bearbeiten-Recht: das generische dav-save
+// schreibt IMMER die komplette Datei zurück (alle Mannschaften, alle Kader, die
+// Kasse). Bearbeiten-Recht für ~200 Spielerkonten hieße, dass jedes davon den
+// gesamten Bestand überschreiben oder löschen kann -- per Browser-Konsole trivial.
+// Diese Aktion nimmt stattdessen eine winzige, getypte Nachricht entgegen und
+// ändert serverseitig genau ein Feld.
+//
+// Sicherheitskern: der eigene Kaderplatz wird IMMER aus linkedUsername abgeleitet
+// (kmSelfEigenerSpieler), NIE aus dem Request-Body. Ein manipulierter Request kann
+// damit keinen fremden Eintrag treffen. Einzige Ausnahme ist "claim" -- das
+// übernimmt per Definition einen Platz und prüft deshalb, dass er noch frei ist.
+//
+// Nebeneffekt gegen Schreibkonflikte: 25 Zusagen am Mittwochabend schicken je ein
+// paar Byte statt der ganzen Datei; der Server serialisiert sie per If-Match und
+// wiederholt bei Kollision selbst, statt dass Clients sich gegenseitig überschreiben.
+const KM_SELF_STATUS = new Set(["zu", "unsicher", "ab"]);
+
+async function handleKmSelf(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Bewusst NUR Sichtbarkeit, nicht resolveEditPermission -- genau das ist der Zweck
+  // dieser Aktion. Wer das Tool nicht sehen darf, kommt aber auch hier nicht durch.
+  if (!(await userMayAccessTool("kadermanager", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const url = DAV_APPS["kadermanager"];
+  const art = String(body.art || "");
+  const teamId = String(body.teamId || "");
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    // Frisch lesen erzwingen: der 5s-Cache könnte einen veralteten Stand liefern,
+    // und ein read-modify-write braucht zwingend das ETag zum GELESENEN Inhalt.
+    jsonCache.delete(url);
+    const { data: doc, rev } = await readJsonWithRev(url, authHeader, { meta: {}, teams: [] });
+    // Sofort wieder aus dem Cache nehmen -- readJsonWithRev legt das geparste Objekt
+    // dort ab und gibt DIESE Referenz zurück. Ohne das Entfernen würde die Mutation
+    // unten den Cache für parallele Requests im selben Isolate verfälschen (gleiche
+    // Falle wie im Kommentar bei handleDavLoad).
+    jsonCache.delete(url);
+
+    const team = (doc.teams || []).find((t) => t && t.id === teamId);
+    if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
+
+    const res = kmSelfAnwenden(art, body, team, session.username);
+    if (res.error) return json({ error: res.error }, res.status || 400, corsHeaders);
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, ...(res.antwort || {}) }, 200, corsHeaders);
+    } catch (e) {
+      // Jemand anders hat zwischendurch gespeichert: frisch lesen und die eigene
+      // Änderung erneut anwenden, statt fremde Änderungen zu überschreiben.
+      if (e instanceof ConflictError && versuch < 2) continue;
+      if (e instanceof ConflictError) {
+        return json({ error: "Gerade speichern zu viele gleichzeitig. Bitte nochmal tippen." }, 409, corsHeaders);
+      }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// Eigener Kaderplatz -- ausschließlich über die Verknüpfung, nie über den Body.
+function kmSelfEigenerSpieler(team, username) {
+  return (team.kader || []).find((s) => s && s.linkedUsername && sameText(s.linkedUsername, username)) || null;
+}
+
+// Spiegelt terminIstKommend() im Client (datum >= heute). Ein Tag Toleranz, weil der
+// Worker in UTC rechnet und der Client in lokaler Zeit -- ohne die Toleranz wäre ein
+// Termin "heute" je nach Uhrzeit serverseitig schon Vergangenheit. Für den Zweck der
+// Regel (keine nachträgliche Änderung der Statistik-Historie) ist das unerheblich.
+function kmTerminIstKommend(termin) {
+  const gestern = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  return String(termin.datum || "") >= gestern;
+}
+
+function kmFahrgemeinschaft(termin) {
+  if (!termin.fahrgemeinschaft || typeof termin.fahrgemeinschaft !== "object") termin.fahrgemeinschaft = {};
+  if (!Array.isArray(termin.fahrgemeinschaft.angebote)) termin.fahrgemeinschaft.angebote = [];
+  if (!Array.isArray(termin.fahrgemeinschaft.gesuche)) termin.fahrgemeinschaft.gesuche = [];
+  return termin.fahrgemeinschaft;
+}
+
+// Wendet GENAU EINE Selbstbedienungs-Änderung an. Gibt {error,status} oder {antwort}.
+// Die Regeln spiegeln bewusst 1:1 die Client-Gates (canSetStatusFor, vote,
+// toggleAufgabe, fgEntferne*, removeAbwesenheit) -- der Server darf nicht mehr
+// erlauben als die Oberfläche anbietet, sonst ist der Client die einzige Schranke.
+function kmSelfAnwenden(art, body, team, username) {
+  const jetzt = new Date().toISOString();
+
+  // claim läuft VOR der Eigener-Spieler-Ermittlung: dort gibt es noch keinen.
+  if (art === "claim") {
+    const ziel = (team.kader || []).find((s) => s && s.id === String(body.spielerId || ""));
+    if (!ziel) return { error: "Spieler nicht gefunden", status: 404 };
+    if (ziel.linkedUsername) return { error: "Dieser Spieler ist bereits mit einem Konto verknüpft.", status: 409 };
+    // Pro Team nur ein eigener Platz -- alten lösen (gleiche Regel wie claimSpieler).
+    (team.kader || []).forEach((s) => { if (s.linkedUsername && sameText(s.linkedUsername, username)) s.linkedUsername = ""; });
+    ziel.linkedUsername = username;
+    return { antwort: { spielerId: ziel.id } };
+  }
+
+  const ich = kmSelfEigenerSpieler(team, username);
+  if (!ich) return { error: "Du bist in dieser Mannschaft keinem Kaderplatz zugeordnet.", status: 403 };
+
+  const terminHolen = () => (team.termine || []).find((t) => t && t.id === String(body.terminId || ""));
+
+  switch (art) {
+    case "teilnahme": {
+      const termin = terminHolen();
+      if (!termin) return { error: "Termin nicht gefunden", status: 404 };
+      if (!kmTerminIstKommend(termin)) return { error: "Vergangene Termine kann nur der Trainer ändern.", status: 403 };
+      if (!termin.teilnahme || typeof termin.teilnahme !== "object") termin.teilnahme = {};
+      if (body.status == null || body.status === "") { delete termin.teilnahme[ich.id]; return {}; }
+      const status = String(body.status);
+      if (!KM_SELF_STATUS.has(status)) return { error: "Unbekannter Status" };
+      termin.teilnahme[ich.id] = { status, grund: String(body.grund || "").slice(0, 500), am: jetzt };
+      return {};
+    }
+
+    case "umfrage": {
+      const u = (team.umfragen || []).find((x) => x && x.id === String(body.umfrageId || ""));
+      if (!u) return { error: "Umfrage nicht gefunden", status: 404 };
+      if (!u.offen) return { error: "Diese Umfrage ist geschlossen.", status: 403 };
+      const gueltig = new Set((u.optionen || []).map((o) => o && o.id));
+      const gewaehlt = Array.isArray(body.optionIds)
+        ? body.optionIds.map(String).filter((id) => gueltig.has(id))
+        : [];
+      if (!u.mehrfach && gewaehlt.length > 1) return { error: "Hier ist nur eine Antwort erlaubt." };
+      if (!u.stimmen || typeof u.stimmen !== "object") u.stimmen = {};
+      if (gewaehlt.length) u.stimmen[ich.id] = gewaehlt; else delete u.stimmen[ich.id];
+      return {};
+    }
+
+    case "aufgabe": {
+      const termin = terminHolen();
+      if (!termin) return { error: "Termin nicht gefunden", status: 404 };
+      const a = (termin.aufgaben || []).find((x) => x && x.id === String(body.aufgabeId || ""));
+      if (!a) return { error: "Aufgabe nicht gefunden", status: 404 };
+      if (!Array.isArray(a.spielerIds) || !a.spielerIds.includes(ich.id)) {
+        return { error: "Diese Aufgabe ist dir nicht zugewiesen.", status: 403 };
+      }
+      if (!a.erledigt || typeof a.erledigt !== "object") a.erledigt = {};
+      if (body.erledigt) a.erledigt[ich.id] = true; else delete a.erledigt[ich.id];
+      return {};
+    }
+
+    case "fahrt-angebot": {
+      const termin = terminHolen();
+      if (!termin) return { error: "Termin nicht gefunden", status: 404 };
+      const fg = kmFahrgemeinschaft(termin);
+      fg.angebote = fg.angebote.filter((a) => a && a.spielerId !== ich.id);
+      const plaetze = Number(body.plaetze);
+      if (Number.isFinite(plaetze) && plaetze > 0) {
+        fg.angebote.push({ spielerId: ich.id, plaetze: Math.min(Math.floor(plaetze), 20) });
+      }
+      return {};
+    }
+
+    case "fahrt-gesuch": {
+      const termin = terminHolen();
+      if (!termin) return { error: "Termin nicht gefunden", status: 404 };
+      const fg = kmFahrgemeinschaft(termin);
+      fg.gesuche = fg.gesuche.filter((id) => id !== ich.id);
+      if (body.an) fg.gesuche.push(ich.id);
+      return {};
+    }
+
+    case "unclaim": {
+      // Löst ausschließlich die EIGENE Verknüpfung (ich stammt aus linkedUsername) --
+      // eine spielerId aus dem Body wird bewusst ignoriert.
+      ich.linkedUsername = "";
+      return {};
+    }
+
+    case "urlaub-add": {
+      if (!Array.isArray(team.abwesenheiten)) team.abwesenheiten = [];
+      const von = String(body.von || "");
+      const bis = String(body.bis || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(von) || !/^\d{4}-\d{2}-\d{2}$/.test(bis)) {
+        return { error: "Ungültiger Zeitraum" };
+      }
+      if (bis < von) return { error: "Das Ende liegt vor dem Beginn." };
+      // Id vom Client übernehmen, wenn brauchbar und frei: der Client hat den Eintrag
+      // lokal schon mit dieser Id angelegt (sofortige Anzeige). Eine serverseitig neu
+      // erzeugte Id würde auseinanderlaufen -- ein direkt folgendes Löschen schickt
+      // dann eine Id, die es serverseitig nie gab (404).
+      const wunschId = String(body.id || "");
+      const idFrei = wunschId.length >= 8 && wunschId.length <= 64 &&
+                     !team.abwesenheiten.some((x) => x && x.id === wunschId);
+      const eintrag = {
+        id: idFrei ? wunschId : crypto.randomUUID(),
+        spielerId: ich.id, von, bis,
+        grund: String(body.grund || "").slice(0, 300),
+        typ: body.typ === "krank" ? "krank" : "urlaub"
+      };
+      team.abwesenheiten.push(eintrag);
+      return { antwort: { id: eintrag.id } };
+    }
+
+    case "urlaub-del": {
+      if (!Array.isArray(team.abwesenheiten)) team.abwesenheiten = [];
+      const a = team.abwesenheiten.find((x) => x && x.id === String(body.abwesenheitId || ""));
+      if (!a) return { error: "Eintrag nicht gefunden", status: 404 };
+      if (a.spielerId !== ich.id) return { error: "Das ist nicht dein Eintrag.", status: 403 };
+      team.abwesenheiten = team.abwesenheiten.filter((x) => x !== a);
+      return {};
+    }
+
+    default:
+      return { error: "Unbekannte Selbstbedienungs-Aktion" };
+  }
 }
 
 // Legt die Spieler-Gruppe an, falls es sie noch nicht gibt. Gleiche Idee wie
