@@ -731,6 +731,18 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = getOwn(usersDoc.users, username);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+  // Archivierte Konten wie in handleLogin abfangen. Diese Aktion ist bewusst OHNE
+  // Login nutzbar (Erstvergabe des eigenen Passworts) und nur durch
+  // mustSetPassword geschuetzt -- ein Konto, das archiviert wurde, BEVOR sich die
+  // Person je angemeldet hat, behaelt mustSetPassword:true (archive-trainer fasst
+  // das Feld nicht an). Ohne diesen Check koennte ein Fremder ihm bei erratenem
+  // Nutzernamen ein Passwort setzen: der Login bliebe zwar gesperrt, aber nach
+  // einer spaeteren reactivate-trainer waere das Konto mit FREMDEM Passwort
+  // aktiv und die eigentliche Person zugleich ausgesperrt (mustSetPassword ist
+  // dann false, der "Konto einrichten"-Weg also verbraucht).
+  if (user.archiviert) {
+    return json({ error: "Dieses Konto wurde archiviert.", archived: true }, 403, corsHeaders);
+  }
   if (!user.mustSetPassword) return json({ error: "Passwort wurde bereits gesetzt" }, 409, corsHeaders);
 
   const { hash, salt, iterations } = await hashNewPassword(password);
@@ -3905,6 +3917,18 @@ async function readJsonWithRev(url, authHeader, fallback) {
 // Schreibt eine JSON-Datei; mit ifMatch nur, wenn die Datei serverseitig noch dem
 // bekannten Stand entspricht (412 -> ConflictError). Gibt das neue ETag zurück.
 async function writeJson(url, authHeader, data, ifMatch) {
+  // Cache SOFORT verwerfen, nicht erst nach erfolgreichem PUT: fast alle
+  // read-modify-write-Handler (submit-feedback, fahrtenbuch-extern-submit und
+  // jeder nutzer.json-Handler ueber session.usersDoc) mutieren GENAU das Objekt,
+  // das readJsonWithRev im Cache abgelegt hat. Schlug der PUT fehl und blieb der
+  // Eintrag stehen, lieferte der Cache bis zu 5 Sekunden lang einen Stand, den
+  // der Server nie bekommen hat -- und der naechste erfolgreiche Schreibvorgang
+  // eines FREMDEN Handlers schrieb diese nie gespeicherte Aenderung dann
+  // dauerhaft mit fest. Ein als fehlgeschlagen gemeldeter Vorgang (z.B.
+  // archive-trainer 502) wurde so still doch wirksam. Ab dem Moment, in dem wir
+  // einen Schreibversuch starten, ist die Kopie im Speicher ohnehin nicht mehr
+  // vertrauenswuerdig -- egal ob der Versuch gelingt oder nicht.
+  jsonCache.delete(url);
   const headers = { Authorization: authHeader, "Content-Type": "application/json" };
   if (ifMatch) headers["If-Match"] = ifMatch;
   const body = JSON.stringify(data, null, 2);
@@ -3921,7 +3945,6 @@ async function writeJson(url, authHeader, data, ifMatch) {
   }
   if (resp.status === 412) throw new ConflictError("Datei wurde zwischenzeitlich geändert");
   if (!resp.ok) throw new Error(`Nextcloud PUT ${resp.status}`);
-  jsonCache.delete(url); // ab jetzt garantiert veraltet, naechster Read holt frisch
   return normalizeETag(resp.headers.get("OC-ETag") || resp.headers.get("ETag") || null);
 }
 
