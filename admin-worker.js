@@ -56,9 +56,14 @@
 //     signierte Token (typ "km-reg"), nichts wird gespeichert -- dafür nicht vorzeitig widerrufbar.
 //   POST { action: "km-reg-info", token }        (OHNE Auth) -> { teamName, spieler:[{id,name}], expiresAt } | 401
 //     Nur die noch freien Kaderplätze, nur id+name. Der Spieler hat noch kein Konto; das Token ist der Ausweis.
-//   POST { action: "km-reg-abschliessen", token, spielerId, password } (OHNE Auth) -> { token, username, verknuepft, ... } | 401 | 409
-//     Legt das Spielerkonto an (art:"spieler", Gruppe "Spieler", Passwort direkt gesetzt) und verknüpft es per
-//     linkedUsername mit dem Kaderplatz. verknuepft:false = Konto steht, Verknüpfung kollidierte -> "Das bin ich".
+//   POST { action: "km-reg-abschliessen", token, spielerId, password } (Auth OPTIONAL) -> { token?, username, verknuepft, ... } | 401 | 403 | 409
+//     OHNE Bearer: legt das Spielerkonto an (art:"spieler", Gruppe "Spieler", Passwort direkt gesetzt) und
+//     verknüpft es per linkedUsername mit dem Kaderplatz. Antwort enthält dann `token` (neue Sitzung).
+//     MIT gültigem Bearer: KEIN neues Konto, nur Verknüpfung des Kaderplatzes mit dem angemeldeten Konto
+//     (kein `password` nötig, kein `token` in der Antwort) -- der Weg für Spieler, die schon in einer
+//     Mannschaft stehen und sich zusätzlich für eine Gruppe (Torwart-/Athletikgruppe) eintragen. Ohne das
+//     entstünde bei jedem weiteren Scan ein Doppelkonto. Zusätzlich gegated auf Tool-Sichtbarkeit.
+//     verknuepft:false = Konto steht, Verknüpfung kollidierte -> "Das bin ich".
 //     Die Gruppe "Spieler" muss in sichtbarkeit.json bei kadermanager.groupIds stehen, sonst bleibt die App leer.
 //   POST { action: "km-self", art, teamId, ... } + Bearer (nur Tool-SICHTBARKEIT nötig, kein Bearbeiten-Recht)
 //     Spieler-Selbstbedienung im Kadermanager ("Briefschlitz"): ändert serverseitig genau EINEN eigenen Eintrag.
@@ -530,7 +535,7 @@ export default {
       case "km-reg-info":
         return handleKmRegInfo(body, env, authHeader, corsHeaders);
       case "km-reg-abschliessen":
-        return handleKmRegAbschliessen(body, env, authHeader, corsHeaders);
+        return handleKmRegAbschliessen(request, body, env, authHeader, corsHeaders);
       // Spieler-Selbstbedienung: schreibt NUR den eigenen Eintrag, deshalb bewusst
       // ohne Bearbeiten-Recht nutzbar (siehe Kommentar bei handleKmSelf).
       case "km-self":
@@ -1239,14 +1244,31 @@ async function handleKmRegInfo(body, env, authHeader, corsHeaders) {
 //                             könnte es (wenn er es merkt) wieder lösen.
 // Deshalb: erst das Konto. Schlägt danach die Verknüpfung fehl, kommt der
 // Spieler trotzdem mit gültiger Sitzung raus, nur mit verknuepft:false.
-async function handleKmRegAbschliessen(body, env, authHeader, corsHeaders) {
+async function handleKmRegAbschliessen(request, body, env, authHeader, corsHeaders) {
   const payload = await verifyKmRegToken(body.token, env);
   if (!payload) return json({ error: "Dieser Anmelde-Link ist abgelaufen oder ungültig. Bitte den Trainer um einen neuen." }, 401, corsHeaders);
+
+  const spielerId = String(body.spielerId || "");
+
+  // Zweiter Weg: der Scanner ist bereits angemeldet (typisch der Torhüter, der schon
+  // in seiner Mannschaft steht und sich zusätzlich für die Torwartgruppe einträgt).
+  // Dann kein zweites Konto anlegen -- das erzeugte bisher stillschweigend einen
+  // Doppelaccount ("leon.mueller2") --, sondern nur den Kaderplatz verknüpfen.
+  // getVerifiedSession liefert bei fehlendem/abgelaufenem Token sauber null, ohne zu
+  // werfen; die Erstanmeldung echter Neulinge läuft also unverändert weiter unten.
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (session) {
+    // Gleiche Schranke wie handleKmSelf: das Reg-Token berechtigt zum Kader, aber
+    // wer das Tool gar nicht sehen darf, soll sich auch nicht hineinverknüpfen.
+    if (!(await userMayAccessTool("kadermanager", session, env, authHeader))) {
+      return json({ error: "Dein Konto hat keinen Zugriff auf den Kadermanager. Bitte wende dich an deinen Trainer." }, 403, corsHeaders);
+    }
+    return kmRegVerknuepfeBestehendes(payload, spielerId, session.username, authHeader, corsHeaders);
+  }
 
   const pwError = validatePasswordStrength(body.password);
   if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
-  const spielerId = String(body.spielerId || "");
   const { data: kmDoc, rev } = await readJsonWithRev(DAV_APPS["kadermanager"], authHeader, { meta: {}, teams: [] });
   const team = (kmDoc.teams || []).find((t) => t && t.id === payload.teamId);
   if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
@@ -1311,6 +1333,45 @@ async function handleKmRegAbschliessen(body, env, authHeader, corsHeaders) {
   }
 
   return json({ token: sessionToken, username, verknuepft: true, teamName: team.name || "", spielerName: spieler.name || "" }, 200, corsHeaders);
+}
+
+// Bereits angemeldeter Scanner: nur verknüpfen, kein Konto anlegen. Die Mannschaft
+// kommt aus dem verifizierten Reg-Token, NIE aus dem Request-Body -- km-reg-info gibt
+// bewusst keine teamId heraus, und ein manipulierter Body darf keinen fremden Kader
+// treffen. Antwortform identisch zum Kontoanlage-Pfad, damit der Client beide Fälle
+// gleich behandelt (nur ohne `token`: die Sitzung besteht ja schon).
+async function kmRegVerknuepfeBestehendes(payload, spielerId, username, authHeader, corsHeaders) {
+  const url = DAV_APPS["kadermanager"];
+  // Retry wie in handleKmSelf: read-modify-write auf einer Datei, die Trainer und
+  // andere Spieler gleichzeitig schreiben. Ein 412 ist hier heilbar, weil die
+  // Verknüpfung idempotent auf dem frischen Stand neu versucht werden kann.
+  for (let versuch = 0; versuch < 3; versuch++) {
+    jsonCache.delete(url);
+    const { data: doc, rev } = await readJsonWithRev(url, authHeader, { meta: {}, teams: [] });
+    jsonCache.delete(url);
+
+    const team = (doc.teams || []).find((t) => t && t.id === payload.teamId);
+    if (!team) return json({ error: "Mannschaft nicht gefunden" }, 404, corsHeaders);
+
+    const res = kmVerknuepfeKaderplatz(team, spielerId, username);
+    if (res.error) return json({ error: res.error }, res.status || 400, corsHeaders);
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+    } catch (e) {
+      // Nur Konflikte sind erneut versuchbar; ein Netz-/Serverfehler wird als solcher
+      // gemeldet, statt ihn als "jemand anders war schneller" zu verkleiden.
+      if (e instanceof ConflictError && versuch < 2) continue;
+      if (e instanceof ConflictError) {
+        return json({
+          username, verknuepft: false,
+          hinweis: "Gerade haben zu viele gleichzeitig gespeichert. Öffne den Kadermanager und wähle dort deinen Namen aus („Das bin ich“)."
+        }, 200, corsHeaders);
+      }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+    return json({ username, verknuepft: true, teamName: team.name || "", spielerName: res.spieler.name || "" }, 200, corsHeaders);
+  }
 }
 
 // Reduzierte Kadermanager-Sicht für Spielerkonten.
@@ -1463,6 +1524,22 @@ function kmFahrgemeinschaft(termin) {
   return termin.fahrgemeinschaft;
 }
 
+// Verknüpft einen Kaderplatz mit einem Konto. Einzige Stelle für diese Regel --
+// beide Wege dorthin (km-self "claim" aus der App, km-reg-abschliessen mit
+// bestehender Sitzung) rufen sie auf, damit die Bedingungen nicht auseinanderlaufen.
+// Mutiert `team` in-place; der Aufrufer schreibt danach.
+function kmVerknuepfeKaderplatz(team, spielerId, username) {
+  const ziel = (team.kader || []).find((s) => s && s.id === String(spielerId || ""));
+  if (!ziel) return { error: "Spieler nicht gefunden", status: 404 };
+  if (ziel.linkedUsername) return { error: "Dieser Spieler ist bereits mit einem Konto verknüpft.", status: 409 };
+  // Pro Team nur ein eigener Platz -- alten lösen (gleiche Regel wie claimSpieler).
+  // Bewusst nur innerhalb DIESES Teams: eine Verknüpfung in einer anderen Mannschaft
+  // oder Gruppe bleibt bestehen, das ist der Kern der Mehrfachzugehörigkeit.
+  (team.kader || []).forEach((s) => { if (s.linkedUsername && sameText(s.linkedUsername, username)) s.linkedUsername = ""; });
+  ziel.linkedUsername = username;
+  return { spieler: ziel };
+}
+
 // Wendet GENAU EINE Selbstbedienungs-Änderung an. Gibt {error,status} oder {antwort}.
 // Die Regeln spiegeln bewusst 1:1 die Client-Gates (canSetStatusFor, vote,
 // toggleAufgabe, fgEntferne*, removeAbwesenheit) -- der Server darf nicht mehr
@@ -1472,13 +1549,9 @@ function kmSelfAnwenden(art, body, team, username) {
 
   // claim läuft VOR der Eigener-Spieler-Ermittlung: dort gibt es noch keinen.
   if (art === "claim") {
-    const ziel = (team.kader || []).find((s) => s && s.id === String(body.spielerId || ""));
-    if (!ziel) return { error: "Spieler nicht gefunden", status: 404 };
-    if (ziel.linkedUsername) return { error: "Dieser Spieler ist bereits mit einem Konto verknüpft.", status: 409 };
-    // Pro Team nur ein eigener Platz -- alten lösen (gleiche Regel wie claimSpieler).
-    (team.kader || []).forEach((s) => { if (s.linkedUsername && sameText(s.linkedUsername, username)) s.linkedUsername = ""; });
-    ziel.linkedUsername = username;
-    return { antwort: { spielerId: ziel.id } };
+    const res = kmVerknuepfeKaderplatz(team, body.spielerId, username);
+    if (res.error) return { error: res.error, status: res.status };
+    return { antwort: { spielerId: res.spieler.id } };
   }
 
   const ich = kmSelfEigenerSpieler(team, username);
