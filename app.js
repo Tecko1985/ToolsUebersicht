@@ -32,7 +32,12 @@ function buildCurrentUser(data) {
     vorname: data.vorname || "",
     nachname: data.nachname || "",
     lizenz: data.lizenz || "",
-    mannschaften: Array.isArray(data.mannschaften) ? data.mannschaften : []
+    mannschaften: Array.isArray(data.mannschaften) ? data.mannschaften : [],
+    // Beide Felder liefert "me" erst seit dem Worker-Stand vom 2026-07-21. Bis zu
+    // dessen Deploy kommen sie schlicht nicht mit -- die Karte "Mein Konto" laesst
+    // die betroffenen Zeilen dann weg, statt "undefined" anzuzeigen.
+    groupNames: Array.isArray(data.groupNames) ? data.groupNames : [],
+    passwordSetAt: data.passwordSetAt || null
   };
 }
 
@@ -2545,6 +2550,51 @@ function renderNavTabs() {
   }
 }
 
+// Datum ohne Uhrzeit. Zweistellig erzwingen, sonst liefert de-DE "14.7.2026" statt
+// "14.07.2026" und die Karte weicht vom Rest der App ab (vgl. fmtDateTime).
+// Leerer String bei allem, was sich nicht als Datum lesen laesst -- die Aufrufer
+// lassen die Zeile dann weg.
+function fmtDatumKurz(wert) {
+  if (!wert) return "";
+  const d = new Date(wert);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// Ablaufdatum der aktuellen Anmeldung. Das Token ist "payloadB64.sigB64" (base64url),
+// der Payload traegt exp als Unix-Sekunden. Wird hier nur GELESEN -- ausgestellt und
+// geprueft wird serverseitig, ein manipuliertes Token wuerde beim naechsten Aufruf
+// ohnehin abgelehnt; hier haengt nur eine Anzeige daran.
+// Jeder Fehler (kein Token, falsches Format, kaputtes base64, kein exp) endet in "",
+// nie in einer Exception: eine Konto-Auskunft darf nicht am Anzeigen scheitern.
+function tokenAblaufDatum() {
+  try {
+    const token = loadStoredToken();
+    const payloadTeil = token ? token.split(".")[0] : "";
+    if (!payloadTeil) return "";
+    const exp = JSON.parse(atob(payloadTeil.replace(/-/g, "+").replace(/_/g, "/"))).exp;
+    return Number.isFinite(exp) ? fmtDatumKurz(exp * 1000) : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+// In welchen Tools darf ich mehr als lesen? Schnittmenge aus den Bearbeiter-Gruppen
+// je Tool (editGroupIds -- kommt mit der oeffentlichen Sichtbarkeits-Konfiguration
+// ohnehin in den Client, kostet also keinen zusaetzlichen Aufruf) und den eigenen
+// Gruppen. Tools ohne Sichtbarkeit bleiben draussen: ein Schreibrecht auf etwas, das
+// man gar nicht sieht, ist wirkungslos.
+// Bewusst ueber isAdmin/groupIds und NICHT ueber realIsAdmin -- waehrend einer
+// Admin-Testansicht soll hier stehen, was die getestete Gruppe darf.
+function eigeneBearbeitenRechte() {
+  const meine = new Set(currentUser.groupIds || []);
+  return TOOLS
+    .filter((t) => isVisibleToUser(t.id, currentUser))
+    .filter((t) => ((visibilityState[t.id] || {}).editGroupIds || []).some((id) => meine.has(id)))
+    .map((t) => t.name)
+    .sort((a, b) => a.localeCompare(b, "de"));
+}
+
 // Karte "Mein Konto" im gleichnamigen Tab. Sie steht dort zusammen mit den
 // Anmeldewegen; der Einstellungen-Tab ist seit dem Umbau rein administrativ.
 function renderKontoKarte() {
@@ -2556,15 +2606,27 @@ function renderKontoKarte() {
   if (currentUser.mannschaften.length) {
     rows.push(["Mannschaften", currentUser.mannschaften.map(escapeHtml).join(", ")]);
   }
-  // Gruppennamen stehen nur Admins zur Verfuegung (list-groups ist admin-only, "me"
-  // liefert bloss die IDs) -- fuer alle anderen die Zeile weglassen statt IDs zu zeigen.
-  if (currentUser.isAdmin || currentUser.viewAsGroupId) {
-    const namen = currentUser.groupIds
-      .map((id) => (groupsState.find((g) => g.id === id) || {}).name)
-      .filter(Boolean);
-    if (namen.length) rows.push(["Gruppen", namen.map(escapeHtml).join(", ")]);
+  // Namen kommen fertig aufgeloest aus "me" (groupNames). Vor dem Worker-Deploy vom
+  // 2026-07-21 fehlt das Feld -- dann bleibt die Zeile weg, statt IDs zu zeigen.
+  if (currentUser.groupNames.length) {
+    rows.push(["Gruppen", currentUser.groupNames.map(escapeHtml).join(", ")]);
   }
   if (currentUser.isAdmin) rows.push(["Rechte", "Administrator"]);
+
+  // Diese Zeile erscheint IMMER, auch ohne jedes Schreibrecht: sie beantwortet die
+  // Frage "warum kann ich dort nichts speichern" -- sie wegzulassen liesse genau die
+  // Frage offen, fuer die sie da ist.
+  if (currentUser.isAdmin) {
+    rows.push(["Bearbeiten", "Alle Tools (als Administrator)"]);
+  } else {
+    const bearbeitbar = eigeneBearbeitenRechte();
+    rows.push(["Bearbeiten", bearbeitbar.length ? bearbeitbar.map(escapeHtml).join(", ") : "Nur Ansehen"]);
+  }
+
+  const passwortDatum = fmtDatumKurz(currentUser.passwordSetAt);
+  if (passwortDatum) rows.push(["Passwort geändert", escapeHtml(passwortDatum)]);
+  const ablauf = tokenAblaufDatum();
+  if (ablauf) rows.push(["Anmeldung gültig bis", escapeHtml(ablauf)]);
 
   document.getElementById("konto-details").innerHTML = rows
     .map(([dt, dd]) => `<dt>${dt}</dt><dd>${dd}</dd>`)
@@ -2623,7 +2685,9 @@ async function afterAuthChange() {
   await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
-    renderKontoKarte(); // erst jetzt sind die Gruppennamen fuer die Karte aufloesbar
+    // Frueher stand hier ein zweites renderKontoKarte(): die Gruppennamen liessen sich
+    // erst nach loadAndRenderGroups() aufloesen. Seit "me" sie als groupNames mitliefert,
+    // ist die Karte schon beim ersten Rendern vollstaendig.
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();

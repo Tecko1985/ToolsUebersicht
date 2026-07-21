@@ -81,7 +81,11 @@
 //     Der eigene Kaderplatz kommt IMMER aus linkedUsername, nie aus dem Body -- ein manipulierter Request
 //     trifft deshalb keinen fremden Eintrag. Ersetzt dav-save für Spieler: das würde die GANZE Datei
 //     (alle Mannschaften, Kasse) schreiben und ist für sie per WRITE_REQUIRES_EDIT_PERMISSION gesperrt.
-//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId, vertragspflichtig } (+ canEdit, wenn app übergeben und bekannt)
+//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, groupNames, realIsAdmin, viewAsGroupId, vertragspflichtig, passwordSetAt } (+ canEdit, wenn app übergeben und bekannt)
+//     groupNames (seit 2026-07-21): die Namen zu groupIds, damit "Mein Konto" die Gruppen auch
+//     Nicht-Admins zeigen kann (list-groups ist admin-only). Nur die EIGENEN Gruppen — kein Ersatz
+//     für list-directory und kein Weg an dessen Spieler-Sperre vorbei. passwordSetAt (dito): Zeitpunkt
+//     der letzten Passwortvergabe für die Anzeige, null bei Konten ohne das Feld.
 //     isAdmin/groupIds sind die EFFEKTIVE Identität (siehe set-view-as); realIsAdmin ist immer der echte
 //     Admin-Status aus nutzer.json, unabhängig von einer aktiven Testansicht — die Testansicht-Umschaltung
 //     selbst muss also realIsAdmin prüfen, nicht isAdmin, sonst kann ein Admin sich nicht zurückschalten.
@@ -866,6 +870,19 @@ async function handleMe(request, body, env, authHeader, corsHeaders) {
     nachname: (user && user.nachname) || null,
     lizenz: (user && user.lizenz) || "",
     mannschaften: (user && Array.isArray(user.mannschaften)) ? user.mannschaften : [],
+    // Namen der EIGENEN Gruppen. Der Client hat in groupIds nur IDs und list-groups
+    // ist admin-only -- deshalb konnte die Karte "Mein Konto" die Gruppen-Zeile
+    // bisher ausschliesslich Admins zeigen. Bewusst hier aufgeloest statt der Client
+    // per list-directory: das liefert die komplette Namensliste des Vereins und ist
+    // fuer Spielerkonten per 403 gesperrt. Hier erfaehrt jeder nur seine eigenen
+    // Gruppen -- nichts ueber fremde Konten oder die Gruppenstruktur des Vereins.
+    // Folgt session.groupIds und damit auch einer aktiven Admin-Testansicht.
+    groupNames: (session.groupIds || [])
+      .map((id) => (getOwn(usersDoc.groups || {}, id) || {}).name)
+      .filter(Boolean),
+    // Fuer "Passwort zuletzt geaendert am". Fehlt bei Konten, die seit Einfuehrung
+    // des Feldes kein Passwort gesetzt haben -- der Client laesst die Zeile dann weg.
+    passwordSetAt: (user && user.passwordSetAt) || null,
     // Braucht diese Person einen Trainervertrag? Der Client kann das NICHT selbst
     // ableiten: er sieht in groupIds nur IDs, nicht den Gruppennamen "Trainer", und
     // list-groups ist Admin-only. Trainerdaten blendet daran Bankverbindung/
