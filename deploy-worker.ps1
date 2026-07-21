@@ -56,6 +56,15 @@ function CfCall {
 
 # ---------------------------------------------------------------- 1. Token
 Schritt 'Token pruefen'
+# setx schreibt in die Benutzer-Registry. Ein bereits laufender Prozess - und damit
+# jede Shell, die er startet - sieht das erst nach einem Neustart. Statt einen
+# Neustart zu verlangen, notfalls direkt aus der Registry nachladen.
+foreach ($name in 'CF_API_TOKEN', 'CF_ACCOUNT_ID') {
+  if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue)) {
+    $wert = [System.Environment]::GetEnvironmentVariable($name, 'User')
+    if ($wert) { Set-Item "env:$name" $wert }
+  }
+}
 if (-not $env:CF_API_TOKEN) {
   Abbruch 'CF_API_TOKEN ist nicht gesetzt. Token anlegen (dash.cloudflare.com -> My Profile -> API Tokens), dann:  $env:CF_API_TOKEN = "..."'
 }
@@ -133,11 +142,30 @@ if (-not $Deploy) {
 # ------------------------------------------------------------ 5. Backup
 if (-not $KeinBackup) {
   Schritt 'Backup des Live-Stands'
+  # /content lehnt Token-Auth ab (HTTP 405, code 10405 "Method not allowed for this
+  # authentication scheme") - nur /content/v2 funktioniert mit einem API-Token.
+  # Die Antwort ist multipart/form-data, das JS-Modul muss herausgeschnitten werden.
+  $antwort = Invoke-WebRequest -Uri "$API/accounts/$accountId/workers/scripts/$Skript/content/v2" `
+               -Headers @{ Authorization = "Bearer $env:CF_API_TOKEN" } -UseBasicParsing
+  $roh = if ($antwort.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($antwort.Content) } else { [string]$antwort.Content }
+
+  $live = $null
+  $grenze = ($antwort.Headers['Content-Type'] -split 'boundary=')[-1].Trim('"', ' ')
+  foreach ($teil in ($roh -split [regex]::Escape("--$grenze"))) {
+    $trenn = $teil.IndexOf("`r`n`r`n")
+    if ($trenn -lt 0) { continue }
+    if ($teil.Substring(0, $trenn) -match 'javascript') {
+      $live = $teil.Substring($trenn + 4) -replace "`r?`n$", ''
+      break
+    }
+  }
+  if (-not $live) { Abbruch 'Live-Code liess sich nicht aus der multipart-Antwort loesen. Mit -KeinBackup erzwingen (Rueckfall waere dann git).' }
+
   $sicherung = Join-Path $PSScriptRoot ("backup-worker-{0}.js" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-  $live = CfCall "/accounts/$accountId/workers/scripts/$Skript/content" -Roh
   [System.IO.File]::WriteAllText($sicherung, $live, (New-Object System.Text.UTF8Encoding($false)))
   Ok "gesichert: $sicherung  ($([math]::Round((Get-Item $sicherung).Length/1KB,1)) KB)"
-  if ($live -eq $text) { Warn 'Live-Stand ist BYTEGLEICH mit der lokalen Datei - der Deploy ist ein No-Op.' }
+  if ($live.TrimEnd() -eq $text.TrimEnd()) { Warn 'Live-Stand ist inhaltsgleich mit der lokalen Datei - der Deploy ist ein No-Op.' }
+  else { Ok 'Live-Stand weicht von der lokalen Datei ab - der Deploy bringt also wirklich etwas.' }
 }
 
 # ------------------------------------------------------------ 6. Upload
