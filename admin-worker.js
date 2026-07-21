@@ -199,6 +199,8 @@
 //   POST { action: "reactivate-trainer", username } (Personalakte-Sichtrecht) -> { ok:true, username }
 //     Hebt die Login-Sperre wieder auf, ergänzt den Snapshot in personalakte.json um reaktiviertAm/reaktiviertVon.
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
+//     Für Apps in AUTO_PRUNE_APPS (aktuell: fotoauftraege) werden dabei abgelaufene Listeneinträge entfernt und die Datei
+//     zurückgeschrieben — ein dav-load kann also schreiben und ein neues rev liefern. Zugehörige Nextcloud-Dateien bleiben unberührt.
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
 //     serverseitig unverändert ist — sonst 409 mit { conflict:true }. Ohne rev unconditional wie früher, alte Clients bleiben kompatibel.)
 //     WebDAV-Gateway: Zugriff nur, wenn der Nutzer das Tool sehen darf (Gruppen-Sichtbarkeit). App-id -> Nextcloud-Pfad in DAV_APPS.
@@ -285,11 +287,11 @@
 //      Re-Upload überschreibt bewusst. text wird zusätzlich roh im Auftrag gespeichert,
 //      damit die App ihn ohne erneuten Datei-Download anzeigen kann.)
 //   POST { action: "fotoauftrag-loeschen", id } + Bearer -> { ok:true, rev } | 400 | 403 | 404 | 409 | 502
-//     (Fotoaufträge, Editor/Admin-only: löscht den JSON-Eintrag UND, falls vorhanden, den
-//      kompletten zugehörigen Nextcloud-Ordner samt Inhalt — WebDAV DELETE auf eine Collection
-//      ist implizit rekursiv, löscht Fotos+Spielbericht mit. Schlägt das DELETE mit einem
-//      echten Fehler fehl (nicht 404), wird der JSON-Eintrag NICHT entfernt, damit kein
-//      verwaister Ordner unbemerkt zurückbleibt.)
+//     (Fotoaufträge, Editor/Admin-only: löscht NUR den JSON-Eintrag. Der zugehörige
+//      Nextcloud-Ordner samt Fotos und Spielbericht bleibt bewusst stehen — er ist das
+//      Bildarchiv des Vereins und überlebt den Arbeitszettel. Ordner räumt man bei Bedarf
+//      direkt in Nextcloud auf. Gleiches gilt für die automatische Bereinigung, siehe
+//      AUTO_PRUNE_APPS.)
 
 const ALLOWED_ORIGINS = [
   "http://localhost:8767", // Materialliste (Dev-Server)
@@ -478,6 +480,20 @@ const OWNER_WRITE_APPS = {
 // wie der Kommentar zu OWNER_FILTERED_APPS oben). Siehe handleDavLoad.
 const TEAM_FILTERED_APPS = {
   fotoauftraege: { listField: "auftraege", teamField: "mannschaft" }
+};
+
+// Selbstaufraeumende Listen: Eintraege, deren Zeitstempel laenger als maxTageAlt
+// zurueckliegt, werden bei jedem dav-load entfernt (siehe handleDavLoad).
+// Bewusst KEIN Cloudflare-Cron-Trigger: die Bereinigung braucht keine Pünktlichkeit
+// (sie soll nur verhindern, dass die Liste zulaeuft), und ein Cron-Trigger waere
+// zusaetzliche Konfiguration ausserhalb des Repos, die deploy-worker.ps1 nicht
+// mitdeployt. Der Stichtag wird bewusst SERVERSEITIG berechnet -- eine
+// clientseitige Bereinigung wuerde der Uhr des Browsers vertrauen, und eine falsch
+// gestellte Uhr wuerde dort fremde Datensaetze loeschen.
+// Wichtig: das Aufraeumen entfernt nur den Listeneintrag, nie zugehoerige
+// Nextcloud-Dateien (bei fotoauftraege sind das die Fotos = das Vereinsarchiv).
+const AUTO_PRUNE_APPS = {
+  fotoauftraege: { listField: "auftraege", dateField: "erstelltAm", maxTageAlt: 5 }
 };
 
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
@@ -3086,6 +3102,37 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
   }
 
   let { data, rev } = await readJsonWithRev(url, authHeader, null);
+
+  // Abgelaufene Eintraege entfernen, BEVOR gefiltert wird -- die Filterbloecke
+  // unten liefern nur eine Teilsicht, geschrieben werden muss aber die komplette
+  // Liste. Laeuft absichtlich fuer JEDEN Leser (auch Nicht-Editoren): welche
+  // Eintraege fallen, entscheidet allein diese Regel, nicht der Aufrufer -- der
+  // Request-Body hat darauf keinerlei Einfluss.
+  const pruneCfg = getOwn(AUTO_PRUNE_APPS, app);
+  if (pruneCfg && data && Array.isArray(data[pruneCfg.listField])) {
+    const grenze = Date.now() - pruneCfg.maxTageAlt * 24 * 60 * 60 * 1000;
+    const behalten = data[pruneCfg.listField].filter((item) => {
+      if (!item || typeof item !== "object") return true;
+      const ts = Date.parse(item[pruneCfg.dateField]);
+      // Ohne verwertbaren Zeitstempel wird NIE geloescht: ein fehlendes oder
+      // kaputtes Datum darf nicht als "unendlich alt" durchgehen.
+      return !Number.isFinite(ts) || ts > grenze;
+    });
+    if (behalten.length !== data[pruneCfg.listField].length) {
+      // Neues Objekt statt In-Place-Mutation -- gleicher jsonCache-Grund wie in
+      // den Filterbloecken unten. rev kann aus dem Cache stammen; passt es nicht
+      // mehr, scheitert der If-Match-PUT sauber und wir liefern einfach den
+      // ungekuerzten Stand aus (der naechste Load raeumt auf).
+      const bereinigt = { ...data, [pruneCfg.listField]: behalten };
+      try {
+        rev = await writeJson(url, authHeader, bereinigt, rev);
+        data = bereinigt;
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e;
+      }
+    }
+  }
+
   const ownerCfg = getOwn(OWNER_FILTERED_APPS, app);
   if (ownerCfg && data && Array.isArray(data[ownerCfg.listField]) &&
       !(await resolveEditPermission(app, session, env, authHeader))) {
@@ -3562,29 +3609,19 @@ async function handleFotoauftragLoeschen(request, body, env, authHeader, corsHea
   const auftrag = doc.auftraege.find((a) => a && a.id === id);
   if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
 
-  if (auftrag.ordnerPfad) {
-    const folderUrl = `${FOTOAUFTRAEGE_ORDNER_BASIS}/${auftrag.ordnerPfad}`;
-    let resp;
-    try {
-      resp = await fetch(folderUrl, { method: "DELETE", headers: { Authorization: authHeader } });
-    } catch (e) {
-      return json({ error: "Nextcloud-Ordner konnte nicht gelöscht werden: " + e.message }, 502, corsHeaders);
-    }
-    if (!resp.ok && resp.status !== 404) {
-      return json({ error: `Nextcloud-Ordner konnte nicht gelöscht werden (DELETE ${resp.status})` }, 502, corsHeaders);
-    }
-  }
-
+  // Der zugehoerige Nextcloud-Ordner bleibt bewusst stehen (2026-07-21, Kehrtwende
+  // zurueck zum urspruenglichen Verhalten): die Fotos sind das ARCHIV des Vereins
+  // und ueberleben den Auftrag. Geloescht wird nur der Listeneintrag -- der Auftrag
+  // ist ein Arbeitszettel, das Bildmaterial nicht. Gilt genauso fuer die
+  // automatische Bereinigung nach Ablauf der Frist (AUTO_PRUNE_APPS, siehe dort).
   doc.auftraege = doc.auftraege.filter((a) => !(a && a.id === id));
   try {
     const newRev = await writeJson(url, authHeader, doc, rev);
     return json({ ok: true, rev: newRev }, 200, corsHeaders);
   } catch (e) {
     if (e instanceof ConflictError) {
-      // Ein evtl. vorhandener Ordner ist zu diesem Zeitpunkt bereits geloescht --
-      // nur der JSON-Schreibvorgang kollidierte. Client soll neu laden und
-      // erneut versuchen; ein zweiter Versuch findet den Ordner dann per 404
-      // ohnehin nicht mehr vor (siehe oben, wird als Erfolg gewertet).
+      // Nichts ist passiert -- der Handler fasst ausser dieser JSON-Datei nichts
+      // mehr an, ein erneuter Versuch auf frischem Stand ist folgenlos wiederholbar.
       return json({ error: "Auftrag wurde zwischenzeitlich verändert — bitte neu laden und erneut versuchen", conflict: true }, 409, corsHeaders);
     }
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
