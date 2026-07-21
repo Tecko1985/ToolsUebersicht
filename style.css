@@ -663,3 +663,8 @@ body.printing-report #print-area { display: block; padding: 20px; }
   .print-table tr { page-break-inside: avoid; }
 }
 .group-picker-row .gp-tool-name { flex: 1; min-width: 140px; }
+
+/* Rechte Nav-Gruppe (Einstellungen/Verwaltung + Info). Das margin haengt
+   am Wrapper, damit die Gruppe rechts bleibt, auch wenn einzelne Buttons
+   fuer Nicht-Admins ausgeblendet sind. */
+nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
