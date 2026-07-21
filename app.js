@@ -2302,11 +2302,7 @@ function setupTabs() {
   });
 
   const versionBadgeHeader = document.getElementById("version-badge");
-  const openVersionHistory = () => {
-    activateTab("admin");
-    const panel = document.getElementById("changelog-panel");
-    if (panel) { panel.open = true; panel.scrollIntoView({ behavior: "smooth", block: "start" }); }
-  };
+  const openVersionHistory = () => activateTab("info");
   versionBadgeHeader.addEventListener("click", openVersionHistory);
   versionBadgeHeader.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVersionHistory(); }

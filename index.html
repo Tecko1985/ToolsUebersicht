@@ -22,6 +22,7 @@
 <nav>
   <button data-tab="uebersicht" class="active">Dashboard</button>
   <button data-tab="feedback">Feedback & Hilfe</button>
+  <button data-tab="info">Info</button>
   <button data-tab="admin" style="margin-left:auto;">Einstellungen</button>
 </nav>
 
@@ -96,6 +97,18 @@
         <p class="muted" style="margin-bottom:14px;">Dringende Frage oder direkter Kontakt gewünscht? Schreib Michel auf WhatsApp.</p>
         <a class="btn-link" id="feedback-whatsapp-link" href="#" target="_blank" rel="noopener">💬 Auf WhatsApp schreiben</a>
       </div>
+    </div>
+  </section>
+
+  <!-- ---------- Info ---------- -->
+  <section class="tab-section" id="tab-info">
+    <div class="card">
+      <h2>Über die Tools-Übersicht <span class="version-badge" id="version-badge-2"></span></h2>
+      <p class="muted">Zentrale Startseite aller Vereins-Tools — Anmeldung, Sichtbarkeit und Neuigkeiten.</p>
+    </div>
+    <div class="card">
+      <h2>Änderungen</h2>
+      <div id="changelog-list"></div>
     </div>
   </section>
 
@@ -328,10 +341,6 @@
       </div>
     </details>
 
-    <details class="card collapsible" id="changelog-panel">
-      <summary>Versionshistorie <span class="version-badge" id="version-badge-2"></span></summary>
-      <div id="changelog-list"></div>
-    </details>
 
   </section>
 
@@ -489,6 +498,6 @@
 </div>
 
 <script src="config.js?v=1.2"></script>
-<script src="app.js?v=1.2"></script>
+<script src="app.js?v=1.3"></script>
 </body>
 </html>
