@@ -28,11 +28,19 @@
 // (beleg-scanner nutzte diesen Weg vorübergehend ebenfalls, seit 2026-07-05 wieder
 // eigenständig mit lokalen Secrets SEARCH_PASSWORD/UPLOAD_PASSWORD - siehe dort.)
 //
-// Optionales Secret für den E-Mail-Versand (Aktion "notify-user", siehe unten).
-// Fehlt es, meldet nur diese eine Aktion einen Konfigurationsfehler, der Rest
-// des Workers läuft normal (gleiches Prinzip wie bei den LIVEKIT_*-Secrets):
+// Optionales Secret für den E-Mail-Versand (Aktionen "notify-user" und
+// "beleg-eingang-notify", siehe unten). Fehlt es, meldet nur die jeweilige Aktion
+// einen Konfigurationsfehler, der Rest des Workers läuft normal (gleiches Prinzip
+// wie bei den LIVEKIT_*-Secrets):
 //   BREVO_API_KEY = API-Key aus dem Brevo-Konto (Einzel-Absender-Verifizierung
 //     der unten als NOTIFY_FROM_EMAIL hinterlegten Adresse dort vorher nötig)
+//
+// Optionale Variable (kein Secret, darf im Dashboard als Klartext-Variable stehen)
+// für die Beleg-Benachrichtigung:
+//   NOTIFY_BELEG_EMAIL = Empfängeradresse für "beleg-eingang-notify". Absichtlich
+//     hier statt als Konstante im Code: sc-heiligenstadt-budget ist ein öffentliches
+//     Repo, und der Empfänger lässt sich so ohne Deploy wechseln. Fehlt sie, bleibt
+//     der Mailversand ein stiller No-Op (Beleg-Einreichung funktioniert weiter).
 //
 // BOOTSTRAP (einmalig, direkt nach dem Deploy, bevor die URL geteilt wird):
 // Solange in nutzer.json noch kein Nutzer existiert, zeigt die Seite im
@@ -241,6 +249,17 @@
 //      nächsten 14 Tagen. Logik spiegelt anstehendeOhneGegner() in E:\testspielplaner\app.js.)
 //   POST { action: "verify-action-password", scope, password }    -> { ok:true } | 403 — ohne Login; prüft die früher im
 //     Client hartkodierten Aktions-Passwörter gegen Worker-Secrets (Scope-Liste: ACTION_PASSWORD_SECRETS).
+//   POST { action: "beleg-eingang-notify", code, name, desc, amount, date, note, fileCount }
+//     -> { ok:true, sent:true } | { ok:true, sent:false, reason } | 400 | 403 | 502
+//     (ohne Login: Benachrichtigungsmail nach einer Beleg-Einreichung aus beleg-eingang.html.
+//      Wird NICHT vom Browser aufgerufen, sondern serverseitig vom eigenen Beleg-Upload-Worker
+//      (sc-heiligenstadt-budget/worker.js) über dessen Service Binding, NACHDEM der Beleg schon in
+//      Nextcloud liegt. code = PW_BUDGET_EINGANG_ZUGANG, hier eigenständig geprüft — die URL dieses
+//      Workers ist öffentlich, ohne eigene Prüfung wäre das ein offener Mail-Versender. Empfänger
+//      kommt aus der Variable NOTIFY_BELEG_EMAIL, nie aus dem Body. Fehlt die Variable oder der
+//      BREVO_API_KEY, ist die Aktion ein stiller No-Op (sent:false) statt eines Fehlers: der Beleg
+//      ist zu diesem Zeitpunkt bereits gespeichert, eine ausbleibende Mail darf die Einreichung
+//      nicht nachträglich als gescheitert erscheinen lassen.)
 //   POST { action: "fotoauftrag-ordner-anlegen", id } + Bearer -> { ok:true, auftrag, rev } | 400 | 403 | 404 | 409 | 502
 //     (Fotoaufträge: legt für einen offenen Auftrag serverseitig einen dedizierten Nextcloud-Ordner an UND
 //      erzeugt darauf einen echten, eigenständigen öffentlichen Freigabelink über die Nextcloud OCS-Sharing-API
@@ -606,6 +625,8 @@ export default {
         return handleReactivateTrainer(request, body, env, authHeader, corsHeaders);
       case "verify-action-password":
         return handleVerifyActionPassword(body, env, corsHeaders);
+      case "beleg-eingang-notify":
+        return handleBelegEingangNotify(body, env, corsHeaders);
       case "dav-load":
         return handleDavLoad(request, body, env, authHeader, corsHeaders);
       case "dav-save":
@@ -2876,6 +2897,107 @@ async function staticPasswordEquals(given, expected) {
     crypto.subtle.digest("SHA-256", enc.encode(expected))
   ]);
   return timingSafeEqual(bytesToBase64(new Uint8Array(a)), bytesToBase64(new Uint8Array(b)));
+}
+
+// ---------- Aktion: Benachrichtigung bei neuer Beleg-Einreichung ----------
+
+// Ohne Intl gebaut: die Locale-Daten der Workers-Runtime sind nicht garantiert,
+// und für "1234.5 -> 1.234,50 €" lohnt die Abhängigkeit ohnehin nicht.
+function formatEuroBetrag(v) {
+  const n = typeof v === "number" ? v : parseFloat(String(v == null ? "" : v).replace(",", "."));
+  if (!isFinite(n)) return "unbekannt";
+  return n.toFixed(2).replace(".", ",") + " €";
+}
+
+function formatDatumDeutsch(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  return m ? m[3] + "." + m[2] + "." + m[1] : (iso || "unbekannt");
+}
+
+// Benachrichtigungsmail nach einer Beleg-Einreichung, siehe Doku-Kommentar bei
+// "beleg-eingang-notify" oben. Aufruf kommt serverseitig vom Beleg-Upload-Worker,
+// nicht aus dem Browser. Der Empfänger stammt IMMER aus NOTIFY_BELEG_EMAIL, nie
+// aus dem Body — sonst wäre das ein offenes Mail-Relay für jeden, der den
+// Zugriffscode kennt, und den kennen alle Helfer.
+async function handleBelegEingangNotify(body, env, corsHeaders) {
+  if (!env.PW_BUDGET_EINGANG_ZUGANG) {
+    return json({ error: "Zugriffscode ist serverseitig nicht konfiguriert" }, 500, corsHeaders);
+  }
+  const codeOk = await staticPasswordEquals(String(body.code || ""), env.PW_BUDGET_EINGANG_ZUGANG);
+  if (!codeOk) {
+    // Bremse gegen Durchprobieren — die Aktion ist ohne Login erreichbar.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return json({ error: "Falscher Zugriffscode" }, 403, corsHeaders);
+  }
+
+  // Zeilenumbrüche raus: beide kommen aus einzeiligen Feldern, über den offenen
+  // POST-Endpunkt ließen sich aber welche einschleusen und würden die Mail zerreißen.
+  // note ist bewusst ausgenommen — das ist ein Textarea, dort sind Umbrüche gewollt.
+  const einzeilig = (v, max) => capStr(v, max).replace(/[\r\n]+/g, " ");
+  const name = einzeilig(body.name, 120);
+  const desc = einzeilig(body.desc, 200);
+  if (!name || !desc) return json({ error: "Name oder Beschreibung fehlt" }, 400, corsHeaders);
+  const note = capStr(body.note, 1000);
+  const betrag = formatEuroBetrag(body.amount);
+  const datum = formatDatumDeutsch(capStr(body.date, 40));
+  const fileCount = Math.min(99, Math.max(0, parseInt(body.fileCount, 10) || 0));
+
+  // Fehlende Konfiguration hier bewusst als Erfolg mit sent:false melden statt als
+  // Fehler: wenn diese Aktion läuft, liegt der Beleg bereits in Nextcloud. Eine
+  // ausbleibende Mail darf die Einreichung nicht nachträglich kippen.
+  const empfaenger = capStr(env.NOTIFY_BELEG_EMAIL, 200);
+  if (!empfaenger) {
+    console.warn("beleg-eingang-notify: NOTIFY_BELEG_EMAIL ist nicht gesetzt — keine Mail verschickt");
+    return json({ ok: true, sent: false, reason: "NOTIFY_BELEG_EMAIL fehlt" }, 200, corsHeaders);
+  }
+  if (!env.BREVO_API_KEY) {
+    console.warn("beleg-eingang-notify: BREVO_API_KEY ist nicht gesetzt — keine Mail verschickt");
+    return json({ ok: true, sent: false, reason: "BREVO_API_KEY fehlt" }, 200, corsHeaders);
+  }
+
+  // Zeilenumbrüche aus dem Betreff werfen: desc ist Helfer-Freitext.
+  const subject = ("Neuer Beleg: " + betrag + " — " + desc).replace(/[\r\n]+/g, " ").slice(0, 200);
+  const zeilen = [
+    "Es wurde ein neuer Beleg eingereicht.",
+    "",
+    "Eingereicht von: " + name,
+    "Grund: " + desc,
+    "Betrag: " + betrag,
+    "Beleg-Datum: " + datum,
+    "Dateien: " + fileCount
+  ];
+  if (note) zeilen.push("Notiz: " + note);
+  zeilen.push(
+    "",
+    "Der Beleg liegt im Eingangs-Ordner der Geschäftsstelle und kann im",
+    "Vereinsbudget-Tool übernommen werden."
+  );
+
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: empfaenger }],
+        subject,
+        textContent: zeilen.join("\n")
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("Brevo-Versand fehlgeschlagen", resp.status, errText);
+      return json({ error: "Mail-Versand fehlgeschlagen (HTTP " + resp.status + ")" }, 502, corsHeaders);
+    }
+  } catch (e) {
+    return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, sent: true }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: WebDAV-Gateway für die Apps ----------
