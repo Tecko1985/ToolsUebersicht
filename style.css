@@ -35,7 +35,10 @@ header {
   flex-wrap: wrap;
 }
 header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.header-right { display: flex; align-items: center; gap: 14px; }
+/* wrap + flex-end: seit der Abmelden-Button hier mit drin sitzt, wird die Gruppe
+   auf schmalen Handys sonst breiter als der Schirm (header bricht zwar um, aber
+   nur als Ganzes) und schoebe das Wappen aus dem Bild. */
+.header-right { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 14px; }
 .header-logo { height: 44px; width: auto; display: block; }
 .header-user {
   display: flex;
@@ -59,6 +62,20 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   padding: 5px 10px;
   cursor: pointer;
 }
+/* Abmelden sitzt im Header neben dem Nutzer-Chip, damit es von jedem Tab aus
+   erreichbar ist -- nicht mehr nur im Einstellungen-Tab. */
+.header-logout-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .view-as-select option { color: #111; }
 .badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
 .header-admin-btn {
@@ -115,6 +132,16 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 }
 .card h2 { font-size: 17px; margin-bottom: 14px; color: var(--blue); }
 .card h3 { font-size: 15px; margin-bottom: 10px; }
+
+/* Karte "Mein Konto": Beschriftung/Wert paarweise. Auf schmalen Schirmen
+   untereinander statt zweispaltig, sonst bricht der Wert unschoen um. */
+.konto-grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 18px; }
+.konto-grid dt { font-size: 13px; font-weight: 600; color: var(--muted); }
+.konto-grid dd { font-size: 14px; margin: 0; }
+@media (max-width: 560px) {
+  .konto-grid { grid-template-columns: 1fr; gap: 3px; }
+  .konto-grid dd { margin-bottom: 10px; }
+}
 
 .answer-card { border-left: 4px solid var(--blue); }
 .answer-question {

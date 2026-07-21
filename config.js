@@ -318,7 +318,9 @@ const APP_CHANGELOG = [
           "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
           "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt.",
           "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint.",
-          "Die Nutzerliste hat genau zwei Abschnitte — „Personal“ und „Spieler“ — statt eines Abschnitts je Gruppe; jedes Konto steht damit an genau einer Stelle. Darüber filtern eine Namenssuche und ein Gruppen-Dropdown (mit „Ohne Gruppe“) die Liste, die Zähler zeigen dabei die Treffer."
+          "Die Nutzerliste hat genau zwei Abschnitte — „Personal“ und „Spieler“ — statt eines Abschnitts je Gruppe; jedes Konto steht damit an genau einer Stelle. Darüber filtern eine Namenssuche und ein Gruppen-Dropdown (mit „Ohne Gruppe“) die Liste, die Zähler zeigen dabei die Treffer.",
+          "„Abmelden“ sitzt oben rechts im Header direkt neben dem eigenen Namen und ist damit von jedem Tab aus erreichbar — vorher lag der Button nur im Einstellungen-Tab.",
+          "Der Einstellungen-Tab beginnt mit der Karte „Mein Konto“: eigener Name, Nutzername sowie — sofern hinterlegt — Trainerlizenz und Mannschaften."
         ]
       },
       {

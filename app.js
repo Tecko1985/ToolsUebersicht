@@ -18,14 +18,32 @@ let directoryGroupsState = []; // { id, name }[], für den Testansicht-Umschalte
 // isAdmin/groupIds sind die effektive Identität (siehe set-view-as im Worker);
 // realIsAdmin bleibt der echte Admin-Status, damit der Testansicht-Umschalter
 // selbst auch waehrend einer aktiven Testansicht sichtbar/bedienbar bleibt.
+// Die Profilfelder (vorname..mannschaften) liefert NUR die Aktion "me" — login/
+// set-password/bootstrap-admin geben lediglich die Identitaet zurueck (deriveIdentity
+// im Worker). Sie sind hier undefined-tolerant, weil buildCurrentUser aus beiden
+// Quellen gefuettert wird; loadOwnProfile() holt sie nach der Anmeldung nach.
 function buildCurrentUser(data) {
   return {
     username: data.username,
     isAdmin: !!data.isAdmin,
     groupIds: data.groupIds || [],
     realIsAdmin: !!data.realIsAdmin,
-    viewAsGroupId: data.viewAsGroupId || null
+    viewAsGroupId: data.viewAsGroupId || null,
+    vorname: data.vorname || "",
+    nachname: data.nachname || "",
+    lizenz: data.lizenz || "",
+    mannschaften: Array.isArray(data.mannschaften) ? data.mannschaften : []
   };
+}
+
+// Profilfelder nach einer frischen Anmeldung nachladen, damit die Karte "Mein Konto"
+// sofort gefuellt ist und nicht erst beim naechsten Seitenaufruf (der laeuft ueber
+// "me" und bringt sie ohnehin mit). Best-effort: schlaegt der Nachruf fehl, bleibt
+// die Anmeldung gueltig und die Karte zeigt nur den Nutzernamen.
+async function loadOwnProfile() {
+  try {
+    currentUser = buildCurrentUser({ ...currentUser, ...(await callWorker("me", {})) });
+  } catch (e) { /* siehe Kommentar oben */ }
 }
 let pendingFirstLoginUsername = null;
 let pendingLoginUsername = null;
@@ -114,6 +132,7 @@ async function login(username, password) {
   currentToken = data.token;
   currentUser = buildCurrentUser(data);
   storeToken(currentToken);
+  await loadOwnProfile();
   return { success: true };
 }
 
@@ -122,6 +141,7 @@ async function setFirstPassword(username, password) {
   currentToken = data.token;
   currentUser = buildCurrentUser(data);
   storeToken(currentToken);
+  await loadOwnProfile();
   pendingFirstLoginUsername = null;
 }
 
@@ -130,6 +150,7 @@ async function bootstrapAdmin(username, password) {
   currentToken = data.token;
   currentUser = buildCurrentUser(data);
   storeToken(currentToken);
+  await loadOwnProfile();
   bootstrapAvailable = false;
 }
 
@@ -2361,9 +2382,11 @@ function setupTabs() {
 
 function renderHeaderUser() {
   const el = document.getElementById("header-user");
+  const logoutBtn = document.getElementById("btn-logout");
   if (!currentUser) {
     el.style.display = "none";
     el.innerHTML = "";
+    logoutBtn.style.display = "none";
     renderViewAsControl();
     return;
   }
@@ -2371,6 +2394,7 @@ function renderHeaderUser() {
   const viewAsBadge = currentUser.viewAsGroupId ? '<span class="version-badge badge-view-as">🎭 Testansicht</span>' : "";
   el.innerHTML = `👤 ${escapeHtml(currentUser.username)}${adminBadge}${viewAsBadge}`;
   el.style.display = "flex";
+  logoutBtn.style.display = "inline-flex";
   renderViewAsControl();
 }
 
@@ -2418,6 +2442,32 @@ function setupViewAsControl() {
   });
 }
 
+// Karte "Mein Konto" im Einstellungen-Tab. Fuer Nutzer ohne Admin-Rechte ist das der
+// einzige Inhalt des Tabs -- alles andere darin ist admin-only.
+function renderKontoKarte() {
+  const rows = [];
+  const name = [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ");
+  if (name) rows.push(["Name", escapeHtml(name)]);
+  rows.push(["Nutzername", escapeHtml(currentUser.username)]);
+  if (currentUser.lizenz) rows.push(["Trainerlizenz", escapeHtml(currentUser.lizenz)]);
+  if (currentUser.mannschaften.length) {
+    rows.push(["Mannschaften", currentUser.mannschaften.map(escapeHtml).join(", ")]);
+  }
+  // Gruppennamen stehen nur Admins zur Verfuegung (list-groups ist admin-only, "me"
+  // liefert bloss die IDs) -- fuer alle anderen die Zeile weglassen statt IDs zu zeigen.
+  if (currentUser.isAdmin || currentUser.viewAsGroupId) {
+    const namen = currentUser.groupIds
+      .map((id) => (groupsState.find((g) => g.id === id) || {}).name)
+      .filter(Boolean);
+    if (namen.length) rows.push(["Gruppen", namen.map(escapeHtml).join(", ")]);
+  }
+  if (currentUser.isAdmin) rows.push(["Rechte", "Administrator"]);
+
+  document.getElementById("konto-details").innerHTML = rows
+    .map(([dt, dd]) => `<dt>${dt}</dt><dd>${dd}</dd>`)
+    .join("");
+}
+
 function renderAdminPanels() {
   renderHeaderUser();
   document.getElementById("admin-bootstrap-panel").style.display = "none";
@@ -2433,7 +2483,7 @@ function renderAdminPanels() {
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
 
   if (currentUser) {
-    document.getElementById("logged-in-username").textContent = currentUser.username;
+    renderKontoKarte();
     document.getElementById("admin-logged-in-panel").style.display = "block";
     if (currentUser.isAdmin) {
       document.getElementById("admin-users-panel").style.display = "block";
@@ -2469,6 +2519,7 @@ async function afterAuthChange() {
   await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
+    renderKontoKarte(); // erst jetzt sind die Gruppennamen fuer die Karte aufloesbar
     await loadAndRenderUsers();
     renderVisibilityList();
     renderNewsAdmin();
