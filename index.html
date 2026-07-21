@@ -24,7 +24,11 @@
   <button data-tab="uebersicht" class="active">Dashboard</button>
   <button data-tab="feedback">Feedback & Hilfe</button>
   <div class="nav-right">
-    <button data-tab="admin">Einstellungen</button>
+    <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
+    <button data-tab="konto" id="nav-konto">Anmelden</button>
+    <!-- Nur für Admins. Default versteckt, damit ein Fehler beim Rendern den Tab
+         nicht versehentlich für alle öffnet. -->
+    <button data-tab="admin" id="nav-admin" style="display:none;">Einstellungen</button>
     <button data-tab="info">Info</button>
   </div>
 </nav>
@@ -115,7 +119,9 @@
     </div>
   </section>
 
-  <section class="tab-section" id="tab-admin">
+  <!-- Eigenes Konto und alle Anmeldewege. Bewusst NICHT im Einstellungen-Tab:
+       der ist seit dem Umbau admin-only, der Login muss aber jedem offenstehen. -->
+  <section class="tab-section" id="tab-konto">
 
     <!-- Bootstrap: nur sichtbar, solange noch kein Nutzer existiert -->
     <div class="pin-gate" id="admin-bootstrap-panel" style="display:none;">
@@ -214,6 +220,10 @@
         <p class="muted" id="passwort-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
       </div>
     </div>
+
+  </section>
+
+  <section class="tab-section" id="tab-admin">
 
     <!-- Neuigkeiten-Verwaltung (nur Admin) -->
     <details class="card collapsible" id="admin-news-panel" style="display:none;">
@@ -518,7 +528,7 @@
   </main>
 </div>
 
-<script src="config.js?v=1.4"></script>
-<script src="app.js?v=1.5"></script>
+<script src="config.js?v=1.5"></script>
+<script src="app.js?v=1.6"></script>
 </body>
 </html>

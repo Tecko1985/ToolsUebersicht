@@ -2341,8 +2341,8 @@ function setupTabs() {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVersionHistory(); }
   });
 
-  document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("admin"));
-  document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("admin"));
+  document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("konto"));
+  document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("konto"));
   document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
   document.getElementById("btn-admin-dashboard-refresh").addEventListener("click", () => loadAndRenderAdminStats());
   document.getElementById("btn-admin-dashboard-open").addEventListener("click", () => {
@@ -2526,8 +2526,27 @@ function setupPasswortForm() {
   });
 }
 
-// Karte "Mein Konto" im Einstellungen-Tab. Fuer Nutzer ohne Admin-Rechte ist das der
-// einzige Inhalt des Tabs -- alles andere darin ist admin-only.
+// Nav-Leiste an den Anmeldestatus anpassen. Zwei Dinge haengen daran: "Einstellungen"
+// ist rein administrativ und fuer alle anderen gar nicht erst sichtbar, und der
+// Konto-Tab heisst je nach Status "Anmelden" oder "Mein Konto" -- wer noch kein Konto
+// hat, kann mit der Beschriftung "Mein Konto" nichts anfangen.
+function renderNavTabs() {
+  const istAdmin = !!(currentUser && currentUser.isAdmin);
+  document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
+  document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
+
+  // Wer sich aus einem Admin-Tab heraus abmeldet, saehe sonst eine Sektion, deren
+  // Inhalt gerade komplett ausgeblendet wurde: leere Seite, kein Tab markiert.
+  if (!istAdmin) {
+    const aktiv = document.querySelector(".tab-section.active");
+    if (aktiv && (aktiv.id === "tab-admin" || aktiv.id === "tab-admin-dashboard")) {
+      activateTab("konto");
+    }
+  }
+}
+
+// Karte "Mein Konto" im gleichnamigen Tab. Sie steht dort zusammen mit den
+// Anmeldewegen; der Einstellungen-Tab ist seit dem Umbau rein administrativ.
 function renderKontoKarte() {
   const rows = [];
   const name = [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ");
@@ -2554,6 +2573,7 @@ function renderKontoKarte() {
 
 function renderAdminPanels() {
   renderHeaderUser();
+  renderNavTabs();
   document.getElementById("admin-bootstrap-panel").style.display = "none";
   document.getElementById("admin-login-gate").style.display = "none";
   document.getElementById("login-password-panel").style.display = "none";
@@ -2973,9 +2993,9 @@ async function init() {
   await loadDirectoryGroupsIfNeeded();
 
   // Beim allerersten Besuch (noch kein Nutzerkonto vorhanden) direkt in den
-  // Admin-Tab springen, wo das "Admin-Konto einrichten"-Formular wartet.
+  // Konto-Tab springen, wo das "Admin-Konto einrichten"-Formular wartet.
   if (bootstrapAvailable && !currentUser) {
-    activateTab("admin");
+    activateTab("konto");
   }
 }
 
