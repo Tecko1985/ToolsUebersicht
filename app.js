@@ -31,6 +31,12 @@ let pendingFirstLoginUsername = null;
 let pendingLoginUsername = null;
 let groupsState = [];
 let usersState = [];
+// Filter der Nutzerliste. groupId: "" = alle, "__ohne__" = Nutzer ohne jede Gruppe,
+// sonst eine Gruppen-Id. Rein clientseitig -- list-users liefert immer alle Nutzer.
+let usersFilter = { text: "", groupId: "" };
+// Auf/Zu-Zustand der beiden Art-Abschnitte, damit ein Neu-Rendern (nach Speichern,
+// Filterwechsel) den gerade geöffneten Abschnitt nicht wieder zuklappt.
+let userArtOpen = { personal: false, spieler: false };
 let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte, sonst null
 let feedbackState = []; // Feedback-/Wunsch-Einträge, nur für eingeloggte Admins geladen (siehe loadAndRenderFeedback)
 
@@ -150,7 +156,6 @@ async function loadAndRenderUsers() {
     );
     renderUsersList(usersState);
     renderMannschaftSuggestions();
-    document.getElementById("users-count").textContent = usersState.length;
   } catch (e) {
     errorEl.textContent = e.message;
     errorEl.style.display = "block";
@@ -172,9 +177,8 @@ function renderMannschaftSuggestions() {
   dl.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
 }
 
-// Baut eine einzelne Nutzer-Zeile (Bearbeiten/Passwort/Löschen) — von
-// renderUsersList sowohl für die flache als auch die nach Gruppen sortierte
-// Darstellung verwendet.
+// Baut eine einzelne Nutzer-Zeile (Bearbeiten/Passwort/Löschen) — für beide
+// Art-Abschnitte der Nutzerliste identisch.
 function buildUserRow(u) {
   const row = document.createElement("div");
   row.className = "user-row";
@@ -194,20 +198,27 @@ function buildUserRow(u) {
   return row;
 }
 
-// Aufklappbarer Abschnitt für eine Gruppe innerhalb der Nutzerliste. Ein
-// Nutzer in mehreren Gruppen erscheint entsprechend in mehreren Abschnitten —
-// konsistent damit, dass auch die Mitglieder-Auswahl einer Gruppe unabhängig
-// von anderen Mitgliedschaften des Nutzers ist.
-function buildUserGroupSection(name, members) {
+// Aufklappbarer Abschnitt für eine Nutzer-Art (Personal/Spieler). `key` steuert
+// nur das Merken des Auf/Zu-Zustands über Neu-Renderings hinweg.
+function buildUserArtSection(name, key, members, filterAktiv) {
   const details = document.createElement("details");
   details.className = "collapsible user-group-section";
+  // Bei aktivem Filter aufklappen: sonst sieht man vom Filterergebnis nur zwei
+  // zugeklappte Zeilen und müsste jedes Mal nachklicken.
+  details.open = (filterAktiv && members.length > 0) || userArtOpen[key];
   const summary = document.createElement("summary");
   summary.textContent = `${name} (${members.length})`;
+  // Nur der echte Klick aufs Summary schreibt den gemerkten Zustand fort (Enter/
+  // Leertaste lösen ebenfalls click aus). Über das toggle-Event ginge es nicht:
+  // das feuert auch beim automatischen Aufklappen durch den Filter, und zwar
+  // asynchron nach dem Render — danach blieben beide Abschnitte für den Rest der
+  // Sitzung offen, auch nach dem Zurücksetzen des Filters.
+  summary.addEventListener("click", () => { userArtOpen[key] = !details.open; });
   details.appendChild(summary);
   if (members.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Keine Mitglieder.";
+    empty.textContent = filterAktiv ? "Kein Treffer für diesen Filter." : "Keine Nutzer.";
     details.appendChild(empty);
   } else {
     members.forEach((u) => details.appendChild(buildUserRow(u)));
@@ -215,27 +226,60 @@ function buildUserGroupSection(name, members) {
   return details;
 }
 
+// Trifft der Nutzer den aktuellen Filter? Textsuche über Anzeigename und
+// Nutzernamen, Gruppenfilter zusätzlich (UND-Verknüpfung).
+function matchesUsersFilter(u) {
+  const text = usersFilter.text.trim().toLowerCase();
+  if (text) {
+    const heuhaufen = `${u.displayName || ""} ${u.vorname || ""} ${u.nachname || ""} ${u.username || ""}`.toLowerCase();
+    if (!heuhaufen.includes(text)) return false;
+  }
+  const gid = usersFilter.groupId;
+  if (gid === "__ohne__") return (u.groupIds || []).length === 0;
+  if (gid) return (u.groupIds || []).includes(gid);
+  return true;
+}
+
+// Befüllt das Gruppen-Dropdown aus groupsState und hält eine bereits getroffene
+// Auswahl; eine zwischenzeitlich gelöschte Gruppe fällt auf "Alle Gruppen" zurück.
+function renderUsersFilterOptions() {
+  const sel = document.getElementById("users-filter-group");
+  if (!sel) return;
+  const gruppen = groupsState.slice().sort((a, b) => a.name.localeCompare(b.name, "de"));
+  sel.innerHTML = [
+    '<option value="">Alle Gruppen</option>',
+    ...gruppen.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`),
+    '<option value="__ohne__">Ohne Gruppe</option>'
+  ].join("");
+  if (usersFilter.groupId && usersFilter.groupId !== "__ohne__" &&
+      !groupsState.some((g) => g.id === usersFilter.groupId)) {
+    usersFilter.groupId = "";
+  }
+  sel.value = usersFilter.groupId;
+}
+
+// Zwei Abschnitte statt einem je Gruppe: Personal und Spieler sind die harte
+// Trennlinie im Datenmodell (ein Spieler ist nie Admin, sieht andere Tools, wird
+// von personalakte-overview & Co. anders behandelt). Nach Gruppen wurde vorher
+// gruppiert — dabei erschien jeder Nutzer in so vielen Abschnitten wie er
+// Gruppen hat, und wer keine hatte, landete in "Keine Gruppe". Gruppen sind
+// jetzt der Filter darüber.
 function renderUsersList(users) {
   const container = document.getElementById("users-list");
   container.innerHTML = "";
 
-  if (groupsState.length === 0) {
-    // Keine Gruppen angelegt — Gruppierung wäre nur ein einzelner "Ohne
-    // Gruppe"-Abschnitt und damit reine Mehrarbeit beim Aufklappen.
-    users.forEach((u) => container.appendChild(buildUserRow(u)));
-  } else {
-    const sortedGroups = groupsState.slice().sort((a, b) => a.name.localeCompare(b.name, "de"));
-    const groupedUsernames = new Set();
-    sortedGroups.forEach((g) => {
-      const members = users.filter((u) => (u.groupIds || []).includes(g.id));
-      members.forEach((u) => groupedUsernames.add(u.username));
-      container.appendChild(buildUserGroupSection(g.name, members));
-    });
-    const ohneGruppe = users.filter((u) => !groupedUsernames.has(u.username));
-    if (ohneGruppe.length > 0) {
-      container.appendChild(buildUserGroupSection("Keine Gruppe", ohneGruppe));
-    }
-  }
+  renderUsersFilterOptions();
+  const filterAktiv = !!(usersFilter.text.trim() || usersFilter.groupId);
+  const sichtbar = users.filter(matchesUsersFilter);
+  const spieler = sichtbar.filter((u) => u.art === "spieler");
+  // Kein art-Feld = personal: derselbe Lesepfad-Default wie im Worker (userArt()),
+  // die Altkonten von vor der Einführung des Feldes sind Personal.
+  const personal = sichtbar.filter((u) => u.art !== "spieler");
+  container.appendChild(buildUserArtSection("Personal", "personal", personal, filterAktiv));
+  container.appendChild(buildUserArtSection("Spieler", "spieler", spieler, filterAktiv));
+
+  const countEl = document.getElementById("users-count");
+  if (countEl) countEl.textContent = filterAktiv ? `${sichtbar.length} von ${users.length}` : String(users.length);
 
   container.querySelectorAll("[data-toggle-edit-user]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2556,6 +2600,25 @@ function setupAuthForms() {
   const backfillBtn = document.getElementById("btn-backfill-personalkosten");
   if (backfillBtn) backfillBtn.addEventListener("click", openBackfillFromPersonalkosten);
 
+  // Filter der Nutzerliste. Neu rendern statt Zeilen ein-/auszublenden, damit die
+  // Zähler in den Abschnitts-Überschriften zum Filterergebnis passen.
+  const filterText = document.getElementById("users-filter-text");
+  const filterGroup = document.getElementById("users-filter-group");
+  const filterReset = document.getElementById("users-filter-reset");
+  if (filterText) filterText.addEventListener("input", () => {
+    usersFilter.text = filterText.value;
+    renderUsersList(usersState);
+  });
+  if (filterGroup) filterGroup.addEventListener("change", () => {
+    usersFilter.groupId = filterGroup.value;
+    renderUsersList(usersState);
+  });
+  if (filterReset) filterReset.addEventListener("click", () => {
+    usersFilter = { text: "", groupId: "" };
+    if (filterText) filterText.value = "";
+    renderUsersList(usersState);
+  });
+
   // Trainerlizenz, Mannschaften, Admin-Rechte und "Vertrag benötigt" sind
   // Personal-Felder -- bei einem Spielerkonto ignoriert der Worker sie ohnehin
   // (art === "spieler" erzwingt isAdmin:false). Sie auszublenden macht sichtbar,
@@ -2764,10 +2827,10 @@ async function init() {
   renderFeedbackTab();
   await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
-    // Seriell statt Promise.all: renderUsersList gruppiert die Nutzerliste
-    // anhand von groupsState, das also schon geladen sein muss, bevor
-    // loadAndRenderUsers() rendert (sonst Race, je nachdem welcher der beiden
-    // Worker-Aufrufe zuerst zurückkommt).
+    // Seriell statt Promise.all: renderUsersList baut aus groupsState das
+    // Gruppen-Dropdown des Nutzer-Filters, das also schon geladen sein muss,
+    // bevor loadAndRenderUsers() rendert (sonst Race, je nachdem welcher der
+    // beiden Worker-Aufrufe zuerst zurückkommt).
     await loadAndRenderGroups();
     await loadAndRenderUsers();
     renderVisibilityList();

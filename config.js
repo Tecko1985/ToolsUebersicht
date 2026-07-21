@@ -317,7 +317,8 @@ const APP_CHANGELOG = [
           "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status, „Vertrag benötigt“ unabhängig von der Gruppe „Trainer“), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
           "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
           "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt.",
-          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint."
+          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint.",
+          "Die Nutzerliste hat genau zwei Abschnitte — „Personal“ und „Spieler“ — statt eines Abschnitts je Gruppe; jedes Konto steht damit an genau einer Stelle. Darüber filtern eine Namenssuche und ein Gruppen-Dropdown (mit „Ohne Gruppe“) die Liste, die Zähler zeigen dabei die Treffer."
         ]
       },
       {
