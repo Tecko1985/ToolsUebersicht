@@ -96,6 +96,10 @@
 //     (der "keine Gruppe = alle eingeloggten"-Default gilt für sie nicht). Provisioning: nur kadermanager.
 //   POST { action: "list-users" } (admin)                       -> Liste inkl. vorname/nachname/displayName/groupIds, ohne Passwort-Hashes
 //   POST { action: "reset-password", username } (admin)         -> löscht Hash, mustSetPassword=true
+//   POST { action: "change-password", oldPassword, newPassword } (eingeloggt) -> { token, username, ...identity }
+//     Aendert das EIGENE Passwort; der Nutzer kommt aus dem Token, nie aus dem Body. Setzt passwordSetAt neu und
+//     entwertet damit jede aeltere Session (siehe getVerifiedSession) — das zurueckgegebene Token muss der Client
+//     speichern, sonst sperrt sich der Aendernde selbst aus.
 //   POST { action: "update-user", username, vorname, nachname, isAdmin } (admin) -> ändert Vor-/Nachname und Admin-Status (letztem Admin kann Admin-Status nicht entzogen werden); zieht bei Namensänderung den Login-Nutzernamen automatisch mit um (Response-Feld usernameRename), außer die Zielkennung ist durch ein anderes Konto belegt
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
@@ -550,6 +554,8 @@ export default {
         return handleListUsers(request, env, authHeader, corsHeaders);
       case "reset-password":
         return handleResetPassword(request, body, env, authHeader, corsHeaders);
+      case "change-password":
+        return handleChangePassword(request, body, env, authHeader, corsHeaders);
       case "update-user":
         return handleUpdateUser(request, body, env, authHeader, corsHeaders);
       case "delete-user":
@@ -757,6 +763,61 @@ async function handleSetPassword(body, env, authHeader, corsHeaders) {
   user.mustSetPassword = false;
   user.passwordSetAt = new Date().toISOString();
   user.lastLoginAt = user.passwordSetAt;
+
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
+  const identity = deriveIdentity(user, usersDoc);
+  return json({ token, username: user.username, ...identity }, 200, corsHeaders);
+}
+
+// Eigenes Passwort aendern. Dritter Passwort-Weg neben set-password (Erstvergabe,
+// bewusst ohne Login) und reset-password (Admin, ohne Kenntnis des alten) -- dieser
+// hier braucht Token UND das bisherige Passwort.
+//
+// Der zu aendernde Nutzer kommt IMMER aus dem Token, nie aus dem Body: sonst koennte
+// jeder Eingeloggte mit einem fremden Nutzernamen im Body ein anderes Konto
+// uebernehmen.
+//
+// Nebenwirkung, die der Client kennen muss: das neue passwordSetAt entwertet in
+// getVerifiedSession jedes Token mit aelterem iat -- also alle Sessions auf allen
+// Geraeten, auch die gerade benutzte. Deshalb wird hier ein frisches Token
+// ausgestellt (nach dem Schreiben, damit sein iat nicht vor passwordSetAt liegt).
+async function handleChangePassword(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const oldPassword = String((body && body.oldPassword) || "");
+  const newPassword = String((body && body.newPassword) || "");
+
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, session.username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  // Altes Passwort VOR jeder Pruefung des neuen: wer nur das Token hat (fremdes
+  // Geraet, geklauter localStorage), soll gar kein Feedback bekommen -- und die
+  // Bremse gegen Durchprobieren greift so immer.
+  const ok = await verifyPassword(oldPassword, user.salt, user.iterations, user.passwordHash);
+  if (!ok) {
+    await new Promise((resolve) => setTimeout(resolve, 800)); // Bremse wie in handleLogin
+    return json({ error: "Das bisherige Passwort stimmt nicht." }, 403, corsHeaders);
+  }
+
+  const pwError = validatePasswordStrength(newPassword);
+  if (pwError) return json({ error: pwError }, 400, corsHeaders);
+  if (oldPassword === newPassword) {
+    return json({ error: "Das neue Passwort muss sich vom bisherigen unterscheiden." }, 400, corsHeaders);
+  }
+
+  const { hash, salt, iterations } = await hashNewPassword(newPassword);
+  user.passwordHash = hash;
+  user.salt = salt;
+  user.iterations = iterations;
+  user.passwordSetAt = new Date().toISOString();
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);

@@ -154,6 +154,17 @@ async function bootstrapAdmin(username, password) {
   bootstrapAvailable = false;
 }
 
+// Eigenes Passwort aendern. Das zurueckgegebene Token MUSS uebernommen werden: der
+// Wechsel entwertet serverseitig jede aeltere Session (auch die gerade laufende, siehe
+// handleChangePassword im Worker) -- mit dem alten Token im localStorage waere man
+// beim naechsten Klick abgemeldet.
+async function changePassword(oldPassword, newPassword) {
+  const data = await callWorker("change-password", { oldPassword, newPassword });
+  currentToken = data.token;
+  currentUser = buildCurrentUser({ ...currentUser, ...data });
+  storeToken(currentToken);
+}
+
 function logout() {
   currentToken = null;
   currentUser = null;
@@ -161,6 +172,7 @@ function logout() {
   pendingFirstLoginUsername = null;
   pendingLoginUsername = null;
   storeToken(null);
+  resetPasswortForm(); // sonst stuende das Passwort noch im Feld, wenn sich am selben Geraet jemand anders anmeldet
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
@@ -2442,6 +2454,78 @@ function setupViewAsControl() {
   });
 }
 
+// Maske "Passwort ändern" in der Karte "Mein Konto". Zugeklappt bis zum Klick, damit
+// die Karte in erster Linie eine Auskunft bleibt und nicht wie ein Formular wirkt.
+// Feste Beschriftung, damit das Zuruecksetzen nach dem Speichern nicht versehentlich
+// den Zwischenstand ("Wird geändert …") festschreibt.
+const PASSWORT_BTN_TEXT = "Passwort ändern";
+let passwortWechselLaeuft = false;
+
+function resetPasswortForm() {
+  const form = document.getElementById("passwort-form");
+  if (!form) return;
+  form.reset();
+  form.style.display = "none";
+  document.getElementById("btn-passwort-aendern").style.display = "";
+  document.getElementById("passwort-error").style.display = "none";
+  document.getElementById("passwort-success").style.display = "none";
+}
+
+function setupPasswortForm() {
+  const oeffnenBtn = document.getElementById("btn-passwort-aendern");
+  const form = document.getElementById("passwort-form");
+  const errorEl = document.getElementById("passwort-error");
+  const successEl = document.getElementById("passwort-success");
+  const speichernBtn = document.getElementById("btn-passwort-speichern");
+
+  oeffnenBtn.addEventListener("click", () => {
+    resetPasswortForm();
+    oeffnenBtn.style.display = "none";
+    form.style.display = "block";
+    document.getElementById("passwort-alt").focus();
+  });
+  document.getElementById("btn-passwort-abbrechen").addEventListener("click", resetPasswortForm);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.style.display = "none";
+    successEl.style.display = "none";
+    const alt = document.getElementById("passwort-alt").value;
+    const neu = document.getElementById("passwort-neu").value;
+
+    // Regeln schon hier pruefen (identisch im Worker), spart einen Roundtrip.
+    const pwError = validatePasswordStrength(neu);
+    if (pwError) {
+      errorEl.textContent = pwError;
+      errorEl.style.display = "block";
+      return;
+    }
+
+    // Das Hashen laeuft mit 100.000 PBKDF2-Iterationen und braucht spuerbar Zeit --
+    // ohne Sperre loest ein zweiter Absendevorgang einen zweiten Wechsel aus, dessen
+    // erste Antwort dann ein bereits entwertetes Token in den localStorage schreibt.
+    // Das Flag statt nur btn.disabled: der Button sperrt zwar den Klick, aber nicht
+    // jeden anderen Weg, ein submit-Event auszuloesen.
+    if (passwortWechselLaeuft) return;
+    passwortWechselLaeuft = true;
+    speichernBtn.disabled = true;
+    speichernBtn.textContent = "Wird geändert …";
+    try {
+      await changePassword(alt, neu);
+      resetPasswortForm();
+      successEl.textContent = "Passwort geändert. Auf anderen Geräten musst du dich neu anmelden.";
+      successEl.style.display = "block";
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    } finally {
+      passwortWechselLaeuft = false;
+      speichernBtn.disabled = false;
+      speichernBtn.textContent = PASSWORT_BTN_TEXT;
+    }
+  });
+}
+
 // Karte "Mein Konto" im Einstellungen-Tab. Fuer Nutzer ohne Admin-Rechte ist das der
 // einzige Inhalt des Tabs -- alles andere darin ist admin-only.
 function renderKontoKarte() {
@@ -2643,6 +2727,8 @@ function setupAuthForms() {
   document.getElementById("btn-logout").addEventListener("click", () => {
     logout();
   });
+
+  setupPasswortForm();
 
   const backfillBtn = document.getElementById("btn-backfill-personalkosten");
   if (backfillBtn) backfillBtn.addEventListener("click", openBackfillFromPersonalkosten);
