@@ -273,105 +273,16 @@ const TOOLS = [
   }
 ];
 
-// Neuigkeiten über den Kacheln. SEIT v1.2 werden diese normalerweise vom Admin im
-// Einstellungen-Tab gepflegt und serverseitig in Nextcloud (news-Key der Config)
-// gespeichert — dieses Array ist nur noch der Erst-Seed (solange der Admin noch nie
-// gespeichert hat) und der Fallback, falls der Worker nicht erreichbar ist. Sortierung
-// erfolgt beim Rendern nach date (neueste zuerst) — Reihenfolge hier egal.
+// Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
+// gepflegt und serverseitig in Nextcloud (news-Key der Config) gespeichert; renderNews()
+// läuft erst, wenn die Server-Antwort da ist. Dieses Array ist NUR noch der Fallback für
+// den Erstbetrieb (Admin hat noch nie gespeichert) bzw. einen nicht erreichbaren Worker.
+// **Bewusst leer** — vorher standen hier 13 alte Meldungen aus dem Juli 2026, die beim
+// Laden jedes Mal kurz als Karussell aufblitzten, bevor die echte Server-News sie ersetzte.
+// Wer hier wieder etwas einträgt, holt sich dieses Aufblitzen zurück.
 // Felder: date "YYYY-MM-DD" | type "neu"|"update"|"fix"|"hinweis" | title | text
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
-const NEWS = [
-  {
-    date: "2026-07-09",
-    type: "update",
-    title: "Trainerkodex jetzt Teil von Trainerdaten",
-    text: "Kodex lesen und mit Unterschrift bestätigen läuft nicht mehr über eine eigene Kachel, sondern direkt in Trainerdaten — dort zeigt ein Ampel-Badge auf einen Blick, ob Stammdaten, Lizenz, Führerschein, Führungszeugnis und Kodex vollständig und aktuell sind.",
-    toolId: "trainerdaten",
-  },
-  {
-    date: "2026-07-08",
-    type: "neu",
-    title: "Vereinswiki ist online",
-    text: "Neuer Wissens-Assistent: allgemeine Vereinsunterlagen (Satzung, Ordnungen, Konzepte) hinterlegen und in normaler Sprache Fragen dazu stellen – eine KI antwortet auf Basis der Dokumente.",
-    toolId: "vereinswiki",
-  },
-  {
-    date: "2026-07-08",
-    type: "neu",
-    title: "Personalakte ist online",
-    text: "Neue Übersicht für die Geschäftsstelle: Stammdaten, Trainerkodex-/Trainerdaten-Status, Checkliste, Personalkosten, Kader und Führerschein je Trainer auf einen Blick, inkl. Archivieren/Reaktivieren bei Vereinsaustritt.",
-    toolId: "personalakte",
-  },
-  {
-    date: "2026-07-07",
-    type: "neu",
-    title: "Spiele ist online",
-    text: "Neue Mini-Spiele-Sammlung fürs Team: den Anfang macht Auto-Quartett als digitales Multiplayer-Kartenspiel, ideal für die Busfahrt zur Auswärtsfahrt.",
-    toolId: "spiele",
-  },
-  {
-    date: "2026-07-06",
-    type: "neu",
-    title: "Fahrtenbuch ist online",
-    text: "Die Fahrer-Checkliste für Vereinsfahrzeuge gibt es jetzt digital: Fahrt erfassen, Checklisten abhaken, Mängel mit Foto dokumentieren, unterschreiben und die Führerschein-Kopie je Saison hinterlegen.",
-    toolId: "fahrtenbuch",
-  },
-  {
-    date: "2026-07-06",
-    type: "neu",
-    title: "Kleiderbestellung ist online",
-    text: "Trainer:innen können jetzt Vereinskleidung/-ausrüstung mit ihrer Größe direkt online bestellen.",
-    toolId: "kleiderbestellung",
-  },
-  {
-    date: "2026-07-06",
-    type: "update",
-    title: "Kadermanager stark erweitert",
-    text: "Neu: Rollen je Spieler mit granularen Rechten, Aufgaben/Aufstellung/Spielberichte je Termin, Urlaub/Krank, Kasse-Kategorien mit Stornos und eine Dateiablage je Mannschaft.",
-    toolId: "kadermanager",
-  },
-  {
-    date: "2026-07-06",
-    type: "neu",
-    title: "Digitaler Stempel ist online",
-    text: "PDF-Dokumente digital stempeln — jede Stempelung wird automatisch mit Nutzer und Zeitpunkt archiviert.",
-    toolId: "digitaler-stempel",
-  },
-  {
-    date: "2026-07-05",
-    type: "neu",
-    title: "Busplan-Tool ist online",
-    text: "Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften löst die bisherige Excel-Liste ab.",
-    toolId: "busplan",
-  },
-  {
-    date: "2026-07-03",
-    type: "neu",
-    title: "Vereinskalender ist online",
-    text: "Die als Nächstes anstehenden Vereinstermine (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) jetzt auf einen Blick — Pflege durch die Geschäftsstelle.",
-    toolId: "vereinskalender",
-  },
-  {
-    date: "2026-07-03",
-    type: "neu",
-    title: "Neuigkeiten-Bereich",
-    text: "Diese Übersicht hat jetzt oben einen Bereich für Neuigkeiten rund um die Vereins-Tools.",
-  },
-  {
-    date: "2026-07-03",
-    type: "neu",
-    title: "Personalkosten-Tool ist online",
-    text: "Aufwandsentschädigungen der Mannschaften lassen sich jetzt planen und auswerten.",
-    toolId: "personalkosten",
-  },
-  {
-    date: "2026-07-03",
-    type: "update",
-    title: "Platzbelegung: Hallenbelegung ergänzt",
-    text: "Neben den Trainingsplätzen kann jetzt auch die Hallenbelegung geplant werden.",
-    toolId: "platzbelegung",
-  },
-];
+const NEWS = [];
 
 const APP_CHANGELOG = [
   {

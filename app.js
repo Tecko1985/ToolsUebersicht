@@ -2740,7 +2740,6 @@ async function init() {
   document.getElementById("version-badge").textContent = "v" + APP_VERSION;
   document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
-  renderNews();
   setupTabs();
   setupAuthForms();
   setupWhatsappLink();
@@ -2754,6 +2753,10 @@ async function init() {
   visibilityState = (data && data.tools) || defaultVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
+  // ERST hier rendern, nicht schon oben im synchronen Teil: der News-Bereich ist die
+  // einzige Stelle, deren Inhalt komplett vom Server kommt. Ein Render vor dem Fetch
+  // zeigte das statische Seed aus config.js und ersetzte es danach — sichtbar als
+  // kurz aufblitzendes Karussell alter Meldungen bei jedem Seitenaufruf.
   renderNews();
 
   renderAdminPanels();
