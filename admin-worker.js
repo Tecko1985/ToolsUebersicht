@@ -198,6 +198,11 @@
 //     bleibt unangetastet. Letzter Admin kann nicht archiviert werden.
 //   POST { action: "reactivate-trainer", username } (Personalakte-Sichtrecht) -> { ok:true, username }
 //     Hebt die Login-Sperre wieder auf, ergänzt den Snapshot in personalakte.json um reaktiviertAm/reaktiviertVon.
+//   POST { action: "get-materialcontainer-code" } + Authorization: Bearer -> { code, hinweis, geaendertAm, geaendertVon }
+//     Zahlencode des Schlosses am Materialcontainer. Eingeloggtes Personal; Spielerkonten bekommen 403.
+//     Bewusst eine eigene schmale Aktion (nicht Teil von "me" und nicht im oeffentlichen GET) -- der Code oeffnet ein echtes Schloss.
+//   POST { action: "set-materialcontainer-code", code, hinweis? } (Admin) -> { ok:true, code, hinweis, geaendertAm, geaendertVon }
+//     Legt ihn in materialcontainer{} von sichtbarkeit.json ab (read-modify-write). Leerer code = "keiner hinterlegt".
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev, me } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
 //     me enthält dasselbe wie die Aktion "me" inkl. canEdit für diese App — der Client braucht dafür keinen zweiten Request.
 //     Kostet den Worker keinen zusätzlichen Nextcloud-Read (nutzer.json + sichtbarkeit.json sind hier ohnehin gelesen).
@@ -645,6 +650,10 @@ export default {
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
       case "save-news":
         return handleSaveNews(request, body, env, authHeader, corsHeaders);
+      case "get-materialcontainer-code":
+        return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
+      case "set-materialcontainer-code":
+        return handleSetMaterialcontainerCode(request, body, env, authHeader, corsHeaders);
       case "submit-feedback":
         return handleSubmitFeedback(request, body, env, authHeader, corsHeaders);
       case "list-feedback":
@@ -932,7 +941,11 @@ async function buildMeResult(session, env, authHeader, app, cfgPrefetch) {
     // list-groups ist Admin-only. Trainerdaten blendet daran Bankverbindung/
     // Nebentätigkeit/Unterschrift/Dokumente aus (Geschäftsführung o.ä. hinterlegt dort
     // nur Kontaktdaten). Ein bool über die EIGENE Person -- keine fremden Daten.
-    vertragspflichtig: isVertragspflichtig(usersDoc, session.username)
+    vertragspflichtig: isVertragspflichtig(usersDoc, session.username),
+    // Eigene Konto-Art. Additiv; der Client blendet daran Dinge aus, die für
+    // Spielerkonten nicht gelten (z.B. den Materialcontainer-Code im Header).
+    // Kommt aus dem echten Datensatz, folgt also NICHT einer Admin-Testansicht.
+    art: session.art
   };
   if (app) {
     result.canEdit = await resolveEditPermission(app, session, env, authHeader, cfgPrefetch);
@@ -2288,6 +2301,62 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
 }
 
 const NEWS_VALID_TYPES = ["neu", "update", "fix", "hinweis"];
+
+// ---------- Aktionen: Materialcontainer-Code ----------
+
+// Der Zahlencode des Schlosses am Materialcontainer. Bewusst eine EIGENE, schmale
+// Aktion statt eines Feldes in "me" oder im öffentlichen Config-GET: der Code
+// öffnet ein echtes Schloss vor Ort, er soll nur dort über die Leitung gehen, wo
+// ihn jemand ausdrücklich sehen will (siehe auch die Trennung bei
+// dav-restricted-*). Aus demselben Grund steht er NICHT im GET, den jeder
+// unangemeldete Besucher der Landingpage abruft.
+//
+// Sichtbar für eingeloggtes Personal, NICHT für Spielerkonten: "keine Gruppe =
+// alle eingeloggten" gilt für Spieler nirgends in diesem Worker, und bei ~200
+// Spielerkonten wäre ein Containercode für alle das Gegenteil eines Schlosses.
+async function handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (session.art === USER_ART_SPIELER) {
+    return json({ error: "Kein Zugriff auf den Materialcontainer-Code" }, 403, corsHeaders);
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const mc = (config.materialcontainer && typeof config.materialcontainer === "object")
+    ? config.materialcontainer : {};
+  return json({
+    code: typeof mc.code === "string" ? mc.code : "",
+    hinweis: typeof mc.hinweis === "string" ? mc.hinweis : "",
+    geaendertAm: mc.geaendertAm || null,
+    geaendertVon: mc.geaendertVon || null
+  }, 200, corsHeaders);
+}
+
+// Admin setzt den Code (einmal im Monat von Hand). Read-modify-write wie
+// handleSaveVisibility, damit tools/news nicht verloren gehen. Ein leerer Code
+// ist erlaubt und heißt "noch keiner hinterlegt" -- so lässt sich der Eintrag
+// auch wieder leeren, ohne dass ein alter Code stehen bleibt.
+async function handleSetMaterialcontainerCode(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const code = String(body.code == null ? "" : body.code).trim().slice(0, 60);
+  const hinweis = String(body.hinweis == null ? "" : body.hinweis).trim().slice(0, 200);
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  config.version = config.version || 1;
+  config.materialcontainer = {
+    code,
+    hinweis,
+    geaendertAm: new Date().toISOString(),
+    geaendertVon: session.username
+  };
+  try {
+    await writeJson(env.NEXTCLOUD_URL, authHeader, config);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true, ...config.materialcontainer }, 200, corsHeaders);
+}
 
 // Speichert die Neuigkeiten (Array) im news-Key von sichtbarkeit.json. Admin-only,
 // read-modify-write (erhält tools). Jede Meldung wird serverseitig validiert/normiert:

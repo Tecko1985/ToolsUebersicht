@@ -378,6 +378,14 @@ const APP_CHANGELOG = [
         ]
       },
       {
+        title: "Materialcontainer-Code",
+        items: [
+          "Knopf „🔐 Materialcontainercode“ oben im Kopfbereich: ein Klick zeigt den aktuellen Code des Zahlenschlosses am Materialcontainer in einem kleinen Fenster, groß und gut ablesbar. Optional steht ein kurzer Hinweis darunter (z. B. wie das Schloss zu schließen ist).",
+          "Der Code wird erst beim Öffnen des Fensters geladen und nirgends gespeichert. Sichtbar für alle angemeldeten Mitarbeitenden, nicht für Spielerkonten.",
+          "Gepflegt wird er von Admins unter „Einstellungen → Materialcontainer-Code“ — dort steht auch, wann er zuletzt und von wem geändert wurde."
+        ]
+      },
+      {
         title: "Feedback & Hilfe",
         items: [
           "Ganz oben im Tab „Feedback & Hilfe“ lässt sich direkt eine Frage ans Toolbox Wiki stellen, bevor man Feedback gibt oder Hilfe anfragt."

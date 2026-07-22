@@ -37,7 +37,13 @@ function buildCurrentUser(data) {
     // dessen Deploy kommen sie schlicht nicht mit -- die Karte "Mein Konto" laesst
     // die betroffenen Zeilen dann weg, statt "undefined" anzuzeigen.
     groupNames: Array.isArray(data.groupNames) ? data.groupNames : [],
-    passwordSetAt: data.passwordSetAt || null
+    passwordSetAt: data.passwordSetAt || null,
+    // Konto-Art ("personal"/"spieler"), nur aus "me". login/set-password liefern sie
+    // nicht mit -- direkt nach dem Anmelde-Klick steht hier also kurz null, bis
+    // loadOwnProfile() nachzieht. Fuer die Anzeige reicht das: der einzige Ort, an
+    // dem die Art zaehlt (Materialcontainer-Knopf), ist serverseitig ohnehin
+    // gegated, und ein Spielerkonto sieht ihn nach dem Nachladen nicht mehr.
+    art: data.art || null
   };
 }
 
@@ -2355,6 +2361,18 @@ function setupTabs() {
     loadAndRenderAdminStats();
   });
 
+  document.getElementById("btn-materialcontainer").addEventListener("click", oeffneMaterialcontainer);
+  document.getElementById("btn-materialcontainer-close").addEventListener("click", schliesseMaterialcontainer);
+  // Klick auf den abgedunkelten Hintergrund schliesst ebenfalls -- aber nur dort,
+  // nicht bei einem Klick INNERHALB des Fensters (z.B. beim Markieren des Codes).
+  document.getElementById("materialcontainer-overlay").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) schliesseMaterialcontainer();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") schliesseMaterialcontainer();
+  });
+  document.getElementById("btn-materialcontainer-save").addEventListener("click", speichereMaterialcontainerCode);
+
   const jumpToAdminPanel = (panelId) => {
     activateTab("admin");
     const panel = document.getElementById(panelId);
@@ -2646,7 +2664,12 @@ function renderAdminPanels() {
   document.getElementById("admin-visibility-panel").style.display = "none";
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
+  document.getElementById("admin-materialcontainer-panel").style.display = "none";
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
+  // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
+  // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
+  document.getElementById("btn-materialcontainer").style.display =
+    (currentUser && currentUser.art !== "spieler") ? "inline-flex" : "none";
 
   if (currentUser) {
     renderKontoKarte();
@@ -2657,6 +2680,7 @@ function renderAdminPanels() {
       document.getElementById("admin-visibility-panel").style.display = "block";
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
+      document.getElementById("admin-materialcontainer-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
     return;
@@ -2678,6 +2702,91 @@ function renderAdminPanels() {
   document.getElementById("admin-login-gate").style.display = "block";
 }
 
+// ---------- Materialcontainer-Code ----------
+
+// Der Code wird bewusst erst beim Oeffnen des Fensters geholt und nirgends
+// zwischengespeichert: er gehoert zu einem echten Schloss und soll nur dann ueber
+// die Leitung gehen, wenn ihn jemand ausdruecklich sehen will.
+async function oeffneMaterialcontainer() {
+  const statusEl = document.getElementById("materialcontainer-status");
+  const codeEl = document.getElementById("materialcontainer-code");
+  const hinweisEl = document.getElementById("materialcontainer-hinweis");
+  const metaEl = document.getElementById("materialcontainer-meta");
+
+  document.getElementById("materialcontainer-overlay").style.display = "flex";
+  statusEl.style.display = "";
+  statusEl.style.color = "";
+  statusEl.textContent = "Code wird geladen …";
+  codeEl.style.display = "none";
+  hinweisEl.style.display = "none";
+  metaEl.style.display = "none";
+  document.getElementById("btn-materialcontainer-close").focus();
+
+  try {
+    const data = await callWorker("get-materialcontainer-code", {});
+    if (!data.code) {
+      statusEl.textContent = "Es ist noch kein Code hinterlegt. Ein Administrator trägt ihn unter „Einstellungen → Materialcontainer-Code“ ein.";
+      return;
+    }
+    statusEl.style.display = "none";
+    codeEl.textContent = data.code;
+    codeEl.style.display = "";
+    if (data.hinweis) {
+      hinweisEl.textContent = data.hinweis;
+      hinweisEl.style.display = "";
+    }
+    const datum = fmtDatumKurz(data.geaendertAm);
+    if (datum) {
+      metaEl.textContent = "Zuletzt geändert am " + datum;
+      metaEl.style.display = "";
+    }
+  } catch (e) {
+    statusEl.style.color = "#c0392b";
+    statusEl.textContent = e.message;
+  }
+}
+
+function schliesseMaterialcontainer() {
+  document.getElementById("materialcontainer-overlay").style.display = "none";
+}
+
+function zeigeMaterialcontainerAdminMeta(data) {
+  const datum = fmtDatumKurz(data && data.geaendertAm);
+  document.getElementById("materialcontainer-admin-meta").textContent = datum
+    ? "Zuletzt geändert am " + datum + ((data && data.geaendertVon) ? " von " + data.geaendertVon : "")
+    : "Noch kein Code hinterlegt.";
+}
+
+// Den hinterlegten Code echt ins Feld schreiben, nicht nur als Platzhalter
+// andeuten: der Admin soll sehen, was gerade gilt, bevor er ihn ersetzt.
+async function ladeMaterialcontainerInsAdminFeld() {
+  try {
+    const data = await callWorker("get-materialcontainer-code", {});
+    document.getElementById("materialcontainer-code-input").value = data.code || "";
+    document.getElementById("materialcontainer-hinweis-input").value = data.hinweis || "";
+    zeigeMaterialcontainerAdminMeta(data);
+  } catch (_) { /* best effort -- das Panel bleibt bedienbar, Speichern geht trotzdem */ }
+}
+
+async function speichereMaterialcontainerCode() {
+  const errEl = document.getElementById("materialcontainer-admin-error");
+  const okEl = document.getElementById("materialcontainer-admin-success");
+  errEl.style.display = "none";
+  okEl.style.display = "none";
+  try {
+    const data = await callWorker("set-materialcontainer-code", {
+      code: document.getElementById("materialcontainer-code-input").value,
+      hinweis: document.getElementById("materialcontainer-hinweis-input").value
+    });
+    zeigeMaterialcontainerAdminMeta(data);
+    okEl.style.display = "block";
+    setTimeout(() => { okEl.style.display = "none"; }, 3000);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = "block";
+  }
+}
+
 async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
@@ -2692,6 +2801,7 @@ async function afterAuthChange() {
     renderVisibilityList();
     renderNewsAdmin();
     await loadAndRenderFeedback();
+    await ladeMaterialcontainerInsAdminFeld();
   }
   await loadDirectoryGroupsIfNeeded();
 }
@@ -3053,6 +3163,7 @@ async function init() {
     renderVisibilityList();
     renderNewsAdmin();
     await loadAndRenderFeedback();
+    await ladeMaterialcontainerInsAdminFeld();
   }
   await loadDirectoryGroupsIfNeeded();
 

@@ -98,6 +98,85 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
 }
 .header-admin-btn:hover { opacity: 0.9; }
 
+/* Materialcontainer-Code: sitzt links neben dem Titel. margin-right:auto schiebt
+   ihn dorthin -- der Header ist space-between, ohne das Auto-Margin landete der
+   Knopf mittig unter dem (absolut positionierten) Admin-Dashboard-Button. Ist er
+   ausgeblendet, greift wieder das normale space-between von Titel und
+   Kopf-Leiste rechts; das Layout haengt also an keinem versteckten Element. */
+.header-code-btn {
+  margin-right: auto;
+  margin-left: 10px;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  padding: 7px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-code-btn:hover { background: rgba(255, 255, 255, 0.24); }
+
+/* Kleines Fenster fuer den Code. Bewusst schlicht gehalten: es zeigt genau einen
+   Wert und wird sofort wieder geschlossen. */
+.code-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+.code-dialog {
+  background: var(--white);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  padding: 22px 24px 24px;
+  width: 100%;
+  max-width: 420px;
+}
+.code-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.code-dialog-head h2 { font-size: 18px; color: var(--blue); margin: 0; }
+.code-dialog-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.code-dialog-close:hover { color: var(--text); }
+/* Gross und in Festbreite: der Code wird meist am Container abgetippt, oft vom
+   Handy abgelesen. */
+.code-anzeige {
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-align: center;
+  color: var(--blue);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 12px;
+  margin: 6px 0 12px;
+  user-select: all;
+  word-break: break-all;
+}
+
 nav {
   display: flex;
   gap: 4px;
