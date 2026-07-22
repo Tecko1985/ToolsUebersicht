@@ -198,7 +198,9 @@
 //     bleibt unangetastet. Letzter Admin kann nicht archiviert werden.
 //   POST { action: "reactivate-trainer", username } (Personalakte-Sichtrecht) -> { ok:true, username }
 //     Hebt die Login-Sperre wieder auf, ergänzt den Snapshot in personalakte.json um reaktiviertAm/reaktiviertVon.
-//   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
+//   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev, me } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
+//     me enthält dasselbe wie die Aktion "me" inkl. canEdit für diese App — der Client braucht dafür keinen zweiten Request.
+//     Kostet den Worker keinen zusätzlichen Nextcloud-Read (nutzer.json + sichtbarkeit.json sind hier ohnehin gelesen).
 //     Für Apps in AUTO_PRUNE_APPS (aktuell: fotoauftraege) werden dabei abgelaufene Listeneinträge entfernt und die Datei
 //     zurückgeschrieben — ein dav-load kann also schreiben und ein neues rev liefern. Zugehörige Nextcloud-Dateien bleiben unberührt.
 //   POST { action: "dav-save", app, data, rev? } + Authorization: Bearer -> { ok:true, rev } (schreibt die App-Datendatei; mit rev nur, wenn die Datei
@@ -888,6 +890,18 @@ async function handleChangePassword(request, body, env, authHeader, corsHeaders)
 async function handleMe(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = (body && body.app) ? String(body.app) : null;
+  return json(await buildMeResult(session, env, authHeader, app), 200, corsHeaders);
+}
+
+// Baut die Antwort der Aktion "me". Ausgelagert, weil handleDavLoad dieselben
+// Angaben mitliefert: dort sind nutzer.json (steckt als usersDoc schon in der
+// Session) und sichtbarkeit.json für die Rechteprüfung ohnehin gelesen, die
+// Felder kosten also KEINEN zusätzlichen Nextcloud-Read -- der Client spart
+// dafür einen kompletten HTTP-Roundtrip beim Öffnen der App.
+// app (optional): nur damit ist canEdit im Ergebnis; ohne App-Bezug gibt es
+// kein Bearbeiten-Recht zu beantworten.
+async function buildMeResult(session, env, authHeader, app, cfgPrefetch) {
   const usersDoc = session.usersDoc;
   const user = getOwn(usersDoc.users, session.username);
   const result = {
@@ -920,10 +934,10 @@ async function handleMe(request, body, env, authHeader, corsHeaders) {
     // nur Kontaktdaten). Ein bool über die EIGENE Person -- keine fremden Daten.
     vertragspflichtig: isVertragspflichtig(usersDoc, session.username)
   };
-  if (body && body.app) {
-    result.canEdit = await resolveEditPermission(String(body.app), session, env, authHeader);
+  if (app) {
+    result.canEdit = await resolveEditPermission(app, session, env, authHeader, cfgPrefetch);
   }
-  return json(result, 200, corsHeaders);
+  return result;
 }
 
 // Admin-Testansicht umschalten/zurücksetzen — siehe API-Dokumentation oben.
@@ -3052,9 +3066,13 @@ async function handleBelegEingangNotify(body, env, corsHeaders) {
 // Eine App darf ihre Daten lesen/schreiben, wenn der eingeloggte Nutzer das
 // zugehörige Tool in der Übersicht sehen darf. Repliziert die Client-Logik
 // isVisibleToUser (app.js) serverseitig — der Client ist umgehbar.
-async function userMayAccessTool(app, session, env, authHeader) {
+// cfgPrefetch (optional): eine bereits laufende Leseanfrage auf sichtbarkeit.json,
+// die der Aufrufer parallel zum nutzer.json-Read gestartet hat (siehe
+// prefetchJson / getVerifiedSession). Fehlt sie, wird wie bisher hier gelesen —
+// dann meist aus dem jsonCache, weil derselbe Request die Datei schon brauchte.
+async function userMayAccessTool(app, session, env, authHeader, cfgPrefetch) {
   if (session.isAdmin) return true; // Admin darf immer (spart Nextcloud-Reads)
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await (cfgPrefetch || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }));
   const entry = getOwn(config.tools || {}, app);
   if (!entry || entry.visible === false) return false; // versteckt/unkonfiguriert -> nur Admin
   if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
@@ -3077,9 +3095,9 @@ async function userMayAccessTool(app, session, env, authHeader) {
 // Sichtbarkeit eines breiter freigegebenen Tools (z.B. "Alle eingeloggten
 // Nutzer") nicht ungewollt auf bestimmte Gruppen verengt. Ersetzt die früher
 // pro App hartkodierten EDITOR_GROUP_ID-Konstanten.
-async function resolveEditPermission(app, session, env, authHeader) {
+async function resolveEditPermission(app, session, env, authHeader, cfgPrefetch) {
   if (session.isAdmin) return true;
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const config = await (cfgPrefetch || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }));
   const entry = getOwn(config.tools || {}, app);
   if (!entry) return false;
   const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
@@ -3104,14 +3122,26 @@ async function mayViewPersonalakte(session, env, authHeader) {
 }
 
 async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // sichtbarkeit.json (Tool-Rechte) hängt nicht an nutzer.json (Session) — beide
+  // Reads parallel starten, statt den zweiten hinter dem ersten herlaufen zu
+  // lassen. Spart bei kaltem jsonCache einen kompletten Nextcloud-Roundtrip.
+  let cfgPrefetch = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    // Admins überspringen die Rechteprüfung per Kurzschluss — für sie wäre der
+    // Prefetch ein Read, den niemand liest. Bei aktiver Testansicht steht im
+    // Token weiterhin isAdmin; dann entfällt hier nur die Beschleunigung und
+    // userMayAccessTool liest die Datei wie bisher selbst.
+    if (!payload.isAdmin) {
+      cfgPrefetch = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    }
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const app = String(body.app || "");
   const url = getOwn(DAV_APPS, app);
   if (!url) return json({ error: "Unbekannte App" }, 400, corsHeaders);
 
-  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+  if (!(await userMayAccessTool(app, session, env, authHeader, cfgPrefetch))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
 
@@ -3149,7 +3179,7 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
 
   const ownerCfg = getOwn(OWNER_FILTERED_APPS, app);
   if (ownerCfg && data && Array.isArray(data[ownerCfg.listField]) &&
-      !(await resolveEditPermission(app, session, env, authHeader))) {
+      !(await resolveEditPermission(app, session, env, authHeader, cfgPrefetch))) {
     // Neues Objekt bauen statt data[listField] in-place zu setzen: readJsonWithRev
     // liefert bei Cache-Hit (jsonCache, 5s TTL) eine Referenz auf das gecachte
     // Objekt zurück — eine In-Place-Mutation würde den Cache für alle anderen
@@ -3159,7 +3189,7 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
   }
   const teamCfg = getOwn(TEAM_FILTERED_APPS, app);
   if (teamCfg && data && Array.isArray(data[teamCfg.listField]) &&
-      !(await resolveEditPermission(app, session, env, authHeader))) {
+      !(await resolveEditPermission(app, session, env, authHeader, cfgPrefetch))) {
     const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
     const user = getOwn(usersDoc.users, session.username);
     const meineMannschaften = new Set(normalizeMannschaften(user && user.mannschaften));
@@ -3174,11 +3204,25 @@ async function handleDavLoad(request, body, env, authHeader, corsHeaders) {
   if (app === "kadermanager" && session.art === USER_ART_SPIELER && data && typeof data === "object") {
     data = kmSpielerSicht(data, session.username);
   }
-  return json({ data, rev }, 200, corsHeaders);
+  // me additiv mitliefern: kostet hier keinen einzigen zusätzlichen
+  // Nextcloud-Read (usersDoc steckt in der Session, sichtbarkeit.json wurde für
+  // die Rechteprüfung oben schon gelesen), erspart dem Client aber den separaten
+  // "me"-Request beim Start. Clients, die das Feld nicht kennen, ignorieren es.
+  const me = await buildMeResult(session, env, authHeader, app, cfgPrefetch);
+  return json({ data, rev, me }, 200, corsHeaders);
 }
 
 async function handleDavSave(request, body, env, authHeader, corsHeaders) {
-  const session = await getVerifiedSession(request, env, authHeader);
+  // Wie in handleDavLoad: die Rechte-Datei parallel zum Session-Read holen.
+  // Beim Speichern zählt das doppelt -- der PUT kann erst starten, wenn beide
+  // Prüfungen durch sind, jeder eingesparte serielle Read verkürzt also direkt
+  // die Zeit bis "Gespeichert ✓".
+  let cfgPrefetch = null;
+  const session = await getVerifiedSession(request, env, authHeader, (payload) => {
+    if (!payload.isAdmin) {
+      cfgPrefetch = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    }
+  });
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const app = String(body.app || "");
@@ -3189,15 +3233,15 @@ async function handleDavSave(request, body, env, authHeader, corsHeaders) {
     return json({ error: "Ungültige Daten" }, 400, corsHeaders);
   }
 
-  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+  if (!(await userMayAccessTool(app, session, env, authHeader, cfgPrefetch))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
-  if (WRITE_REQUIRES_EDIT_PERMISSION.has(app) && !(await resolveEditPermission(app, session, env, authHeader))) {
+  if (WRITE_REQUIRES_EDIT_PERMISSION.has(app) && !(await resolveEditPermission(app, session, env, authHeader, cfgPrefetch))) {
     return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
   }
 
   const ownerCfg = getOwn(OWNER_FILTERED_APPS, app) || getOwn(OWNER_WRITE_APPS, app);
-  if (ownerCfg && !(await resolveEditPermission(app, session, env, authHeader))) {
+  if (ownerCfg && !(await resolveEditPermission(app, session, env, authHeader, cfgPrefetch))) {
     // Nutzer ohne Bearbeiten-Recht: bei OWNER_FILTERED_APPS hat handleDavLoad bereits
     // nur die eigenen Einträge geliefert (body.data[listField] enthält bestenfalls nur
     // eigene). Bei OWNER_WRITE_APPS (z.B. abwesenheitskalender, siehe Kommentar dort)
@@ -4184,6 +4228,19 @@ async function readJson(url, authHeader, fallback) {
   return (await readJsonWithRev(url, authHeader, fallback)).data;
 }
 
+// Startet einen Read, ohne auf ihn zu warten — für Reads, die nicht voneinander
+// abhängen und deshalb nicht nacheinander laufen müssen (gemessen: ein
+// Nextcloud-Read kostet 200-450 ms, ein Request ohne Read 70 ms).
+// Das angehängte .catch() ist ein reiner Platzhalter, damit ein Fehlschlag keine
+// unhandled rejection wirft, falls der Aufrufer die Promise am Ende gar nicht
+// braucht (z.B. Admin-Kurzschluss in userMayAccessTool). Wer sie awaitet,
+// bekommt den Fehler ganz normal aus der Original-Promise.
+function prefetchJson(url, authHeader, fallback) {
+  const p = readJson(url, authHeader, fallback);
+  p.catch(() => {});
+  return p;
+}
+
 // Kurzlebiger In-Memory-Cache für readJsonWithRev, ueberlebt auf einem warmen
 // Worker-Isolate mehrere Requests. Grund: nutzer.json und sichtbarkeit.json
 // werden bei JEDER einzelnen Aktion neu von Nextcloud gelesen (Session-Pruefung
@@ -4805,12 +4862,19 @@ async function getSession(request, env) {
 // kommt aus dem aktuellen Datensatz, nicht aus dem Token. Gibt zusätzlich das
 // bereits gelesene usersDoc zurück, damit Handler es weiterverwenden können
 // (kein zweiter Nextcloud-Read pro Request).
-async function getVerifiedSession(request, env, authHeader) {
+// onTokenValid (optional) wird genau dann aufgerufen, wenn der Token echt und
+// nicht durch den Stichtag entwertet ist — aber noch BEVOR nutzer.json gelesen
+// wird. Genau dieser Moment ist der richtige, um einen zweiten, unabhängigen
+// Nextcloud-Read (sichtbarkeit.json für die Tool-Rechte) parallel zu starten:
+// früher würde jeder Request OHNE gültigen Token Nextcloud-Last auslösen,
+// später liefe der Read wieder hinter dem nutzer.json-Read her.
+async function getVerifiedSession(request, env, authHeader, onTokenValid) {
   const payload = await getSession(request, env);
   if (!payload) return null;
   // Vor dem Nutzer-Abgleich, damit ein Token von vor dem Stichtag gar keinen
   // Nextcloud-Lesezugriff mehr auslöst.
   if ((Number(payload.iat) || 0) < SESSIONS_INVALID_BEFORE) return null;
+  if (onTokenValid) onTokenValid(payload);
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = getOwn(usersDoc.users, String(payload.username || ""));
   if (!user || user.mustSetPassword || !user.passwordHash) return null;
