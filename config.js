@@ -211,6 +211,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    id: "raumnutzung",
+    name: "Raumnutzung",
+    description: "Anträge auf Raumnutzung für Veranstaltungen (Landkreis Eichsfeld) digital erfassen und daraus das ausgefüllte Original-Formular als PDF für das Liegenschaftsamt erzeugen.",
+    url: "https://tecko1985.github.io/raumnutzung/",
+    icon: "🏛️",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "testspielplaner",
     name: "Testspielplaner",
     description: "Testspiele und Leistungsvergleiche planen: Termin anfragen, Admin genehmigt nach DFBnet-Eintragung, Gegner wird nachgetragen — mit Saison-Kontingent je Trainer.",
