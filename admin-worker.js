@@ -500,6 +500,18 @@ const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um 
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Tage
+// Stichtag: jede Session, die VOR diesem Zeitpunkt ausgestellt wurde, gilt als
+// beendet (Prüfung in getVerifiedSession). Nötig, weil die Laufzeit im Token
+// steckt: das Senken von SESSION_TTL_SECONDS auf 7 Tage wirkt nur auf NEU
+// ausgestellte Token, die alten 30-Tage-Token wären sonst noch bis zu vier
+// Wochen weitergelaufen. Bewusst eine Konstante im Code statt eines Feldes in
+// nutzer.json -- ein Stichtag ist ein einmaliges Ereignis, kein laufender
+// Zustand, und so kostet die Prüfung keinen zusätzlichen Nextcloud-Lesezugriff.
+// Für einen erneuten Rauswurf aller Nutzer (z.B. nach einem Vorfall) hier den
+// Wert auf "jetzt" setzen und neu deployen. WICHTIG: nie einen Zeitpunkt in der
+// ZUKUNFT eintragen -- dann wäre auch jedes frisch ausgestellte Login-Token
+// sofort ungültig und niemand käme mehr herein.
+const SESSIONS_INVALID_BEFORE = 1784700000; // 2026-07-22T06:00:00Z
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 
 // Zentrales Trainerprofil (seit 1.10): Lizenzstufe + betreute Mannschaft(en) je
@@ -4784,7 +4796,8 @@ async function getSession(request, env) {
 
 // Verifiziert das Token UND gleicht es mit dem aktuellen Nutzerbestand ab —
 // zustandslose Tokens allein überleben sonst Nutzer-Löschung, Passwort-Reset
-// und Admin-Entzug bis zu 7 Tage. Regeln: Nutzer muss noch existieren und ein
+// und Admin-Entzug bis zu 7 Tage. Regeln: Token muss nach dem globalen Stichtag
+// SESSIONS_INVALID_BEFORE ausgestellt sein; Nutzer muss noch existieren und ein
 // gesetztes Passwort haben; Tokens von VOR dem letzten Passwort-Setzen sind
 // ungültig (Reset durch Admin wirft damit alle alten Sitzungen raus); isAdmin
 // kommt aus dem aktuellen Datensatz, nicht aus dem Token. Gibt zusätzlich das
@@ -4793,6 +4806,9 @@ async function getSession(request, env) {
 async function getVerifiedSession(request, env, authHeader) {
   const payload = await getSession(request, env);
   if (!payload) return null;
+  // Vor dem Nutzer-Abgleich, damit ein Token von vor dem Stichtag gar keinen
+  // Nextcloud-Lesezugriff mehr auslöst.
+  if ((Number(payload.iat) || 0) < SESSIONS_INVALID_BEFORE) return null;
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
   const user = getOwn(usersDoc.users, String(payload.username || ""));
   if (!user || user.mustSetPassword || !user.passwordHash) return null;
