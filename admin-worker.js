@@ -50,7 +50,7 @@
 //
 // Passwörter werden mit PBKDF2-HMAC-SHA256 gehasht (Web-Crypto, keine
 // Abhängigkeiten), Sessions sind zustandslose HMAC-signierte Bearer-Token
-// (30 Tage gültig) — kein KV/D1 nötig. Nutzergruppen werden zusammen mit den
+// (7 Tage gültig) — kein KV/D1 nötig. Nutzergruppen werden zusammen mit den
 // Nutzerkonten in derselben nutzer.json gespeichert (Top-Level-Key "groups"),
 // kein zusätzliches Worker-Secret nötig.
 //
@@ -499,7 +499,7 @@ const AUTO_PRUNE_APPS = {
 const PBKDF2_ITERATIONS = 100000; // siehe README: bewusst unter OWASP-210k, um im Cloudflare-Free-CPU-Limit zu bleiben
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
-const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 Tage
+const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 Tage
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 
 // Zentrales Trainerprofil (seit 1.10): Lizenzstufe + betreute Mannschaft(en) je
@@ -4784,7 +4784,7 @@ async function getSession(request, env) {
 
 // Verifiziert das Token UND gleicht es mit dem aktuellen Nutzerbestand ab —
 // zustandslose Tokens allein überleben sonst Nutzer-Löschung, Passwort-Reset
-// und Admin-Entzug bis zu 30 Tage. Regeln: Nutzer muss noch existieren und ein
+// und Admin-Entzug bis zu 7 Tage. Regeln: Nutzer muss noch existieren und ein
 // gesetztes Passwort haben; Tokens von VOR dem letzten Passwort-Setzen sind
 // ungültig (Reset durch Admin wirft damit alle alten Sitzungen raus); isAdmin
 // kommt aus dem aktuellen Datensatz, nicht aus dem Token. Gibt zusätzlich das
