@@ -116,6 +116,9 @@
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
+//   POST { action: "trainerdaten-list-groups" } (admin ODER Trainerdaten-Bearbeiter) -> alle Gruppen inkl. memberUsernames,
+//     Mitglieder auf Personal gefiltert — schmale Variante von list-groups für die Gruppen-Auswahl/-Spalte im
+//     Trainerdaten-CSV-Export (resolveEditPermission("trainerdaten"): Bearbeiter-Gruppen aus dem Sichtbarkeits-Panel)
 //   POST { action: "list-directory" } (jedes eingeloggte PERSONAL) -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
 //     Liefert nur Personal; Spielerkonten bekommen 403 (kein Spieler-Tool hat einen Picker, und die vollständige
@@ -630,6 +633,8 @@ export default {
         return handleCreateGroup(request, body, env, authHeader, corsHeaders);
       case "list-groups":
         return handleListGroups(request, env, authHeader, corsHeaders);
+      case "trainerdaten-list-groups":
+        return handleTrainerdatenListGroups(request, env, authHeader, corsHeaders);
       case "list-directory":
         return handleListDirectory(request, env, authHeader, corsHeaders);
       case "list-tool-editors":
@@ -1217,6 +1222,35 @@ async function handleListGroups(request, env, authHeader, corsHeaders) {
 
   const usersDoc = session.usersDoc;
   return json({ groups: Object.values(usersDoc.groups || {}) }, 200, corsHeaders);
+}
+
+// Schmale Variante von list-groups für die Gruppen-Auswahl und die CSV-Spalte
+// "Gruppen" im Trainerdaten-Admin: list-groups bleibt admin-only, hier darf
+// zusätzlich die Population "darf Trainerdaten bearbeiten" lesen
+// (resolveEditPermission wie überall — Bearbeiter-Gruppen aus dem
+// Sichtbarkeits-Panel, Admin-Kurzschluss inklusive). Diese Personen sehen im
+// Trainerdaten-Admin ohnehin alle Stammdaten inkl. IBAN; die Gruppenzugehörig-
+// keit des Personals ist demgegenüber mild. Mitgliederlisten werden auf
+// Personal gefiltert: Spielerkonten tauchen in den Trainerdaten nie auf und
+// gehen einen Trainerdaten-Bearbeiter nichts an (Minimal-Disclosure).
+async function handleTrainerdatenListGroups(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("trainerdaten", session, env, authHeader))) {
+    return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+  }
+
+  const usersDoc = session.usersDoc;
+  const istPersonalUsername = (username) => {
+    const u = getOwn(usersDoc.users || {}, username);
+    return !!u && istPersonal(u);
+  };
+  const groups = Object.values(usersDoc.groups || {}).map((g) => ({
+    id: g.id,
+    name: g.name,
+    memberUsernames: (Array.isArray(g.memberUsernames) ? g.memberUsernames : []).filter(istPersonalUsername)
+  }));
+  return json({ groups }, 200, corsHeaders);
 }
 
 // Schlanke, nicht-Admin-Variante von list-users/list-groups für "Teilen mit"-Picker
