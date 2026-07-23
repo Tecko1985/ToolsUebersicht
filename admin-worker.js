@@ -139,6 +139,12 @@
 //     list-birthdays-today) — der Client nennt nur einen Nutzernamen, kann also nie eine beliebige Adresse
 //     erzwingen. Hat die Zielperson keine E-Mail hinterlegt, stiller No-Op (sent:false), kein Fehler. Versand
 //     über Brevo (Secret BREVO_API_KEY), Absender = NOTIFY_FROM_EMAIL/-NAME-Konstanten bei PROVISION_ONLY_PATHS.
+//   POST { action: "vereinskalender-vote", terminId, candId, wert } (jeder mit Tool-Zugriff) -> { ok, rev, stimmen }
+//     Eigene Stimme bei einem Umfrage-Termin des Vereinskalenders setzen ("ja"/"nein") oder zurückziehen ("").
+//     Eigene Aktion, weil vereinskalender in WRITE_REQUIRES_EDIT_PERMISSION steht: Termine anlegen/ändern ist
+//     Bearbeitern vorbehalten, ABSTIMMEN muss aber jeder dürfen, der den Termin sieht — sonst stimmt die
+//     Geschäftsstelle mit sich selbst ab. Schreibt ausschließlich umfrage.stimmen[<Token-Nutzer>][candId] eines
+//     einzelnen Termins und spiegelt dafür die Sichtbarkeitsregel für Privattermine serverseitig.
 //   POST { action: "my-trainerdaten-status" } (jeder eingeloggte Nutzer) -> { vorhanden, trainerdatenGesamtOk, ...restliche
 //     Trainerdaten-Statusfelder (gleiche Zusammenfassung wie personalakte-overview, aber NUR für den eigenen
 //     Datensatz, kein Admin-Gate) } — für das grüne/rote Ampel-Badge auf der Trainerdaten-Kachel im Dashboard.
@@ -676,6 +682,8 @@ export default {
         return handleDavLoad(request, body, env, authHeader, corsHeaders);
       case "dav-save":
         return handleDavSave(request, body, env, authHeader, corsHeaders);
+      case "vereinskalender-vote":
+        return handleVereinskalenderVote(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-ordner-anlegen":
         return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-spielbericht-hochladen":
@@ -3369,6 +3377,92 @@ async function handleOwnerFilteredSave(url, cfg, session, authHeader, submitted,
       return json({ ok: true, rev: newRev }, 200, corsHeaders);
     } catch (e) {
       if (e instanceof ConflictError && attempt < 3) continue; // jemand anders hat zwischenzeitlich geschrieben -> frisch neu lesen+mergen
+      if (e instanceof ConflictError) {
+        return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- Aktion: Abstimmen bei einer Vereinskalender-Umfrage ----------
+// vereinskalender steht in WRITE_REQUIRES_EDIT_PERMISSION -- Termine anlegen und
+// aendern darf nur, wer in editGroupIds steht. Das ABSTIMMEN bei einem
+// Umfrage-Termin ist aber ausdruecklich fuer alle gedacht, die den Termin sehen
+// duerfen (sonst stimmt die Geschaeftsstelle mit sich selbst ab, waehrend die
+// eingeladenen Trainer nur zusehen). Statt dafuer die Schreib-Restriktion
+// aufzuweichen -- dann duerfte jeder Trainer auch fremde Termine aendern und
+// loeschen -- schreibt diese schmale Aktion ausschliesslich
+// umfrage.stimmen[<Nutzername aus dem Token>][<candId>] EINES Termins.
+//
+// Sichtbarkeitsregel: Spiegel von terminVisibleFor() in vereinskalender/app.js.
+// Ohne sie koennte jemand mit Tool-Zugriff bei einem fremden Privattermin
+// mitstimmen und ueber die zurueckgelieferten Stimmen dessen Teilnehmerkreis
+// auslesen. Wer die Regel dort aendert, muss sie hier mitziehen.
+function vereinskalenderTerminSichtbar(t, session) {
+  if (!t.privat) return true;
+  if (session.isAdmin) return true;
+  if (t.ersteller && t.ersteller === session.username) return true;
+  if (Array.isArray(t.geteiltUsers) && t.geteiltUsers.includes(session.username)) return true;
+  const gids = Array.isArray(session.groupIds) ? session.groupIds : [];
+  if (Array.isArray(t.geteiltGruppen) && t.geteiltGruppen.some((g) => gids.includes(g))) return true;
+  return false;
+}
+
+async function handleVereinskalenderVote(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Bewusst NUR userMayAccessTool, nicht resolveEditPermission -- genau das ist
+  // der Zweck dieser Aktion. Wer das Tool nicht sehen darf, kommt trotzdem nicht durch.
+  if (!(await userMayAccessTool("vereinskalender", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const terminId = String(body.terminId || "");
+  const candId = String(body.candId || "");
+  const wert = String(body.wert || "");
+  if (!terminId || !candId) return json({ error: "Fehlende Termin- oder Vorschlags-Id" }, 400, corsHeaders);
+  if (wert !== "ja" && wert !== "nein" && wert !== "") {
+    return json({ error: "Ungültige Stimme" }, 400, corsHeaders);
+  }
+
+  const url = DAV_APPS["vereinskalender"];
+  // Read-modify-write wie handleOwnerFilteredSave: kein rev vom Client, sondern
+  // jedes Mal frisch lesen und nur das eigene Feld setzen. Zwei gleichzeitig
+  // abstimmende Nutzer koennen sich dadurch nie gegenseitig ueberschreiben.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+    const termine = (doc && Array.isArray(doc.termine)) ? doc.termine : [];
+    const t = termine.find((x) => x && x.id === terminId);
+    if (!t) return json({ error: "Termin nicht gefunden" }, 404, corsHeaders);
+    if (!vereinskalenderTerminSichtbar(t, session)) {
+      return json({ error: "Kein Zugriff auf diesen Termin" }, 403, corsHeaders);
+    }
+    const umfrage = t.umfrage;
+    const kandidaten = (umfrage && umfrage.aktiv && Array.isArray(umfrage.termine)) ? umfrage.termine : [];
+    if (kandidaten.length === 0) return json({ error: "Zu diesem Termin läuft keine Umfrage" }, 400, corsHeaders);
+    // candId landet gleich als Objekt-Schluessel -- nur eine Id, die wirklich in
+    // der Vorschlagsliste steht, darf durch.
+    if (!kandidaten.some((c) => c && c.id === candId)) {
+      return json({ error: "Terminvorschlag nicht gefunden" }, 404, corsHeaders);
+    }
+
+    const stimmen = (umfrage.stimmen && typeof umfrage.stimmen === "object") ? umfrage.stimmen : {};
+    const alteEigene = stimmen[session.username];
+    const meine = (alteEigene && typeof alteEigene === "object") ? { ...alteEigene } : {};
+    if (wert) meine[candId] = wert; else delete meine[candId];
+    const neueStimmen = { ...stimmen };
+    if (Object.keys(meine).length > 0) neueStimmen[session.username] = meine;
+    else delete neueStimmen[session.username]; // letzte eigene Stimme zurueckgezogen -> keinen leeren Eintrag zuruecklassen
+    umfrage.stimmen = neueStimmen;
+    doc.meta = { ...(doc.meta || {}), stand: new Date().toISOString() };
+
+    try {
+      const newRev = await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, rev: newRev, stimmen: neueStimmen }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue; // jemand anders hat gleichzeitig gespeichert -> frisch lesen
       if (e instanceof ConflictError) {
         return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
       }
