@@ -3431,7 +3431,14 @@ async function handleVereinskalenderVote(request, body, env, authHeader, corsHea
   // jedes Mal frisch lesen und nur das eigene Feld setzen. Zwei gleichzeitig
   // abstimmende Nutzer koennen sich dadurch nie gegenseitig ueberschreiben.
   for (let attempt = 1; attempt <= 3; attempt++) {
+    // Gleiches Muster wie handleKmSelf: VOR dem Lesen aus dem Cache nehmen (der
+    // 5s-Cache könnte einen veralteten Stand samt altem ETag liefern — der
+    // If-Match-PUT unten scheiterte dann grundlos), und direkt NACH dem Lesen
+    // noch einmal, weil readJsonWithRev die gecachte Referenz zurückgibt und die
+    // Mutation unten sonst parallele Requests im selben Isolate verfälscht.
+    jsonCache.delete(url);
     const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
     const doc = (raw && typeof raw === "object") ? raw : null;
     const termine = (doc && Array.isArray(doc.termine)) ? doc.termine : [];
     const t = termine.find((x) => x && x.id === terminId);
