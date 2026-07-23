@@ -119,6 +119,12 @@
 //   POST { action: "trainerdaten-list-groups" } (admin ODER Trainerdaten-Bearbeiter) -> alle Gruppen inkl. memberUsernames,
 //     Mitglieder auf Personal gefiltert — schmale Variante von list-groups für die Gruppen-Auswahl/-Spalte im
 //     Trainerdaten-CSV-Export (resolveEditPermission("trainerdaten"): Bearbeiter-Gruppen aus dem Sichtbarkeits-Panel)
+//   POST { action: "check-edit-permission", app } (jeder eingeloggte Nutzer) -> { canEdit } via resolveEditPermission.
+//     Verrät nur das EIGENE Recht für EINE App (keine fremden Daten). Konsumenten: der Trainerdaten-CORS-Proxy
+//     (Worker "trainerdaten", prüft darüber serverseitig das Bearbeiten-Recht, bevor er WebDAV-Zugriffe mit seinen
+//     eigenen Nextcloud-Secrets ausführt) und der Trainerdaten-/Dokumentenvorlagen-Client für den Admin-Einstieg.
+//     Bewusst 200 + canEdit:false statt 403 bei fehlendem Recht — Aufrufer müssen "Session tot" (401) von
+//     "kein Recht" unterscheiden können.
 //   POST { action: "list-directory" } (jedes eingeloggte PERSONAL) -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
 //     Liefert nur Personal; Spielerkonten bekommen 403 (kein Spieler-Tool hat einen Picker, und die vollständige
@@ -635,6 +641,8 @@ export default {
         return handleListGroups(request, env, authHeader, corsHeaders);
       case "trainerdaten-list-groups":
         return handleTrainerdatenListGroups(request, env, authHeader, corsHeaders);
+      case "check-edit-permission":
+        return handleCheckEditPermission(request, body, env, authHeader, corsHeaders);
       case "list-directory":
         return handleListDirectory(request, env, authHeader, corsHeaders);
       case "list-tool-editors":
@@ -1251,6 +1259,22 @@ async function handleTrainerdatenListGroups(request, env, authHeader, corsHeader
     memberUsernames: (Array.isArray(g.memberUsernames) ? g.memberUsernames : []).filter(istPersonalUsername)
   }));
   return json({ groups }, 200, corsHeaders);
+}
+
+// Das eigene Bearbeiten-Recht für EINE App — dieselbe resolveEditPermission wie
+// alle serverseitigen Schreib-Gates (Admin-Kurzschluss inklusive). Primärer
+// Konsument ist der Trainerdaten-CORS-Proxy (Worker "trainerdaten"): der prüft
+// hierüber per Service Binding, ob der Token-Inhaber Trainerdaten bearbeiten
+// darf, bevor er WebDAV-Zugriffe mit seinen eigenen Nextcloud-Secrets ausführt.
+// Bewusst 200 + canEdit:false statt 403 bei fehlendem Recht, damit Aufrufer
+// "Session ungültig" (401) von "eingeloggt, aber kein Recht" trennen können.
+async function handleCheckEditPermission(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const app = String(body.app || "");
+  if (!app) return json({ error: "app fehlt" }, 400, corsHeaders);
+  const canEdit = await resolveEditPermission(app, session, env, authHeader);
+  return json({ canEdit: !!canEdit }, 200, corsHeaders);
 }
 
 // Schlanke, nicht-Admin-Variante von list-users/list-groups für "Teilen mit"-Picker
