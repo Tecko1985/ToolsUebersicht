@@ -2047,11 +2047,16 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
 // öffnet aber keinem zusätzlichen Personenkreis Daten.
 // Namensabgleich reihenfolge-tolerant über sameNamePair (das Formularfeld heißt
 // "Name, Vorname", eingegeben wird erfahrungsgemäß beides — siehe
-// [[feedback-name-matching-order-tolerance]]). Ohne Komma wird an der ersten
-// UND der letzten Lücke geteilt, damit auch Doppelnamen auf beiden Seiten eine
-// Chance haben ("Karl Heinz Müller" = Vorname "Karl Heinz" ODER Nachname
-// "Heinz Müller"). Treffer ohne jedes Kontaktfeld (reine Import-Stubs) werden
-// übersprungen, sonst blockiert ein namensgleicher Stub den echten Datensatz.
+// [[feedback-name-matching-order-tolerance]]). Ein Komma-Paar ("Eschborn,
+// Alexander") wird zuerst probiert, danach IMMER zusätzlich die Wort-Splits an
+// der ersten und letzten Lücke (Kommas dabei wie Leerzeichen behandelt), damit
+// auch Doppelnamen eine Chance haben ("Karl Heinz Müller" = Vorname "Karl
+// Heinz" ODER Nachname "Heinz Müller"). Das Komma darf nie exklusiv gewinnen:
+// eine Eingabe MIT Komma muss mindestens alles treffen, was dieselbe Eingabe
+// ohne Komma träfe (Michel-Bugreport 2026-07-24: Komma-Eingaben liefen leer,
+// während beide Leerzeichen-Reihenfolgen funktionierten). Treffer ohne jedes
+// Kontaktfeld (reine Import-Stubs) werden übersprungen, sonst blockiert ein
+// namensgleicher Stub den echten Datensatz.
 async function handleRaumnutzungKontaktLookup(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
@@ -2063,13 +2068,14 @@ async function handleRaumnutzungKontaktLookup(request, body, env, authHeader, co
   const paare = [];
   const kommaIdx = name.indexOf(",");
   if (kommaIdx >= 0) {
-    paare.push([name.slice(0, kommaIdx), name.slice(kommaIdx + 1)]);
-  } else {
-    const worte = name.split(/\s+/).filter(Boolean);
-    if (worte.length >= 2) {
-      paare.push([worte[0], worte.slice(1).join(" ")]);
-      if (worte.length > 2) paare.push([worte.slice(0, -1).join(" "), worte[worte.length - 1]]);
-    }
+    const vorKomma = name.slice(0, kommaIdx).trim();
+    const nachKomma = name.slice(kommaIdx + 1).trim();
+    if (vorKomma && nachKomma) paare.push([vorKomma, nachKomma]);
+  }
+  const worte = name.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+  if (worte.length >= 2) {
+    paare.push([worte[0], worte.slice(1).join(" ")]);
+    if (worte.length > 2) paare.push([worte.slice(0, -1).join(" "), worte[worte.length - 1]]);
   }
   if (!paare.length) return json({ treffer: null }, 200, corsHeaders);
 
