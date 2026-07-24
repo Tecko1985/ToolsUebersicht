@@ -422,7 +422,14 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   //   (Schreibzugriffe laufen ueber archive-/reactivate-trainer, die serverseitig
   //   schon resolveEditPermission pruefen). Das Set schliesst nur das latente,
   //   handgebaute dav-save-Loch. Bricht nichts.
-  "dokumentenvorlagen", "personalakte"
+  "dokumentenvorlagen", "personalakte",
+  // seit 2026-07-24 (2. Runde, Michel-Entscheidung "Sehen = absolut nichts editierbar"):
+  // frühere Selbstbedienung braucht jetzt Bearbeiten-Recht -- ein Nur-Seher kann in diesen
+  // Apps NICHTS mehr anlegen/schreiben (auch keine eigenen Einträge). Der WRITE_REQUIRES-
+  // Check in handleDavSave steht VOR der OWNER_FILTERED/OWNER_WRITE-Routung, greift also
+  // zuerst; materialbedarf/abwesenheitskalender bleiben in ihren Owner-Sets nur noch für
+  // den LESE-Filter relevant (Editoren unberührt).
+  "materialbedarf", "kleiderbestellung", "abwesenheitskalender", "digitaler-stempel"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
@@ -430,13 +437,9 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
 // eigens validierte Aktion fotoauftrag-ordner-anlegen. Anlegen/Löschen von
 // Aufträgen und "erledigt"-Markierung bleiben Editoren (Social-Media-Gruppe)
 // vorbehalten.
-// materialbedarf, testspielplaner: NICHT hier -- Selbstbedienungs-Muster wie
-// fahrtenbuch (jeder meldet/bucht eigene Einträge), siehe OWNER_FILTERED_APPS
-// unten statt hartem Block. digitaler-stempel: ebenfalls Selbstbedienung
-// (stempelt eigene Dokumente), aber stampedBy ist ein verschachteltes Objekt
-// {username,...} statt eines flachen ownerField-Strings -- passt nicht ins
-// bestehende OWNER_FILTERED_APPS-Schema ohne Erweiterung, bleibt vorerst nur
-// client-seitig gegated (wie kleiderbestellung).
+// testspielplaner + fahrtenbuch: bewusst NICHT hier -- weiter Selbstbedienung
+// (Testspiel-Anfrage bzw. eigene Fahrten), von Michel in dieser Runde nicht zum
+// Sperren gelistet; ihr Anlege-Weg für Nicht-Editoren läuft über OWNER_FILTERED_APPS.
 
 // Datendateien, in die das Auto-Provisioning (provisionUser) schreiben darf, die aber
 // bewusst NICHT über DAV_APPS für dav-load/dav-save geöffnet sind: Trainerdaten
