@@ -358,6 +358,7 @@ const APP_CHANGELOG = [
           "Wer für ein Tool Bearbeiten- oder Administrieren-Recht bekommt, sieht das Tool jetzt automatisch — ein Häkchen bei „Bearbeiten“ setzt „Sehen“ mit; „nur Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
           "Als sensibel eingestufte Tools (z. B. Personalakte, Kadermanager, Vereinsbudget, Dokumentenvorlagen) stehen im Bereich „Sichtbarkeit der Tools“ in einer eigenen, aufklappbaren Sektion ganz oben und tragen ein ⚠️-Zeichen — damit ihre Rechte-Vergabe besonders bewusst passiert.",
           "Alle übrigen Tools stehen darunter ebenfalls in einer eigenen aufklappbaren Sektion „Weitere Tools“ — so bleibt das Sichtbarkeits-Panel übersichtlich und beide Gruppen lassen sich getrennt ein- und ausklappen.",
+          "Welche Tools als „sensibel“ gelten, legt der Admin jetzt selbst fest: pro Tool-Zeile im Sichtbarkeits-Panel ein Häkchen „Sensibel“ — das Tool wandert sofort in die passende Sektion und die Auswahl wird beim Speichern zentral hinterlegt (keine Code-Änderung mehr nötig).",
           "Beim Vorlagen-Katalog (Dokumentenvorlagen) und in der Personalakte ist das Speichern jetzt zusätzlich serverseitig auf Bearbeiter beschränkt — reines Ansehen kann dort nichts mehr überschreiben.",
           "Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden. Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt."
         ]

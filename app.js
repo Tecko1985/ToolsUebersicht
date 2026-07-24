@@ -1131,6 +1131,11 @@ const VIRTUAL_VISIBILITY_ENTRIES = [
 ];
 
 function isKritischesTool(id) {
+  // Admin-gesetztes Flag aus der zentralen Sichtbarkeits-Config hat Vorrang; solange es
+  // für ein Tool nicht explizit gesetzt ist, gilt die ursprüngliche Vorgabe aus config.js
+  // (KRITISCHE_TOOLS) als Default. So ändert sich nichts, bis der Admin es im Panel umstellt.
+  const entry = typeof visibilityState !== "undefined" && visibilityState ? visibilityState[id] : null;
+  if (entry && typeof entry.kritisch === "boolean") return entry.kritisch;
   return typeof KRITISCHE_TOOLS !== "undefined" && KRITISCHE_TOOLS.includes(id);
 }
 
@@ -1154,6 +1159,7 @@ function buildVisibilityRow(t) {
     <span class="tool-icon">${t.icon || "🔗"}</span>
     <span class="vr-name">${badge}${escapeHtml(t.name)}</span>
     <span class="vr-category">${escapeHtml(t.category)}</span>
+    <label class="vr-sensibel" title="Als sensibel markieren — das Tool erscheint dann oben unter „Sensible Tools“"><input type="checkbox" data-field="kritisch" ${kritisch ? "checked" : ""} /> Sensibel</label>
     <select data-field="mode" class="form-select">
       <option value="hidden" ${mode === "hidden" ? "selected" : ""}>Versteckt</option>
       <option value="public" ${mode === "public" ? "selected" : ""}>Öffentlich</option>
@@ -1207,7 +1213,38 @@ function buildVisibilityRow(t) {
     row.querySelector('[data-field="groupIds"]').style.display = isGroups ? "block" : "none";
     if (isGroups) row.querySelector(".visibility-groups").open = true;
   });
+
+  // „Sensibel"-Häkchen: beim Umschalten den aktuellen Panel-Stand einsammeln (damit andere
+  // offene Änderungen erhalten bleiben) und die Sektionen neu aufbauen, sodass das Tool
+  // sofort in die richtige Liste (Sensible / Weitere) wandert. Persistiert wird erst beim
+  // Speichern (save-visibility).
+  row.querySelector('[data-field="kritisch"]').addEventListener("change", () => {
+    visibilityState = collectVisibilityTools();
+    renderVisibilityList();
+  });
   return row;
+}
+
+// Liest den aktuellen Stand aller Sichtbarkeits-Zeilen aus dem DOM in ein tools-Objekt
+// (gleiches Format wie visibilityState / save-visibility). Von Sensibel-Toggle UND
+// Speichern-Button genutzt, damit beide identisch einsammeln.
+function collectVisibilityTools() {
+  const tools = {};
+  document.querySelectorAll("#visibility-list .visibility-row").forEach((row) => {
+    const id = row.dataset.toolId;
+    const mode = row.querySelector('[data-field="mode"]').value;
+    const groupIds = mode === "groups" ? getCheckedValues(row.querySelector('[data-field="groupIds"]')) : [];
+    const editGroupIds = getCheckedValues(row.querySelector('[data-field="editGroupIds"]'));
+    const adminGroupIds = getCheckedValues(row.querySelector('[data-field="adminGroupIds"]'));
+    const visible = mode !== "hidden";
+    const loginRequired = mode === "loggedin" || mode === "groups";
+    // provisionGroupIds nur im Gruppen-Tab gepflegt — hier unverändert aus dem State übernehmen.
+    const provisionGroupIds = (visibilityState[id] && visibilityState[id].provisionGroupIds) || [];
+    const kritischBox = row.querySelector('[data-field="kritisch"]');
+    const kritisch = !!(kritischBox && kritischBox.checked);
+    tools[id] = { visible, loginRequired, groupIds, editGroupIds, adminGroupIds, provisionGroupIds, kritisch };
+  });
+  return tools;
 }
 
 function renderVisibilityList() {
@@ -1224,7 +1261,7 @@ function renderVisibilityList() {
   if (kritische.length) {
     const section = document.createElement("details");
     section.className = "kritisch-section";
-    section.open = true;
+    section.open = false; // Standard: zugeklappt (Michel-Vorgabe 2026-07-24)
     const summary = document.createElement("summary");
     summary.innerHTML = `⚠️ Sensible Tools — Rechte besonders sorgfältig vergeben <span class="ks-count">${kritische.length}</span>`;
     section.appendChild(summary);
@@ -1239,7 +1276,7 @@ function renderVisibilityList() {
   if (normale.length) {
     const section = document.createElement("details");
     section.className = "weitere-section";
-    section.open = true;
+    section.open = false; // Standard: zugeklappt (Michel-Vorgabe 2026-07-24)
     const summary = document.createElement("summary");
     summary.innerHTML = `Weitere Tools <span class="ws-count">${normale.length}</span>`;
     section.appendChild(summary);
@@ -3130,21 +3167,9 @@ function setupAuthForms() {
   });
 
   document.getElementById("btn-save-visibility").addEventListener("click", async () => {
-    const tools = {};
-    document.querySelectorAll("#visibility-list .visibility-row").forEach((row) => {
-      const id = row.dataset.toolId;
-      const mode = row.querySelector('[data-field="mode"]').value;
-      const groupIds = mode === "groups" ? getCheckedValues(row.querySelector('[data-field="groupIds"]')) : [];
-      const editGroupIds = getCheckedValues(row.querySelector('[data-field="editGroupIds"]'));
-      const adminGroupIds = getCheckedValues(row.querySelector('[data-field="adminGroupIds"]'));
-      const visible = mode !== "hidden";
-      const loginRequired = mode === "loggedin" || mode === "groups";
-      // provisionGroupIds wird nur im Gruppen-Tab gepflegt, hier unverändert übernehmen —
-      // sonst würde jedes Speichern in diesem Panel die Auto-Provisionierung für ALLE
-      // Tools löschen (save-visibility ersetzt config.tools auf dem Worker komplett).
-      const provisionGroupIds = (visibilityState[id] && visibilityState[id].provisionGroupIds) || [];
-      tools[id] = { visible, loginRequired, groupIds, editGroupIds, adminGroupIds, provisionGroupIds };
-    });
+    // Sammelt inkl. des neuen "kritisch"-Flags je Tool (save-visibility ersetzt config.tools
+    // komplett, deshalb müssen alle Felder — auch provisionGroupIds — mitgeliefert werden).
+    const tools = collectVisibilityTools();
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");
     errorEl.style.display = "none";
@@ -3154,6 +3179,7 @@ function setupAuthForms() {
       visibilityState = tools;
       renderToolGrid();
       renderFeedbackTab();
+      renderVisibilityList();
       successEl.style.display = "block";
     } catch (err) {
       errorEl.textContent = err.message;
