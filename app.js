@@ -1231,7 +1231,21 @@ function renderVisibilityList() {
     kritische.forEach((t) => section.appendChild(buildVisibilityRow(t)));
     container.appendChild(section);
   }
-  normale.forEach((t) => container.appendChild(buildVisibilityRow(t)));
+  // Übrige (nicht-kritische) Tools ebenfalls in einer benannten, aufklappbaren
+  // Sektion — neutrales Gegenstück ohne Warn-Style. Offen per Default, damit initial
+  // nichts versteckt wirkt; der Admin kann sie zuklappen, um die Sensible-Sektion in
+  // den Vordergrund zu rücken. Die Zeilen bleiben Nachfahren von #visibility-list,
+  // der Save-Selektor "#visibility-list .visibility-row" greift sie unverändert mit.
+  if (normale.length) {
+    const section = document.createElement("details");
+    section.className = "weitere-section";
+    section.open = true;
+    const summary = document.createElement("summary");
+    summary.innerHTML = `Weitere Tools <span class="ws-count">${normale.length}</span>`;
+    section.appendChild(summary);
+    normale.forEach((t) => section.appendChild(buildVisibilityRow(t)));
+    container.appendChild(section);
+  }
 }
 
 function renderChangelog() {
