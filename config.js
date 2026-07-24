@@ -283,6 +283,18 @@ const TOOLS = [
   }
 ];
 
+// Als "sensibel" markierte Tools (Baustein 4, Spec klare-rechte-trennung 2026-07-24):
+// werden im Sichtbarkeits-Panel in einer eigenen, benannten Sektion gruppiert und je
+// Zeile mit einem Warn-Badge versehen, damit Rechte-Zuweisungen hier besonders bewusst
+// passieren. Rein visuell -- kein Server-Zwang, keine Sperre. Enthaelt bewusst auch die
+// Nicht-Gateway-Apps (vereinsbudget/geschaeftsstelle/sc1911-anmeldung), deren
+// Schreibschutz je App separat liegt.
+const KRITISCHE_TOOLS = [
+  "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
+  "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
+  "personalakte", "dokumentenvorlagen"
+];
+
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
 // gepflegt und serverseitig in Nextcloud (news-Key der Config) gespeichert; renderNews()
 // läuft erst, wenn die Server-Antwort da ist. Dieses Array ist NUR noch der Fallback für
@@ -343,6 +355,9 @@ const APP_CHANGELOG = [
           "Sichtbarkeit pro Tool über ein einzelnes Dropdown mit vier eindeutigen Zuständen: Versteckt, Öffentlich, Alle eingeloggten Nutzer, oder Nur bestimmte Gruppen (Gruppen-Auswahl erscheint dann darunter). Der 'Apps'-Bereich je Gruppe legt alternativ direkt fest, welche Tools diese Gruppe nutzen darf.",
           "Pro App und Gruppe lässt sich neben 'Sehen' zusätzlich 'Bearbeiten' vergeben — sowohl im Gruppen-Bereich als auch in der Ansicht 'Sichtbarkeit der Tools'. Ersetzt die früher nötigen dedizierten Bearbeiter-Gruppen je App; die jeweilige App fragt diese Berechtigung selbst ab.",
           "Dritte Rechte-Stufe 'Administrieren' pro App und Gruppe: schaltet App-interne Admin-Funktionen frei (z.B. den vollen Trainerdaten-Zugriff inkl. IBAN oder die Rechte-Matrix im Kadermanager), ohne dass die Person globaler Admin der Tools-Übersicht sein muss. Administrieren schließt Bearbeiten automatisch mit ein; die Häkchen koppeln sich entsprechend. In der Karte 'Mein Konto' werden solche Tools mit dem Zusatz '(administrieren)' ausgewiesen.",
+          "Wer für ein Tool Bearbeiten- oder Administrieren-Recht bekommt, sieht das Tool jetzt automatisch — ein Häkchen bei „Bearbeiten“ setzt „Sehen“ mit; „nur Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
+          "Als sensibel eingestufte Tools (z. B. Personalakte, Kadermanager, Vereinsbudget, Dokumentenvorlagen) stehen im Bereich „Sichtbarkeit der Tools“ in einer eigenen, aufklappbaren Sektion ganz oben und tragen ein ⚠️-Zeichen — damit ihre Rechte-Vergabe besonders bewusst passiert.",
+          "Beim Vorlagen-Katalog (Dokumentenvorlagen) und in der Personalakte ist das Speichern jetzt zusätzlich serverseitig auf Bearbeiter beschränkt — reines Ansehen kann dort nichts mehr überschreiben.",
           "Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden. Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt."
         ]
       },

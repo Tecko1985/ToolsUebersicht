@@ -412,7 +412,17 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   "vereinswiki",
   "materialliste", "trainercheckliste", "spielertool-test", "spielersichtung",
   "personalkosten", "busplan", "vereinskalender", "kadermanager", "platzbelegung",
-  "fotoauftraege", "raumnutzung"
+  "fotoauftraege", "raumnutzung",
+  // seit 2026-07-24 (Spec klare-rechte-trennung, "Sehen = wirklich nur sehen"):
+  // dokumentenvorlagen -- generisches dav-save pflegt den Vorlagen-Katalog, das ist
+  //   eine Bearbeiter-Taetigkeit; die Dokument-Erzeugung (dav-load + lokaler Fill,
+  //   IBAN ueber den canAdmin-Proxy) bleibt fuer Nur-Seher moeglich. Kehrt die
+  //   fruehere Notiz "wer sehen darf, darf den Katalog pflegen" bewusst um.
+  // personalakte -- Defense-in-Depth: der Client ruft generisches dav-save NIE auf
+  //   (Schreibzugriffe laufen ueber archive-/reactivate-trainer, die serverseitig
+  //   schon resolveEditPermission pruefen). Das Set schliesst nur das latente,
+  //   handgebaute dav-save-Loch. Bricht nichts.
+  "dokumentenvorlagen", "personalakte"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
@@ -3303,6 +3313,15 @@ async function userMayAccessTool(app, session, env, authHeader, cfgPrefetch) {
   const entry = getOwn(config.tools || {}, app);
   if (!entry || entry.visible === false) return false; // versteckt/unkonfiguriert -> nur Admin
   if (!entry.loginRequired) return true;               // öffentliches Tool -> jeder Eingeloggte
+  // Bearbeiten/Administrieren impliziert Sehen (seit 2026-07-24, Spec klare-rechte-
+  // trennung): wer in editGroupIds/adminGroupIds steht, sieht das Tool auch ohne eigenen
+  // groupIds-Eintrag. Reine Erweiterung (Union) -- steht VOR dem groupIds-Zweig und liefert
+  // nur zusaetzlich true, verengt also nie ein breiter freigegebenes Tool. Gilt bewusst
+  // auch fuer einen explizit in edit/adminGroupIds gesetzten Spieler (gewollter
+  // Einzelgrant); der "leer groupIds = alles Personal"-Default schliesst Spieler weiter aus.
+  const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+  const adminGroupIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  if (editGroupIds.concat(adminGroupIds).some((g) => session.groupIds.includes(g))) return true;
   const gids = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   if (gids.length === 0) {
     // "Alle eingeloggten Nutzer" -- gemeint war immer "das ganze Personal", denn
@@ -3364,6 +3383,13 @@ async function mayViewPersonalakte(session, env, authHeader) {
   const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
   const entry = getOwn(config.tools || {}, "personalakte");
   if (!entry) return false;
+  // Bearbeiten/Administrieren impliziert Sehen (seit 2026-07-24, Spec klare-rechte-
+  // trennung): ein personalakte-Bearbeiter muss die Uebersicht auch sehen koennen
+  // (archive-/reactivate-trainer verlangen mayViewPersonalakte UND resolveEditPermission).
+  // Sonst wie resolveEditPermission streng -- leeres groupIds = niemand.
+  const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+  const adminGroupIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  if (editGroupIds.concat(adminGroupIds).some((g) => session.groupIds.includes(g))) return true;
   const groupIds = Array.isArray(entry.groupIds) ? entry.groupIds : [];
   if (groupIds.length === 0) return false;
   return groupIds.some((g) => session.groupIds.includes(g));

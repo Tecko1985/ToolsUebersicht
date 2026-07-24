@@ -615,6 +615,34 @@ main { flex: 1; min-width: 0; }
   font-family: inherit;
 }
 
+/* Sensible/kritische Tools im Sichtbarkeits-Panel (Baustein 4, klare-rechte-trennung) */
+.kritisch-section {
+  border: 1px solid #e0a800;
+  border-radius: 8px;
+  padding: 8px 10px 4px;
+  margin-bottom: 14px;
+  background: rgba(224, 168, 0, 0.07);
+}
+.kritisch-section > summary {
+  font-weight: 700;
+  cursor: pointer;
+  color: #b07d10;
+  margin-bottom: 8px;
+}
+.kritisch-section > summary .ks-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #e0a800;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.visibility-row-kritisch { border-color: #e0a800; }
+.vr-kritisch { cursor: help; }
+
 .pin-gate { max-width: 420px; margin: 40px auto; text-align: center; }
 .pin-gate .card { text-align: left; }
 

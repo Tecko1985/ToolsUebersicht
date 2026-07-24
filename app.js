@@ -818,8 +818,16 @@ function renderGroupsList() {
         const cb = e.target;
         if (!cb.matches || !cb.matches('input[type="checkbox"][data-kind]')) return;
         const other = (kind) => picker.querySelector(`input[data-kind="${kind}"][value="${CSS.escape(cb.value)}"]`);
-        if (cb.dataset.kind === "admin" && cb.checked) { const ed = other("edit"); if (ed) ed.checked = true; }
-        if (cb.dataset.kind === "edit" && !cb.checked) { const ad = other("admin"); if (ad) ad.checked = false; }
+        // Kette Administrieren => Bearbeiten => Sehen (serverseitig maßgeblich, siehe
+        // userMayAccessTool/resolveEditPermission; hier nur Anzeige-Kopplung gegen
+        // widersprüchliche Häkchen). Anhaken zieht nach oben mit, Abwählen nach unten.
+        if (cb.checked) {
+          if (cb.dataset.kind === "admin") { const ed = other("edit"); if (ed) ed.checked = true; const se = other("see"); if (se) se.checked = true; }
+          if (cb.dataset.kind === "edit") { const se = other("see"); if (se) se.checked = true; }
+        } else {
+          if (cb.dataset.kind === "see") { const ed = other("edit"); if (ed) ed.checked = false; const ad = other("admin"); if (ad) ad.checked = false; }
+          if (cb.dataset.kind === "edit") { const ad = other("admin"); if (ad) ad.checked = false; }
+        }
       });
       panel.style.display = "block";
       panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
@@ -1122,69 +1130,108 @@ const VIRTUAL_VISIBILITY_ENTRIES = [
   { id: "vereinswiki", name: "Toolbox Wiki (Frage-Funktion in „Feedback & Hilfe“)", icon: "📚", category: "Verein" }
 ];
 
+function isKritischesTool(id) {
+  return typeof KRITISCHE_TOOLS !== "undefined" && KRITISCHE_TOOLS.includes(id);
+}
+
+// Baut eine Sichtbarkeits-Zeile (Modus-Dropdown + Sehen/Bearbeiten/Administrieren-
+// Picker samt Kopplung). Aus renderVisibilityList ausgelagert, damit kritische und
+// normale Tools in getrennte Container gerendert werden koennen (Baustein 4).
+function buildVisibilityRow(t) {
+  const entry = visibilityState[t.id] || {};
+  const mode = visibilityMode(entry);
+  const groupIds = entry.groupIds || [];
+  const editGroupIds = entry.editGroupIds || [];
+  const adminGroupIds = entry.adminGroupIds || [];
+  const kritisch = isKritischesTool(t.id);
+  const row = document.createElement("div");
+  row.className = "visibility-row" + (kritisch ? " visibility-row-kritisch" : "");
+  row.dataset.toolId = t.id;
+  const badge = kritisch
+    ? '<span class="vr-kritisch" title="Sensibles Tool — Rechte besonders sorgfältig vergeben">⚠️</span> '
+    : "";
+  row.innerHTML = `
+    <span class="tool-icon">${t.icon || "🔗"}</span>
+    <span class="vr-name">${badge}${escapeHtml(t.name)}</span>
+    <span class="vr-category">${escapeHtml(t.category)}</span>
+    <select data-field="mode" class="form-select">
+      <option value="hidden" ${mode === "hidden" ? "selected" : ""}>Versteckt</option>
+      <option value="public" ${mode === "public" ? "selected" : ""}>Öffentlich</option>
+      <option value="loggedin" ${mode === "loggedin" ? "selected" : ""}>Alle eingeloggten Nutzer</option>
+      <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
+    </select>
+    <details class="collapsible visibility-groups">
+      <summary>Gruppen (${groupIds.length} sehen, ${editGroupIds.length} bearbeiten, ${adminGroupIds.length} administrieren)</summary>
+      <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
+        <div class="gp-label">Sehen</div>
+        <div class="group-picker" data-role="see-boxes"></div>
+      </div>
+      <div class="group-picker-wrap" data-field="editGroupIds">
+        <div class="gp-label">Bearbeiten</div>
+        <div class="group-picker" data-role="edit-boxes"></div>
+      </div>
+      <div class="group-picker-wrap" data-field="adminGroupIds">
+        <div class="gp-label">Administrieren</div>
+        <div class="group-picker" data-role="admin-boxes"></div>
+      </div>
+    </details>
+  `;
+
+  renderGroupCheckboxes(row.querySelector('[data-field="groupIds"] [data-role="see-boxes"]'), groupIds);
+  renderGroupCheckboxes(row.querySelector('[data-field="editGroupIds"] [data-role="edit-boxes"]'), editGroupIds);
+  renderGroupCheckboxes(row.querySelector('[data-field="adminGroupIds"] [data-role="admin-boxes"]'), adminGroupIds);
+
+  // Volle Kette Administrieren => Bearbeiten => Sehen (serverseitig maßgeblich via
+  // userMayAccessTool/resolveEditPermission; hier nur Anzeige-Kopplung). Anhaken zieht
+  // nach oben mit, Abwählen nach unten. Die Sehen-Häkchen (groupIds) werden beim
+  // Speichern nur im Modus "Nur bestimmte Gruppen" ausgewertet — die Kopplung fügt
+  // dort die Gruppe zu Sehen hinzu.
+  const seeBoxes = row.querySelector('[data-field="groupIds"]');
+  const editBoxes = row.querySelector('[data-field="editGroupIds"]');
+  const adminBoxes = row.querySelector('[data-field="adminGroupIds"]');
+  row.querySelector(".visibility-groups").addEventListener("change", (e) => {
+    const cb = e.target;
+    if (!cb.matches || !cb.matches('input[type="checkbox"]')) return;
+    const boxIn = (wrap) => wrap.querySelector(`input[type="checkbox"][value="${CSS.escape(cb.value)}"]`);
+    if (cb.checked) {
+      if (adminBoxes.contains(cb)) { const ed = boxIn(editBoxes); if (ed) ed.checked = true; const se = boxIn(seeBoxes); if (se) se.checked = true; }
+      if (editBoxes.contains(cb)) { const se = boxIn(seeBoxes); if (se) se.checked = true; }
+    } else {
+      if (seeBoxes.contains(cb)) { const ed = boxIn(editBoxes); if (ed) ed.checked = false; const ad = boxIn(adminBoxes); if (ad) ad.checked = false; }
+      if (editBoxes.contains(cb)) { const ad = boxIn(adminBoxes); if (ad) ad.checked = false; }
+    }
+  });
+
+  row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
+    const isGroups = e.target.value === "groups";
+    row.querySelector('[data-field="groupIds"]').style.display = isGroups ? "block" : "none";
+    if (isGroups) row.querySelector(".visibility-groups").open = true;
+  });
+  return row;
+}
+
 function renderVisibilityList() {
   const container = document.getElementById("visibility-list");
   container.innerHTML = "";
-  TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES).forEach((t) => {
-    const entry = visibilityState[t.id] || {};
-    const mode = visibilityMode(entry);
-    const groupIds = entry.groupIds || [];
-    const editGroupIds = entry.editGroupIds || [];
-    const adminGroupIds = entry.adminGroupIds || [];
-    const row = document.createElement("div");
-    row.className = "visibility-row";
-    row.dataset.toolId = t.id;
-    row.innerHTML = `
-      <span class="tool-icon">${t.icon || "🔗"}</span>
-      <span class="vr-name">${escapeHtml(t.name)}</span>
-      <span class="vr-category">${escapeHtml(t.category)}</span>
-      <select data-field="mode" class="form-select">
-        <option value="hidden" ${mode === "hidden" ? "selected" : ""}>Versteckt</option>
-        <option value="public" ${mode === "public" ? "selected" : ""}>Öffentlich</option>
-        <option value="loggedin" ${mode === "loggedin" ? "selected" : ""}>Alle eingeloggten Nutzer</option>
-        <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
-      </select>
-      <details class="collapsible visibility-groups">
-        <summary>Gruppen (${groupIds.length} sehen, ${editGroupIds.length} bearbeiten, ${adminGroupIds.length} administrieren)</summary>
-        <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
-          <div class="gp-label">Sehen</div>
-          <div class="group-picker" data-role="see-boxes"></div>
-        </div>
-        <div class="group-picker-wrap" data-field="editGroupIds">
-          <div class="gp-label">Bearbeiten</div>
-          <div class="group-picker" data-role="edit-boxes"></div>
-        </div>
-        <div class="group-picker-wrap" data-field="adminGroupIds">
-          <div class="gp-label">Administrieren</div>
-          <div class="group-picker" data-role="admin-boxes"></div>
-        </div>
-      </details>
-    `;
-    container.appendChild(row);
+  const alle = TOOLS.concat(VIRTUAL_VISIBILITY_ENTRIES);
+  const kritische = alle.filter((t) => isKritischesTool(t.id));
+  const normale = alle.filter((t) => !isKritischesTool(t.id));
 
-    renderGroupCheckboxes(row.querySelector('[data-field="groupIds"] [data-role="see-boxes"]'), groupIds);
-    renderGroupCheckboxes(row.querySelector('[data-field="editGroupIds"] [data-role="edit-boxes"]'), editGroupIds);
-    renderGroupCheckboxes(row.querySelector('[data-field="adminGroupIds"] [data-role="admin-boxes"]'), adminGroupIds);
-
-    // Gleiche Kopplung wie im Gruppen-Panel: Administrieren-Häkchen einer Gruppe
-    // hakt deren Bearbeiten-Häkchen mit an, abgewähltes Bearbeiten nimmt das
-    // Administrieren-Häkchen mit raus (serverseitig gilt die Implikation ohnehin).
-    const editBoxes = row.querySelector('[data-field="editGroupIds"]');
-    const adminBoxes = row.querySelector('[data-field="adminGroupIds"]');
-    row.querySelector(".visibility-groups").addEventListener("change", (e) => {
-      const cb = e.target;
-      if (!cb.matches || !cb.matches('input[type="checkbox"]')) return;
-      const boxIn = (wrap) => wrap.querySelector(`input[type="checkbox"][value="${CSS.escape(cb.value)}"]`);
-      if (adminBoxes.contains(cb) && cb.checked) { const ed = boxIn(editBoxes); if (ed) ed.checked = true; }
-      if (editBoxes.contains(cb) && !cb.checked) { const ad = boxIn(adminBoxes); if (ad) ad.checked = false; }
-    });
-
-    row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
-      const isGroups = e.target.value === "groups";
-      row.querySelector('[data-field="groupIds"]').style.display = isGroups ? "block" : "none";
-      if (isGroups) row.querySelector(".visibility-groups").open = true;
-    });
-  });
+  // Kritische Tools zuerst, in einer benannten, aufklappbaren Sektion (offen per
+  // Default, damit die Warn-Badges sofort sichtbar sind). Baustein 4. Der Save nutzt
+  // "#visibility-list .visibility-row" als Nachfahren-Selektor und erfasst die Zeilen
+  // in dieser Sektion damit unverändert mit.
+  if (kritische.length) {
+    const section = document.createElement("details");
+    section.className = "kritisch-section";
+    section.open = true;
+    const summary = document.createElement("summary");
+    summary.innerHTML = `⚠️ Sensible Tools — Rechte besonders sorgfältig vergeben <span class="ks-count">${kritische.length}</span>`;
+    section.appendChild(summary);
+    kritische.forEach((t) => section.appendChild(buildVisibilityRow(t)));
+    container.appendChild(section);
+  }
+  normale.forEach((t) => container.appendChild(buildVisibilityRow(t)));
 }
 
 function renderChangelog() {
