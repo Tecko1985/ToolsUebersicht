@@ -342,6 +342,7 @@ const APP_CHANGELOG = [
           "Gruppen anlegen (z.B. 'Vorstand', 'Trainer U15'), Mitglieder per Checkbox zuordnen — direkt in der Nutzerliste oder in der Gruppenverwaltung.",
           "Sichtbarkeit pro Tool über ein einzelnes Dropdown mit vier eindeutigen Zuständen: Versteckt, Öffentlich, Alle eingeloggten Nutzer, oder Nur bestimmte Gruppen (Gruppen-Auswahl erscheint dann darunter). Der 'Apps'-Bereich je Gruppe legt alternativ direkt fest, welche Tools diese Gruppe nutzen darf.",
           "Pro App und Gruppe lässt sich neben 'Sehen' zusätzlich 'Bearbeiten' vergeben — sowohl im Gruppen-Bereich als auch in der Ansicht 'Sichtbarkeit der Tools'. Ersetzt die früher nötigen dedizierten Bearbeiter-Gruppen je App; die jeweilige App fragt diese Berechtigung selbst ab.",
+          "Dritte Rechte-Stufe 'Administrieren' pro App und Gruppe: schaltet App-interne Admin-Funktionen frei (z.B. den vollen Trainerdaten-Zugriff inkl. IBAN oder die Rechte-Matrix im Kadermanager), ohne dass die Person globaler Admin der Tools-Übersicht sein muss. Administrieren schließt Bearbeiten automatisch mit ein; die Häkchen koppeln sich entsprechend. In der Karte 'Mein Konto' werden solche Tools mit dem Zusatz '(administrieren)' ausgewiesen.",
           "Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden. Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt."
         ]
       },

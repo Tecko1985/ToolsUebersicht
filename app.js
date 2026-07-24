@@ -700,10 +700,10 @@ function summarizeProvisionReport(report) {
 // Modus zu verändern (z.B. bei einem Tool, das ohnehin für "Alle eingeloggten Nutzer"
 // sichtbar ist) — sonst würde das Vergeben eines Bearbeiten-Rechts die Sichtbarkeit
 // ungewollt auf "Nur bestimmte Gruppen" verengen.
-function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedProvisionToolIds) {
+function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedAdminToolIds, selectedProvisionToolIds) {
   const updated = {};
   TOOLS.forEach((t) => {
-    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [], provisionGroupIds: [] };
+    const entry = visibilityState[t.id] || { visible: true, loginRequired: false, groupIds: [], editGroupIds: [], adminGroupIds: [], provisionGroupIds: [] };
     const wasInGroup = (entry.groupIds || []).includes(groupId);
     const groupIds = new Set(entry.groupIds || []);
     const shouldHaveAccess = selectedToolIds.includes(t.id);
@@ -724,6 +724,12 @@ function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolId
     const editGroupIds = new Set(entry.editGroupIds || []);
     if (selectedEditToolIds.includes(t.id)) editGroupIds.add(groupId); else editGroupIds.delete(groupId);
 
+    // Administrieren (dritte Stufe): schließt Bearbeiten serverseitig ein
+    // (resolveEditPermission wertet adminGroupIds mit) — hier nur speichern,
+    // die Häkchen-Kopplung übernimmt der change-Listener am Picker.
+    const adminGroupIds = new Set(entry.adminGroupIds || []);
+    if ((selectedAdminToolIds || []).includes(t.id)) adminGroupIds.add(groupId); else adminGroupIds.delete(groupId);
+
     // provisionGroupIds nur für provisionierbare Apps anfassen, sonst unverändert lassen.
     const provisionGroupIds = new Set(entry.provisionGroupIds || []);
     if (PROVISIONABLE_APPS.includes(t.id)) {
@@ -734,6 +740,7 @@ function computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolId
       visible, loginRequired,
       groupIds: remaining,
       editGroupIds: Array.from(editGroupIds),
+      adminGroupIds: Array.from(adminGroupIds),
       provisionGroupIds: Array.from(provisionGroupIds)
     };
   });
@@ -788,6 +795,7 @@ function renderGroupsList() {
         const entry = visibilityState[t.id] || {};
         const canSee = (entry.groupIds || []).includes(groupId);
         const canEditTool = (entry.editGroupIds || []).includes(groupId);
+        const canAdminTool = (entry.adminGroupIds || []).includes(groupId);
         const canProvision = (entry.provisionGroupIds || []).includes(groupId);
         const provisionCell = PROVISIONABLE_APPS.includes(t.id)
           ? `<label class="checkbox-label"><input type="checkbox" data-kind="provision" value="${escapeHtml(t.id)}" ${canProvision ? "checked" : ""} /> Auto-Eintrag</label>`
@@ -798,19 +806,31 @@ function renderGroupsList() {
           <span class="gp-tool-name">${t.icon || "🔗"} ${escapeHtml(t.name)}</span>
           <label class="checkbox-label"><input type="checkbox" data-kind="see" value="${escapeHtml(t.id)}" ${canSee ? "checked" : ""} /> Sehen</label>
           <label class="checkbox-label"><input type="checkbox" data-kind="edit" value="${escapeHtml(t.id)}" ${canEditTool ? "checked" : ""} /> Bearbeiten</label>
+          <label class="checkbox-label"><input type="checkbox" data-kind="admin" value="${escapeHtml(t.id)}" ${canAdminTool ? "checked" : ""} /> Administrieren</label>
           ${provisionCell}
         `;
         picker.appendChild(row);
+      });
+      // Administrieren schließt Bearbeiten ein (serverseitig via resolveEditPermission,
+      // maßgeblich ist der Worker) — die Kopplung hier verhindert nur widersprüchlich
+      // aussehende Häkchen-Kombinationen in der Anzeige.
+      picker.addEventListener("change", (e) => {
+        const cb = e.target;
+        if (!cb.matches || !cb.matches('input[type="checkbox"][data-kind]')) return;
+        const other = (kind) => picker.querySelector(`input[data-kind="${kind}"][value="${CSS.escape(cb.value)}"]`);
+        if (cb.dataset.kind === "admin" && cb.checked) { const ed = other("edit"); if (ed) ed.checked = true; }
+        if (cb.dataset.kind === "edit" && !cb.checked) { const ad = other("admin"); if (ad) ad.checked = false; }
       });
       panel.style.display = "block";
       panel.querySelector("[data-save-group-tools]").addEventListener("click", async () => {
         const selectedToolIds = getCheckedValues(picker, "see");
         const selectedEditToolIds = getCheckedValues(picker, "edit");
+        const selectedAdminToolIds = getCheckedValues(picker, "admin");
         const selectedProvisionToolIds = getCheckedValues(picker, "provision");
         const errorEl = document.getElementById("groups-error");
         errorEl.style.display = "none";
         try {
-          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedProvisionToolIds);
+          const updatedTools = computeGroupToolVisibility(groupId, selectedToolIds, selectedEditToolIds, selectedAdminToolIds, selectedProvisionToolIds);
           await callWorker("save-visibility", { tools: updatedTools });
           visibilityState = updatedTools;
           renderToolGrid();
@@ -1110,6 +1130,7 @@ function renderVisibilityList() {
     const mode = visibilityMode(entry);
     const groupIds = entry.groupIds || [];
     const editGroupIds = entry.editGroupIds || [];
+    const adminGroupIds = entry.adminGroupIds || [];
     const row = document.createElement("div");
     row.className = "visibility-row";
     row.dataset.toolId = t.id;
@@ -1124,7 +1145,7 @@ function renderVisibilityList() {
         <option value="groups" ${mode === "groups" ? "selected" : ""}>Nur bestimmte Gruppen</option>
       </select>
       <details class="collapsible visibility-groups">
-        <summary>Gruppen (${groupIds.length} sehen, ${editGroupIds.length} bearbeiten)</summary>
+        <summary>Gruppen (${groupIds.length} sehen, ${editGroupIds.length} bearbeiten, ${adminGroupIds.length} administrieren)</summary>
         <div class="group-picker-wrap" data-field="groupIds" style="display:${mode === "groups" ? "block" : "none"};">
           <div class="gp-label">Sehen</div>
           <div class="group-picker" data-role="see-boxes"></div>
@@ -1133,12 +1154,30 @@ function renderVisibilityList() {
           <div class="gp-label">Bearbeiten</div>
           <div class="group-picker" data-role="edit-boxes"></div>
         </div>
+        <div class="group-picker-wrap" data-field="adminGroupIds">
+          <div class="gp-label">Administrieren</div>
+          <div class="group-picker" data-role="admin-boxes"></div>
+        </div>
       </details>
     `;
     container.appendChild(row);
 
     renderGroupCheckboxes(row.querySelector('[data-field="groupIds"] [data-role="see-boxes"]'), groupIds);
     renderGroupCheckboxes(row.querySelector('[data-field="editGroupIds"] [data-role="edit-boxes"]'), editGroupIds);
+    renderGroupCheckboxes(row.querySelector('[data-field="adminGroupIds"] [data-role="admin-boxes"]'), adminGroupIds);
+
+    // Gleiche Kopplung wie im Gruppen-Panel: Administrieren-Häkchen einer Gruppe
+    // hakt deren Bearbeiten-Häkchen mit an, abgewähltes Bearbeiten nimmt das
+    // Administrieren-Häkchen mit raus (serverseitig gilt die Implikation ohnehin).
+    const editBoxes = row.querySelector('[data-field="editGroupIds"]');
+    const adminBoxes = row.querySelector('[data-field="adminGroupIds"]');
+    row.querySelector(".visibility-groups").addEventListener("change", (e) => {
+      const cb = e.target;
+      if (!cb.matches || !cb.matches('input[type="checkbox"]')) return;
+      const boxIn = (wrap) => wrap.querySelector(`input[type="checkbox"][value="${CSS.escape(cb.value)}"]`);
+      if (adminBoxes.contains(cb) && cb.checked) { const ed = boxIn(editBoxes); if (ed) ed.checked = true; }
+      if (editBoxes.contains(cb) && !cb.checked) { const ad = boxIn(adminBoxes); if (ad) ad.checked = false; }
+    });
 
     row.querySelector('[data-field="mode"]').addEventListener("change", (e) => {
       const isGroups = e.target.value === "groups";
@@ -2597,19 +2636,26 @@ function tokenAblaufDatum() {
   }
 }
 
-// In welchen Tools darf ich mehr als lesen? Schnittmenge aus den Bearbeiter-Gruppen
-// je Tool (editGroupIds -- kommt mit der oeffentlichen Sichtbarkeits-Konfiguration
-// ohnehin in den Client, kostet also keinen zusaetzlichen Aufruf) und den eigenen
-// Gruppen. Tools ohne Sichtbarkeit bleiben draussen: ein Schreibrecht auf etwas, das
-// man gar nicht sieht, ist wirkungslos.
+// In welchen Tools darf ich mehr als lesen? Schnittmenge aus den Bearbeiter-/
+// Administrieren-Gruppen je Tool (editGroupIds/adminGroupIds -- kommen mit der
+// oeffentlichen Sichtbarkeits-Konfiguration ohnehin in den Client, kostet also
+// keinen zusaetzlichen Aufruf) und den eigenen Gruppen. Tools ohne Sichtbarkeit
+// bleiben draussen: ein Schreibrecht auf etwas, das man gar nicht sieht, ist
+// wirkungslos. Administrieren wird ausgewiesen und impliziert Bearbeiten.
 // Bewusst ueber isAdmin/groupIds und NICHT ueber realIsAdmin -- waehrend einer
 // Admin-Testansicht soll hier stehen, was die getestete Gruppe darf.
 function eigeneBearbeitenRechte() {
   const meine = new Set(currentUser.groupIds || []);
+  const inMeinen = (ids) => (ids || []).some((id) => meine.has(id));
   return TOOLS
     .filter((t) => isVisibleToUser(t.id, currentUser))
-    .filter((t) => ((visibilityState[t.id] || {}).editGroupIds || []).some((id) => meine.has(id)))
-    .map((t) => t.name)
+    .map((t) => {
+      const entry = visibilityState[t.id] || {};
+      if (inMeinen(entry.adminGroupIds)) return t.name + " (administrieren)";
+      if (inMeinen(entry.editGroupIds)) return t.name;
+      return null;
+    })
+    .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, "de"));
 }
 
@@ -3029,13 +3075,14 @@ function setupAuthForms() {
       const mode = row.querySelector('[data-field="mode"]').value;
       const groupIds = mode === "groups" ? getCheckedValues(row.querySelector('[data-field="groupIds"]')) : [];
       const editGroupIds = getCheckedValues(row.querySelector('[data-field="editGroupIds"]'));
+      const adminGroupIds = getCheckedValues(row.querySelector('[data-field="adminGroupIds"]'));
       const visible = mode !== "hidden";
       const loginRequired = mode === "loggedin" || mode === "groups";
       // provisionGroupIds wird nur im Gruppen-Tab gepflegt, hier unverändert übernehmen —
       // sonst würde jedes Speichern in diesem Panel die Auto-Provisionierung für ALLE
       // Tools löschen (save-visibility ersetzt config.tools auf dem Worker komplett).
       const provisionGroupIds = (visibilityState[id] && visibilityState[id].provisionGroupIds) || [];
-      tools[id] = { visible, loginRequired, groupIds, editGroupIds, provisionGroupIds };
+      tools[id] = { visible, loginRequired, groupIds, editGroupIds, adminGroupIds, provisionGroupIds };
     });
     const errorEl = document.getElementById("admin-save-error");
     const successEl = document.getElementById("admin-save-success");

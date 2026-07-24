@@ -81,7 +81,7 @@
 //     Der eigene Kaderplatz kommt IMMER aus linkedUsername, nie aus dem Body -- ein manipulierter Request
 //     trifft deshalb keinen fremden Eintrag. Ersetzt dav-save für Spieler: das würde die GANZE Datei
 //     (alle Mannschaften, Kasse) schreiben und ist für sie per WRITE_REQUIRES_EDIT_PERMISSION gesperrt.
-//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, groupNames, realIsAdmin, viewAsGroupId, vertragspflichtig, passwordSetAt } (+ canEdit, wenn app übergeben und bekannt)
+//   POST { action: "me", app? } + Authorization: Bearer <token> -> { username, isAdmin, groupIds, groupNames, realIsAdmin, viewAsGroupId, vertragspflichtig, passwordSetAt } (+ canEdit/canAdmin, wenn app übergeben und bekannt)
 //     groupNames (seit 2026-07-21): die Namen zu groupIds, damit "Mein Konto" die Gruppen auch
 //     Nicht-Admins zeigen kann (list-groups ist admin-only). Nur die EIGENEN Gruppen — kein Ersatz
 //     für list-directory und kein Weg an dessen Spieler-Sperre vorbei. passwordSetAt (dito): Zeitpunkt
@@ -116,21 +116,22 @@
 //   POST { action: "delete-user", username } (admin)             -> löscht Nutzer, entfernt ihn aus allen Gruppen (letzter Admin kann nicht gelöscht werden)
 //   POST { action: "create-group", name } (admin)                -> legt Gruppe an (id per Slugify aus name)
 //   POST { action: "list-groups" } (admin)                       -> alle Gruppen inkl. memberUsernames
-//   POST { action: "trainerdaten-list-groups" } (admin ODER Trainerdaten-Bearbeiter) -> alle Gruppen inkl. memberUsernames,
+//   POST { action: "trainerdaten-list-groups" } (admin ODER Trainerdaten-ADMINISTRIEREN-Stufe) -> alle Gruppen inkl. memberUsernames,
 //     Mitglieder auf Personal gefiltert — schmale Variante von list-groups für die Gruppen-Auswahl/-Spalte im
-//     Trainerdaten-CSV-Export (resolveEditPermission("trainerdaten"): Bearbeiter-Gruppen aus dem Sichtbarkeits-Panel)
-//   POST { action: "check-edit-permission", app } (jeder eingeloggte Nutzer) -> { canEdit } via resolveEditPermission.
-//     Verrät nur das EIGENE Recht für EINE App (keine fremden Daten). Konsumenten: der Trainerdaten-CORS-Proxy
-//     (Worker "trainerdaten", prüft darüber serverseitig das Bearbeiten-Recht, bevor er WebDAV-Zugriffe mit seinen
-//     eigenen Nextcloud-Secrets ausführt) und der Trainerdaten-/Dokumentenvorlagen-Client für den Admin-Einstieg.
-//     Bewusst 200 + canEdit:false statt 403 bei fehlendem Recht — Aufrufer müssen "Session tot" (401) von
+//     Trainerdaten-CSV-Export (resolveAdminPermission("trainerdaten"): Administrieren-Gruppen aus dem Sichtbarkeits-Panel)
+//   POST { action: "check-edit-permission", app } (jeder eingeloggte Nutzer) -> { canEdit, canAdmin } via
+//     resolveEditPermission/resolveAdminPermission. Verrät nur das EIGENE Recht für EINE App (keine fremden Daten).
+//     Konsumenten: der Trainerdaten-CORS-Proxy (Worker "trainerdaten", prüft darüber serverseitig die
+//     ADMINISTRIEREN-Stufe, bevor er WebDAV-Zugriffe mit seinen eigenen Nextcloud-Secrets ausführt) und der
+//     Trainerdaten-/Dokumentenvorlagen-Client für den Admin-Einstieg.
+//     Bewusst 200 + false statt 403 bei fehlendem Recht — Aufrufer müssen "Session tot" (401) von
 //     "kein Recht" unterscheiden können.
 //   POST { action: "list-directory" } (jedes eingeloggte PERSONAL) -> { users:[{username,displayName}], groups:[{id,name}] } ohne
 //     sensible Felder (kein isAdmin/mustSetPassword/memberUsernames) — für Teilen-mit-Picker in Gateway-Apps (z.B. Vereinskalender)
 //     Liefert nur Personal; Spielerkonten bekommen 403 (kein Spieler-Tool hat einen Picker, und die vollständige
 //     Namensliste des Vereins ist für ein Spielerkonto nichts zu holen).
 //   POST { action: "list-tool-editors", app } + Authorization: Bearer -> { users:[{username,displayName}] }
-//     Mitglieder der Bearbeiter-Gruppen (editGroupIds) EINER bestimmten App, z.B. für einen "Vertreter"-Picker
+//     Mitglieder der Bearbeiter-Gruppen (editGroupIds + adminGroupIds) EINER bestimmten App, z.B. für einen "Vertreter"-Picker
 //     im Abwesenheitskalender-Formular — jeder mit Tool-Zugriff darf abrufen (gleiche Prüfung wie dav-load:
 //     userMayAccessTool), kein Admin-Gate. Keine sensiblen Felder, gleiche Vertrauensstufe wie list-directory.
 //   POST { action: "list-trainer-profiles" } (jeder eingeloggte Nutzer) -> { profiles:[{username,vorname,nachname,lizenz,mannschaften,vertragBenoetigt}] }
@@ -181,10 +182,12 @@
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
 //   POST { action: "delete-group", groupId } (admin)             -> löscht Gruppe, räumt groupIds in sichtbarkeit.json auf
-//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds, provisionGroupIds}
+//   POST { action: "save-visibility", tools } (admin)            -> aktualisiert tools in sichtbarkeit.json (erhält news), tools[id] = {visible, loginRequired, groupIds, editGroupIds, adminGroupIds, provisionGroupIds}
 //     (groupIds steuert die Sichtbarkeit im Modus "Nur bestimmte Gruppen"; editGroupIds ist unabhängig davon
-//     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools; provisionGroupIds
-//     steuert das Auto-Provisioning: Mitglieder dieser Gruppen bekommen automatisch einen Eintrag im Tool.)
+//     und vergibt zusätzlich Bearbeiten-Rechte, unabhängig vom Sichtbarkeits-Modus des Tools; adminGroupIds ist
+//     die dritte Stufe "Administrieren" (App-interne Admin-Funktionen, schließt Bearbeiten ein — resolveEditPermission
+//     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
+//     bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
 //   POST { action: "submit-feedback", type, toolId?, text } (jeder eingeloggte Nutzer) -> { ok:true }
 //     (legt EINEN Feedback-/Wunsch-Eintrag an; Name/Nutzername kommen serverseitig aus dem eigenen Konto,
@@ -219,7 +222,7 @@
 //   POST { action: "set-materialcontainer-code", code, hinweis? } (Admin) -> { ok:true, code, hinweis, geaendertAm, geaendertVon }
 //     Legt ihn in materialcontainer{} von sichtbarkeit.json ab (read-modify-write). Leerer code = "keiner hinterlegt".
 //   POST { action: "dav-load", app } + Authorization: Bearer       -> { data, rev, me } (Inhalt der App-Datendatei aus Nextcloud, data:null wenn noch nicht vorhanden; rev = ETag)
-//     me enthält dasselbe wie die Aktion "me" inkl. canEdit für diese App — der Client braucht dafür keinen zweiten Request.
+//     me enthält dasselbe wie die Aktion "me" inkl. canEdit/canAdmin für diese App — der Client braucht dafür keinen zweiten Request.
 //     Kostet den Worker keinen zusätzlichen Nextcloud-Read (nutzer.json + sichtbarkeit.json sind hier ohnehin gelesen).
 //     Für Apps in AUTO_PRUNE_APPS (aktuell: fotoauftraege) werden dabei abgelaufene Listeneinträge entfernt und die Datei
 //     zurückgeschrieben — ein dav-load kann also schreiben und ein neues rev liefern. Zugehörige Nextcloud-Dateien bleiben unberührt.
@@ -969,7 +972,13 @@ async function buildMeResult(session, env, authHeader, app, cfgPrefetch) {
     art: session.art
   };
   if (app) {
-    result.canEdit = await resolveEditPermission(app, session, env, authHeader, cfgPrefetch);
+    // Beide Stufen aus DERSELBEN Config-Promise beantworten -- ohne den lokalen
+    // Prefetch würde jeder Resolver bei fehlendem cfgPrefetch einzeln lesen.
+    const cfg = cfgPrefetch || prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    result.canEdit = await resolveEditPermission(app, session, env, authHeader, cfg);
+    // Administrieren (dritte Stufe, additiv): App-interne Admin-Funktionen --
+    // Apps, die das Feld nicht kennen, ignorieren es einfach.
+    result.canAdmin = await resolveAdminPermission(app, session, env, authHeader, cfg);
   }
   return result;
 }
@@ -1234,17 +1243,18 @@ async function handleListGroups(request, env, authHeader, corsHeaders) {
 
 // Schmale Variante von list-groups für die Gruppen-Auswahl und die CSV-Spalte
 // "Gruppen" im Trainerdaten-Admin: list-groups bleibt admin-only, hier darf
-// zusätzlich die Population "darf Trainerdaten bearbeiten" lesen
-// (resolveEditPermission wie überall — Bearbeiter-Gruppen aus dem
-// Sichtbarkeits-Panel, Admin-Kurzschluss inklusive). Diese Personen sehen im
-// Trainerdaten-Admin ohnehin alle Stammdaten inkl. IBAN; die Gruppenzugehörig-
-// keit des Personals ist demgegenüber mild. Mitgliederlisten werden auf
-// Personal gefiltert: Spielerkonten tauchen in den Trainerdaten nie auf und
-// gehen einen Trainerdaten-Bearbeiter nichts an (Minimal-Disclosure).
+// zusätzlich die Population "darf Trainerdaten administrieren" lesen
+// (resolveAdminPermission — Administrieren-Gruppen aus dem Sichtbarkeits-Panel,
+// Admin-Kurzschluss inklusive; seit der dritten Rechte-Stufe hängt der ganze
+// Trainerdaten-Admin-Modus an dieser Stufe, nicht mehr am Bearbeiten-Häkchen).
+// Diese Personen sehen im Trainerdaten-Admin ohnehin alle Stammdaten inkl.
+// IBAN; die Gruppenzugehörigkeit des Personals ist demgegenüber mild.
+// Mitgliederlisten werden auf Personal gefiltert: Spielerkonten tauchen in den
+// Trainerdaten nie auf und gehen einen Trainerdaten-Admin nichts an.
 async function handleTrainerdatenListGroups(request, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("trainerdaten", session, env, authHeader))) {
+  if (!(await resolveAdminPermission("trainerdaten", session, env, authHeader))) {
     return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
   }
 
@@ -1261,20 +1271,22 @@ async function handleTrainerdatenListGroups(request, env, authHeader, corsHeader
   return json({ groups }, 200, corsHeaders);
 }
 
-// Das eigene Bearbeiten-Recht für EINE App — dieselbe resolveEditPermission wie
-// alle serverseitigen Schreib-Gates (Admin-Kurzschluss inklusive). Primärer
-// Konsument ist der Trainerdaten-CORS-Proxy (Worker "trainerdaten"): der prüft
-// hierüber per Service Binding, ob der Token-Inhaber Trainerdaten bearbeiten
-// darf, bevor er WebDAV-Zugriffe mit seinen eigenen Nextcloud-Secrets ausführt.
-// Bewusst 200 + canEdit:false statt 403 bei fehlendem Recht, damit Aufrufer
+// Die eigenen Rechte-Stufen für EINE App — dieselben Resolver wie alle
+// serverseitigen Gates (Admin-Kurzschluss inklusive). Primärer Konsument ist
+// der Trainerdaten-CORS-Proxy (Worker "trainerdaten"): der prüft hierüber per
+// Service Binding canAdmin (Administrieren-Stufe = Vollzugriff inkl. IBAN),
+// bevor er WebDAV-Zugriffe mit seinen eigenen Nextcloud-Secrets ausführt.
+// Bewusst 200 + false statt 403 bei fehlendem Recht, damit Aufrufer
 // "Session ungültig" (401) von "eingeloggt, aber kein Recht" trennen können.
 async function handleCheckEditPermission(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const app = String(body.app || "");
   if (!app) return json({ error: "app fehlt" }, 400, corsHeaders);
-  const canEdit = await resolveEditPermission(app, session, env, authHeader);
-  return json({ canEdit: !!canEdit }, 200, corsHeaders);
+  const cfg = prefetchJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const canEdit = await resolveEditPermission(app, session, env, authHeader, cfg);
+  const canAdmin = await resolveAdminPermission(app, session, env, authHeader, cfg);
+  return json({ canEdit: !!canEdit, canAdmin: !!canAdmin }, 200, corsHeaders);
 }
 
 // Schlanke, nicht-Admin-Variante von list-users/list-groups für "Teilen mit"-Picker
@@ -1318,10 +1330,14 @@ async function handleListToolEditors(request, body, env, authHeader, corsHeaders
   }
   const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
   const entry = getOwn(config.tools || {}, app);
+  // Administrieren-Gruppen zählen mit -- deren Mitglieder SIND Bearbeiter
+  // (resolveEditPermission wertet adminGroupIds genauso), also gehören sie
+  // auch in jeden "Bearbeiter"-Picker.
   const editGroupIds = (entry && Array.isArray(entry.editGroupIds)) ? entry.editGroupIds : [];
+  const adminGroupIds = (entry && Array.isArray(entry.adminGroupIds)) ? entry.adminGroupIds : [];
   const usersDoc = session.usersDoc;
   const usernames = new Set();
-  editGroupIds.forEach((gid) => {
+  editGroupIds.concat(adminGroupIds).forEach((gid) => {
     const group = getOwn(usersDoc.groups || {}, gid);
     if (group && Array.isArray(group.memberUsernames)) group.memberUsernames.forEach((u) => usernames.add(u));
   });
@@ -2331,6 +2347,10 @@ async function handleDeleteGroup(request, body, env, authHeader, corsHeaders) {
         entry.editGroupIds = entry.editGroupIds.filter((id) => id !== groupId);
         changed = true;
       }
+      if (Array.isArray(entry.adminGroupIds) && entry.adminGroupIds.includes(groupId)) {
+        entry.adminGroupIds = entry.adminGroupIds.filter((id) => id !== groupId);
+        changed = true;
+      }
       if (Array.isArray(entry.provisionGroupIds) && entry.provisionGroupIds.includes(groupId)) {
         entry.provisionGroupIds = entry.provisionGroupIds.filter((id) => id !== groupId);
         changed = true;
@@ -3230,14 +3250,35 @@ async function userMayAccessTool(app, session, env, authHeader, cfgPrefetch) {
 // Sichtbarkeit eines breiter freigegebenen Tools (z.B. "Alle eingeloggten
 // Nutzer") nicht ungewollt auf bestimmte Gruppen verengt. Ersetzt die früher
 // pro App hartkodierten EDITOR_GROUP_ID-Konstanten.
+// adminGroupIds zählen mit: "Administrieren" schließt "Bearbeiten" ein --
+// serverseitig hier verankert, damit ein Administrieren-Häkchen ohne zweites
+// Bearbeiten-Häkchen nie ins Leere läuft (das Panel koppelt die Häkchen nur
+// zur Anzeige, maßgeblich ist diese Zeile).
 async function resolveEditPermission(app, session, env, authHeader, cfgPrefetch) {
   if (session.isAdmin) return true;
   const config = await (cfgPrefetch || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }));
   const entry = getOwn(config.tools || {}, app);
   if (!entry) return false;
   const editGroupIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
-  if (editGroupIds.length === 0) return false;
-  return editGroupIds.some((g) => session.groupIds.includes(g));
+  const adminGroupIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  return editGroupIds.concat(adminGroupIds).some((g) => session.groupIds.includes(g));
+}
+
+// Administrieren-Recht für ein Tool -- dritte Stufe über "Bearbeiten": App-interne
+// Admin-Funktionen (z.B. Trainerdaten-Vollzugriff inkl. IBAN, Kadermanager-
+// Rechte-Matrix) delegierbar machen, ohne globale Admin-Rechte (Nutzerverwaltung,
+// Passwort-Resets) zu vergeben. Gleiche Konventionen wie resolveEditPermission:
+// leeres adminGroupIds = niemand, globaler Admin immer, unabhängig von der
+// Sichtbarkeit. Konsumenten: canAdmin in me/dav-load, check-edit-permission
+// (darüber der Trainerdaten-CORS-Proxy) und trainerdaten-list-groups.
+async function resolveAdminPermission(app, session, env, authHeader, cfgPrefetch) {
+  if (session.isAdmin) return true;
+  const config = await (cfgPrefetch || readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }));
+  const entry = getOwn(config.tools || {}, app);
+  if (!entry) return false;
+  const adminGroupIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  if (adminGroupIds.length === 0) return false;
+  return adminGroupIds.some((g) => session.groupIds.includes(g));
 }
 
 // Sichtrecht fuer die GESAMTE Personalakte-App (Uebersicht + Archiv +
