@@ -306,6 +306,11 @@ const KRITISCHE_TOOLS = [
 //         | toolId (optional; verlinkt auf den passenden TOOLS-Eintrag)
 const NEWS = [];
 
+// Feste Auswahl an Reaktions-Emojis unter jeder Neuigkeit. MUSS mit
+// NEWS_REACTION_EMOJIS im admin-worker.js übereinstimmen — der Worker validiert
+// jeden Klick strikt gegen seine eigene Kopie. Reihenfolge = Anzeigereihenfolge.
+const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
+
 const APP_CHANGELOG = [
   {
     version: "1.0",
@@ -326,7 +331,8 @@ const APP_CHANGELOG = [
         items: [
           "Neuigkeiten-Bereich über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. '2 / 5'), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten direkt im Einstellungen-Tab (anlegen, bearbeiten, löschen — Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Tool-Verknüpfung), zentral in Nextcloud gespeichert und sofort für alle sichtbar.",
           "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten anstehenden Einträge aus dem Abwesenheitskalender, sofern Zugriff besteht. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
-          "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr."
+          "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr.",
+          "Jede Neuigkeit lässt sich mit einem Emoji bereagieren (👍 ❤️ 🎉 👏 🔥 😍 😮 😂 🙏 💪): eine Reaktion pro Person und Meldung, erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt. Die Zähler sieht jeder — auch ohne Login; zum Reagieren selbst muss man angemeldet sein."
         ]
       },
       {

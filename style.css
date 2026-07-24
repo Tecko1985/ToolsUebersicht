@@ -358,6 +358,25 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-admin-row:first-child { border-top: none; }
 .news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
 #news-form textarea { width: 100%; }
+.news-reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.news-react-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  cursor: pointer;
+  line-height: 1.2;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.news-react-btn:hover { background: var(--gray); }
+.news-react-btn.active { border-color: var(--blue); background: var(--blue-light); }
+.news-react-emoji { font-size: 16px; }
+.news-react-count { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 8px; text-align: center; }
+.news-react-btn.active .news-react-count { color: var(--blue); }
+.news-react-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
 
 /* ---------- Feedback & Hilfe ---------- */
 

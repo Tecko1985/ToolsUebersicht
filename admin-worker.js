@@ -197,6 +197,11 @@
 //     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
 //     bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
+//   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine }
+//     (setzt/wechselt/entfernt die EINE Reaktion des Nutzers auf eine Meldung; Emoji strikt gegen NEWS_REACTION_EMOJIS
+//     validiert, Nutzername aus der Session; Ablage in neuigkeiten-reaktionen.json getrennt von den News)
+//   POST { action: "my-news-reactions" } (jeder eingeloggte Nutzer) -> { mine: { newsId: emoji } } (nur eigene Reaktionen)
+//   GET liefert zusätzlich newsReactions: { newsId: { emoji: anzahl } } — reine Zähler für alle Besucher, ohne Namen
 //   POST { action: "submit-feedback", type, toolId?, text } (jeder eingeloggte Nutzer) -> { ok:true }
 //     (legt EINEN Feedback-/Wunsch-Eintrag an; Name/Nutzername kommen serverseitig aus dem eigenen Konto,
 //     der Client kann sie nicht fälschen oder für andere Nutzer einen Eintrag anlegen)
@@ -466,6 +471,14 @@ const NOTIFY_FROM_NAME = "SC 1911 Heiligenstadt";
 // handleSaveFeedback).
 const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/feedback.json";
 
+// Emoji-Reaktionen auf die Neuigkeiten (seit 1.13) — eigene Datei, getrennt vom
+// news-Key in sichtbarkeit.json, damit Admin-News-Bearbeiten (save-news, kompletter
+// Array-Ersatz) und die Reaktionen jedes Nutzers nie kollidieren. Aufbau:
+//   { version:1, byNews: { "<newsId>": { "<username>": "<emoji>" } } }
+// Genau EINE Reaktion pro Nutzer je Meldung -> triviales Umschalten/Entfernen,
+// Zähler = auszählen. Der öffentliche GET liefert daraus NUR Zähler (keine Namen).
+const NEWS_REACTIONS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/neuigkeiten-reaktionen.json";
+
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
 // Mitglieder der viewGroupId — unabhängig davon, wer sonst Zugriff auf das Tool hat.
@@ -606,11 +619,14 @@ export default {
     try {
 
     if (request.method === "GET") {
-      const [config, usersDoc] = await Promise.all([
+      const [config, usersDoc, reactionsDoc] = await Promise.all([
         readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }),
-        readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc())
+        readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc()),
+        readJson(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} })
       ]);
-      return json({ tools: config.tools, news: Array.isArray(config.news) ? config.news : null, bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
+      // newsReactions: reine Zähler je Meldung+Emoji für ALLE Besucher (auch ohne Login),
+      // ohne Nutzernamen. Die eigene Wahl holt sich der Client separat über my-news-reactions.
+      return json({ tools: config.tools, news: Array.isArray(config.news) ? config.news : null, newsReactions: newsReactionCounts(reactionsDoc), bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
     }
 
     if (request.method !== "POST") {
@@ -695,6 +711,10 @@ export default {
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
       case "save-news":
         return handleSaveNews(request, body, env, authHeader, corsHeaders);
+      case "toggle-news-reaction":
+        return handleToggleNewsReaction(request, body, env, authHeader, corsHeaders);
+      case "my-news-reactions":
+        return handleMyNewsReactions(request, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -2474,6 +2494,83 @@ async function handleSaveVisibility(request, body, env, authHeader, corsHeaders)
 }
 
 const NEWS_VALID_TYPES = ["neu", "update", "fix", "hinweis"];
+
+// Feste Auswahl an Reaktions-Emojis unter jeder Neuigkeit. MUSS mit
+// NEWS_REACTION_EMOJIS in config.js übereinstimmen — der Client rendert die Liste,
+// der Worker validiert jeden eingehenden Klick strikt dagegen.
+const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
+
+// Aggregiert das Reaktions-Dokument zu reinen Zählern je Meldung+Emoji — OHNE
+// Nutzernamen, damit der öffentliche GET nicht preisgibt, WER reagiert hat.
+function newsReactionCounts(doc) {
+  const byNews = (doc && doc.byNews && typeof doc.byNews === "object") ? doc.byNews : {};
+  const out = {};
+  for (const newsId of Object.keys(byNews)) {
+    const perUser = byNews[newsId];
+    if (!perUser || typeof perUser !== "object") continue;
+    const counts = {};
+    for (const emoji of Object.values(perUser)) {
+      if (NEWS_REACTION_EMOJIS.includes(emoji)) counts[emoji] = (counts[emoji] || 0) + 1;
+    }
+    if (Object.keys(counts).length) out[newsId] = counts;
+  }
+  return out;
+}
+
+// Jeder EINGELOGGTE Nutzer darf pro Meldung genau EINE Reaktion setzen. Erneut das
+// gleiche Emoji => entfernt (Toggle), ein anderes => wechselt. Der Nutzername kommt
+// aus der verifizierten Session (fälschungssicher, analog handleSubmitFeedback). Über
+// If-Match + Retry, damit zwei gleichzeitige Klicks verschiedener Nutzer sich nicht
+// gegenseitig überschreiben (kein Lost Update wie bei reinem LWW).
+async function handleToggleNewsReaction(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const newsId = String((body && body.newsId) || "").trim();
+  if (!/^[a-z0-9-]{1,40}$/i.test(newsId)) return json({ error: "Ungültige Meldung" }, 400, corsHeaders);
+  const emoji = String((body && body.emoji) || "");
+  if (!NEWS_REACTION_EMOJIS.includes(emoji)) return json({ error: "Ungültiges Emoji" }, 400, corsHeaders);
+
+  const username = session.username;
+  let saved = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: doc, rev } = await readJsonWithRev(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byNews || typeof doc.byNews !== "object") doc.byNews = {};
+    const perUser = (doc.byNews[newsId] && typeof doc.byNews[newsId] === "object") ? doc.byNews[newsId] : {};
+    if (perUser[username] === emoji) delete perUser[username]; // gleiches Emoji -> Toggle aus
+    else perUser[username] = emoji;                            // setzen bzw. auf anderes wechseln
+    if (Object.keys(perUser).length) doc.byNews[newsId] = perUser;
+    else delete doc.byNews[newsId]; // letzte Reaktion weg -> Meldungs-Eintrag ganz entfernen
+    try {
+      await writeJson(NEWS_REACTIONS_URL, authHeader, doc, rev || undefined);
+      saved = doc;
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 2) continue; // paralleler Klick -> neu lesen und erneut versuchen
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!saved) return json({ error: "Reaktion konnte nicht gespeichert werden" }, 502, corsHeaders);
+  const counts = newsReactionCounts(saved)[newsId] || {};
+  const mine = (saved.byNews[newsId] && saved.byNews[newsId][username]) || null;
+  return json({ newsId, counts, mine }, 200, corsHeaders);
+}
+
+// Liefert dem eingeloggten Nutzer NUR seine eigenen Reaktionen (newsId -> Emoji),
+// damit der Client die eigene Wahl im Karussell hervorheben kann. Nie fremde Einträge.
+async function handleMyNewsReactions(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const doc = await readJson(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} });
+  const byNews = (doc && doc.byNews && typeof doc.byNews === "object") ? doc.byNews : {};
+  const mine = {};
+  for (const newsId of Object.keys(byNews)) {
+    const emoji = byNews[newsId] && byNews[newsId][session.username];
+    if (NEWS_REACTION_EMOJIS.includes(emoji)) mine[newsId] = emoji;
+  }
+  return json({ mine }, 200, corsHeaders);
+}
 
 // ---------- Aktionen: Materialcontainer-Code ----------
 

@@ -6,6 +6,10 @@ const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 
 let visibilityState = {};
 let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
+let newsReactionCounts = {}; // { newsId: { emoji: anzahl } } — öffentliche Zähler, kommen aus fetchVisibility() (GET)
+let newsReactionMine = {};   // { newsId: emoji } — eigene Reaktion, nur eingeloggt (my-news-reactions)
+let newsReactionHint = "";   // kurzer transienter Hinweis unter der Reaktionsleiste (z.B. "Bitte anmelden")
+let _newsReactionHintTimer = null;
 let bootstrapAvailable = false;
 let currentToken = null;
 let currentUser = null; // { username, isAdmin, groupIds, realIsAdmin, viewAsGroupId } oder null
@@ -187,6 +191,7 @@ function logout() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
+  refreshMyNewsReactions(); // eigene Reaktions-Markierungen entfernen (currentUser ist jetzt null)
   loadSidebarWidget();
 }
 
@@ -1358,12 +1363,95 @@ function renderNews() {
       <button type="button" class="news-nav-btn news-nav-next" ${atOldest ? "disabled" : ""} title="Ältere Meldung" aria-label="Ältere Meldung">›</button>
     </div>
     ${items.length > 1 ? `<div class="news-dots">${newsCarouselIndex + 1} / ${items.length}</div>` : ""}
+    ${renderNewsReactionsBar(n.id)}
+    ${newsReactionHint ? `<div class="news-react-hint">${escapeHtml(newsReactionHint)}</div>` : ""}
   `;
 
   const prevBtn = banner.querySelector(".news-nav-prev");
   const nextBtn = banner.querySelector(".news-nav-next");
   if (prevBtn) prevBtn.addEventListener("click", () => { newsCarouselIndex = Math.max(0, newsCarouselIndex - 1); renderNews(); });
   if (nextBtn) nextBtn.addEventListener("click", () => { newsCarouselIndex = Math.min(items.length - 1, newsCarouselIndex + 1); renderNews(); });
+  banner.querySelectorAll(".news-react-btn").forEach((b) => {
+    b.addEventListener("click", () => toggleNewsReaction(n.id, b.dataset.emoji));
+  });
+}
+
+// Reaktionsleiste unter der aktuell sichtbaren Karussell-Meldung: die feste Emoji-Liste
+// aus config.js als Buttons, jeweils mit Zähler (0 wird ausgeblendet). Die eigene Wahl
+// ist hervorgehoben (.active). Auch ohne Login sichtbar — der Klick-Handler entscheidet
+// dann, ob reagiert wird oder der Anmelde-Hinweis erscheint.
+function renderNewsReactionsBar(newsId) {
+  if (!newsId || typeof NEWS_REACTION_EMOJIS === "undefined") return "";
+  const counts = newsReactionCounts[newsId] || {};
+  const mine = newsReactionMine[newsId] || null;
+  const btns = NEWS_REACTION_EMOJIS.map((emoji) => {
+    const c = counts[emoji] || 0;
+    const active = mine === emoji;
+    const title = active ? "Deine Reaktion — nochmal klicken zum Entfernen" : "Mit diesem Emoji reagieren";
+    return `<button type="button" class="news-react-btn${active ? " active" : ""}" data-emoji="${escapeHtml(emoji)}" aria-pressed="${active ? "true" : "false"}" title="${title}">`
+      + `<span class="news-react-emoji">${emoji}</span>`
+      + (c > 0 ? `<span class="news-react-count">${c}</span>` : "")
+      + `</button>`;
+  }).join("");
+  return `<div class="news-reactions">${btns}</div>`;
+}
+
+// Aktualisiert Zähler + eigene Wahl im Speicher rein lokal (optimistisch), genau nach
+// der Server-Semantik: gleiches Emoji -> weg, anderes -> wechselt. Der Server liefert
+// gleich darauf die maßgeblichen Zähler zurück (siehe toggleNewsReaction).
+function applyLocalReaction(newsId, prevEmoji, clickedEmoji) {
+  const counts = { ...(newsReactionCounts[newsId] || {}) };
+  const dec = (e) => { counts[e] = Math.max(0, (counts[e] || 0) - 1); if (!counts[e]) delete counts[e]; };
+  if (prevEmoji === clickedEmoji) {
+    dec(clickedEmoji);
+    delete newsReactionMine[newsId];
+  } else {
+    if (prevEmoji) dec(prevEmoji);
+    counts[clickedEmoji] = (counts[clickedEmoji] || 0) + 1;
+    newsReactionMine[newsId] = clickedEmoji;
+  }
+  newsReactionCounts[newsId] = counts;
+}
+
+async function toggleNewsReaction(newsId, emoji) {
+  if (!newsId || !emoji) return;
+  if (!currentUser) { flashNewsReactionHint("Zum Reagieren bitte anmelden."); return; }
+  const prevMine = newsReactionMine[newsId] || null;
+  const prevCounts = { ...(newsReactionCounts[newsId] || {}) };
+  applyLocalReaction(newsId, prevMine, emoji); // sofortiges Feedback
+  renderNews();
+  try {
+    const res = await callWorker("toggle-news-reaction", { newsId, emoji });
+    newsReactionCounts[newsId] = (res && res.counts) || {};
+    if (res && res.mine) newsReactionMine[newsId] = res.mine;
+    else delete newsReactionMine[newsId];
+    renderNews();
+  } catch (err) {
+    newsReactionCounts[newsId] = prevCounts; // Rollback
+    if (prevMine) newsReactionMine[newsId] = prevMine; else delete newsReactionMine[newsId];
+    renderNews();
+    flashNewsReactionHint(err.message || "Reaktion konnte nicht gespeichert werden.");
+  }
+}
+
+// Holt die eigenen Reaktionen (nur eingeloggt) und rendert das Karussell neu, damit die
+// eigene Wahl hervorgehoben ist. Ohne Login werden die eigenen Markierungen geleert.
+async function refreshMyNewsReactions() {
+  if (!currentUser) { newsReactionMine = {}; renderNews(); return; }
+  try {
+    const res = await callWorker("my-news-reactions", {});
+    newsReactionMine = (res && res.mine && typeof res.mine === "object") ? res.mine : {};
+  } catch (_) {
+    newsReactionMine = {}; // Fehler nicht hart melden — die Zähler stehen ja trotzdem
+  }
+  renderNews();
+}
+
+function flashNewsReactionHint(msg) {
+  newsReactionHint = msg;
+  renderNews();
+  if (_newsReactionHintTimer) clearTimeout(_newsReactionHintTimer);
+  _newsReactionHintTimer = setTimeout(() => { newsReactionHint = ""; renderNews(); }, 3000);
 }
 
 // ---- Sidebar-Widget: nächste Termine + Abwesenheiten links neben den Kacheln ----
@@ -2935,6 +3023,7 @@ async function afterAuthChange() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
+  refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
   await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
@@ -3276,12 +3365,16 @@ async function init() {
   const [data] = await Promise.all([fetchVisibility(), checkSession()]);
   visibilityState = (data && data.tools) || defaultVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
+  newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {}; // öffentliche Zähler
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
   // ERST hier rendern, nicht schon oben im synchronen Teil: der News-Bereich ist die
   // einzige Stelle, deren Inhalt komplett vom Server kommt. Ein Render vor dem Fetch
   // zeigte das statische Seed aus config.js und ersetzte es danach — sichtbar als
   // kurz aufblitzendes Karussell alter Meldungen bei jedem Seitenaufruf.
   renderNews();
+  // Eigene Reaktionen nachladen (nur wenn eingeloggt) — bewusst NICHT awaited, damit die
+  // eigene Hervorhebung nachrutscht, ohne den restlichen Seitenaufbau zu bremsen.
+  refreshMyNewsReactions();
 
   renderAdminPanels();
   renderToolGrid();
