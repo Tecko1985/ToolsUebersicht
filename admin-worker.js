@@ -142,6 +142,12 @@
 //     wer laut Trainerdaten (PROVISION_ONLY_PATHS, Tag+Monat, Europe/Berlin) heute Geburtstag hat — nur der
 //     Name, nie das Geburtsjahr oder andere Trainerdaten-Felder (die bleiben exklusiv personalakte-overview
 //     vorbehalten). Fürs "Nächste Termine"-Widget in app.js.
+//   POST { action: "raumnutzung-kontakt-lookup", name } (Raumnutzung-Bearbeiter via resolveEditPermission)
+//     -> { treffer: {strasse, plz, ort, telefon, email} | null } — Kontaktdaten GENAU EINER namentlich
+//     benannten Person aus Trainerdaten (PROVISION_ONLY_PATHS), fürs Vorbefüllen von Veranstaltungsleitung/
+//     Vertretung im Raumnutzungs-Antrag. Nur diese fünf Felder, nie IBAN/Geburtsdatum/Dokumente. Gate ist das
+//     Bearbeiten-Recht der Raumnutzung-App: dieselben Personen tragen die Daten dort ohnehin von Hand ein und
+//     sehen sie in jedem gespeicherten Antrag — die Aktion spart nur das Abtippen, weicht aber keine Grenze auf.
 //   POST { action: "notify-user", username, subject, message } (jeder eingeloggte Nutzer) -> { ok:true, sent:bool }
 //     E-Mail-Benachrichtigung an einen ANDEREN Nutzer, erster Verwendungszweck: Vereinskalender-Teilen-Hinweis
 //     bei privaten Terminen (Vorbereitung fürs geplante Mail-Tool, siehe [[project-vereinskalender]]). Die
@@ -656,6 +662,8 @@ export default {
         return handleListBirthdaysToday(request, env, authHeader, corsHeaders);
       case "my-trainerdaten-status":
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
+      case "raumnutzung-kontakt-lookup":
+        return handleRaumnutzungKontaktLookup(request, body, env, authHeader, corsHeaders);
       case "notify-user":
         return handleNotifyUser(request, body, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
@@ -2026,6 +2034,64 @@ async function handleListBirthdaysToday(request, env, authHeader, corsHeaders) {
     .map((t) => `${t.vorname || ""} ${t.nachname || ""}`.trim())
     .filter(Boolean);
   return json({ namen }, 200, corsHeaders);
+}
+
+// Kontaktdaten-Prefill für den Raumnutzungs-Antrag (Veranstaltungsleitung/
+// Vertretung): der Client schickt den frei getippten Namen, hier wird er gegen
+// Trainerdaten (PROVISION_ONLY_PATHS) aufgelöst und NUR Straße/PLZ/Ort/Telefon/
+// E-Mail zurückgegeben — nie IBAN, Geburtsdatum oder Dokumente (Minimal-
+// Disclosure wie list-birthdays-today). Gate ist das Bearbeiten-Recht der
+// Raumnutzung-App (resolveEditPermission, dieselbe Schranke wie dav-save dort):
+// diese Personen tragen die Kontaktdaten sonst von Hand in den Antrag ein und
+// sehen sie in jedem gespeicherten Antrag — die Aktion spart das Abtippen,
+// öffnet aber keinem zusätzlichen Personenkreis Daten.
+// Namensabgleich reihenfolge-tolerant über sameNamePair (das Formularfeld heißt
+// "Name, Vorname", eingegeben wird erfahrungsgemäß beides — siehe
+// [[feedback-name-matching-order-tolerance]]). Ohne Komma wird an der ersten
+// UND der letzten Lücke geteilt, damit auch Doppelnamen auf beiden Seiten eine
+// Chance haben ("Karl Heinz Müller" = Vorname "Karl Heinz" ODER Nachname
+// "Heinz Müller"). Treffer ohne jedes Kontaktfeld (reine Import-Stubs) werden
+// übersprungen, sonst blockiert ein namensgleicher Stub den echten Datensatz.
+async function handleRaumnutzungKontaktLookup(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("raumnutzung", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+
+  const name = String(body.name || "").trim().slice(0, 200);
+  const paare = [];
+  const kommaIdx = name.indexOf(",");
+  if (kommaIdx >= 0) {
+    paare.push([name.slice(0, kommaIdx), name.slice(kommaIdx + 1)]);
+  } else {
+    const worte = name.split(/\s+/).filter(Boolean);
+    if (worte.length >= 2) {
+      paare.push([worte[0], worte.slice(1).join(" ")]);
+      if (worte.length > 2) paare.push([worte.slice(0, -1).join(" "), worte[worte.length - 1]]);
+    }
+  }
+  if (!paare.length) return json({ treffer: null }, 200, corsHeaders);
+
+  const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  const liste = trainerdatenDoc.trainer || [];
+  let td = null;
+  for (const [a, b] of paare) {
+    td = liste.find((t) => sameNamePair(t.vorname, t.nachname, a, b) &&
+      (t.strasse || t.plz || t.ort || t.telefon || t.email)) || null;
+    if (td) break;
+  }
+  if (!td) return json({ treffer: null }, 200, corsHeaders);
+
+  return json({
+    treffer: {
+      strasse: td.strasse || "",
+      plz: td.plz || "",
+      ort: td.ort || "",
+      telefon: td.telefon || "",
+      email: td.email || ""
+    }
+  }, 200, corsHeaders);
 }
 
 // Ist dieser Nutzer "vertragspflichtig" (braucht einen Trainervertrag/Trainerdaten)?
