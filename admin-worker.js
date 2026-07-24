@@ -18,7 +18,9 @@
 // des Workers läuft normal. Werte frei wählbar (die alten Client-Passwörter stehen
 // in der öffentlichen Git-Historie, daher am besten NEUE Passwörter vergeben):
 //   PW_CHECKLISTE_SPERRE    = TrainerCheckliste: Checkliste entsperren / Eintrag mit gesperrter Checkliste löschen
-//   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung-Anmeldung: Teilnehmer-Tab in verwaltung.html öffnen
+//   PW_ANMELDUNG_TEILNEHMER = Trainerversammlung: Zugang zur ganzen Verwaltungsseite verwaltung.html (deckt seit 2026-07-24 die ganze Seite ab, nicht mehr nur den Teilnehmer-Tab)
+//   PW_GESCHAEFTSSTELLE     = Geschäftsstelle: Zugang zur ganzen Seite geschaeftsstelle.html
+//   PW_VEREINSBUDGET        = Vereinsbudget: Zugang zur ganzen Seite vereinsbudget.html
 //   PW_BUDGET_LEEREN        = Vereinsbudget: "Saison leeren"
 //   PW_BUDGET_EINGANG_ZUGANG = sc-heiligenstadt-beleg-upload-Worker (eigenes Cloudflare-Deploy!): Zugriffscode in beleg-eingang.html
 //
@@ -3167,7 +3169,9 @@ async function handleReactivateTrainer(request, body, env, authHeader, corsHeade
 // ersetzt dort ein bisher lokal im jeweiligen Worker geprüftes Secret 1:1.
 const ACTION_PASSWORD_SECRETS = {
   "checkliste-sperre": "PW_CHECKLISTE_SPERRE",       // TrainerCheckliste: Entsperren/Löschen gesperrter Checklisten
-  "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung-Anmeldung: Teilnehmer-Tab
+  "anmeldung-teilnehmer": "PW_ANMELDUNG_TEILNEHMER", // Trainerversammlung: Zugang zur ganzen Verwaltungsseite (verwaltung.html)
+  "geschaeftsstelle-zugang": "PW_GESCHAEFTSSTELLE",  // Geschäftsstelle: Zugang zur ganzen Seite (geschaeftsstelle.html)
+  "budget-zugang": "PW_VEREINSBUDGET",               // Vereinsbudget: Zugang zur ganzen Seite (vereinsbudget.html)
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
   "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG", // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
   "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN" // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
