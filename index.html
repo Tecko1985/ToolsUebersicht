@@ -33,7 +33,11 @@
     <!-- Nur für Admins. Default versteckt, damit ein Fehler beim Rendern den Tab
          nicht versehentlich für alle öffnet. -->
     <button data-tab="admin" id="nav-admin" style="display:none;">Einstellungen</button>
-    <button data-tab="info">Info</button>
+    <!-- Nur für Angemeldete. Diese Seite ist die einzige, die ein nicht angemeldeter
+         Besucher überhaupt erreicht — die Änderungsliste im Info-Tab beschreibt aber
+         Anmeldewege und interne Abläufe. Default versteckt, damit der Tab beim
+         Erstladen nicht kurz aufblitzt, bevor die Sitzung geprüft ist. -->
+    <button data-tab="info" id="nav-info" style="display:none;">Info</button>
   </div>
 </nav>
 
@@ -574,7 +578,7 @@
   </div>
 </div>
 
-<script src="config.js?v=1.13"></script>
-<script src="app.js?v=1.13"></script>
+<script src="config.js?v=1.14"></script>
+<script src="app.js?v=1.14"></script>
 </body>
 </html>

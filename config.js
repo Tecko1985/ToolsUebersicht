@@ -351,7 +351,8 @@ const APP_CHANGELOG = [
           "„Mein Konto“ ist ein eigener Tab und zeigt eigenen Namen, Nutzername sowie — sofern hinterlegt — Trainerlizenz und Mannschaften. Solange niemand angemeldet ist, heißt derselbe Tab „Anmelden“ und enthält die Anmeldemaske.",
           "Der Tab „Einstellungen“ enthält nur noch Verwaltungsfunktionen und wird deshalb ausschließlich Admins angezeigt — alle anderen sehen ihn gar nicht erst.",
           "„Mein Konto“ zeigt zusätzlich die eigenen Gruppen im Klartext (bisher nur Admins), in welchen Tools man bearbeiten darf statt nur zuzusehen, wann das Passwort zuletzt geändert wurde und bis wann die aktuelle Anmeldung gilt.",
-          "In „Mein Konto“ lässt sich das eigene Passwort ändern: bisheriges und neues Passwort eingeben, fertig. Aus Sicherheitsgründen werden dabei alle anderen Geräte abgemeldet — dort ist eine neue Anmeldung nötig."
+          "In „Mein Konto“ lässt sich das eigene Passwort ändern: bisheriges und neues Passwort eingeben, fertig. Aus Sicherheitsgründen werden dabei alle anderen Geräte abgemeldet — dort ist eine neue Anmeldung nötig.",
+          "Der Tab „Info“ mit der Änderungsliste wird erst nach dem Anmelden angezeigt — sie beschreibt Anmeldewege und interne Abläufe, die nicht öffentlich stehen sollen. Ohne Anmeldung führt auch das Versionsbadge im Header nicht mehr dorthin."
         ]
       },
       {

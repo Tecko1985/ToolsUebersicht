@@ -2571,7 +2571,9 @@ function setupTabs() {
   });
 
   const versionBadgeHeader = document.getElementById("version-badge");
-  const openVersionHistory = () => activateTab("info");
+  // Guard statt nur der entfernten Klasse: der Handler haengt dauerhaft am Badge, und
+  // ohne ihn oeffnete ein Klick den Info-Tab auch dann, wenn er zu sein soll.
+  const openVersionHistory = () => { if (infoTabOffen()) activateTab("info"); };
   versionBadgeHeader.addEventListener("click", openVersionHistory);
   versionBadgeHeader.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVersionHistory(); }
@@ -2774,23 +2776,49 @@ function setupPasswortForm() {
   });
 }
 
-// Nav-Leiste an den Anmeldestatus anpassen. Zwei Dinge haengen daran: "Einstellungen"
-// ist rein administrativ und fuer alle anderen gar nicht erst sichtbar, und der
-// Konto-Tab heisst je nach Status "Anmelden" oder "Mein Konto" -- wer noch kein Konto
-// hat, kann mit der Beschriftung "Mein Konto" nichts anfangen.
+// Nav-Leiste an den Anmeldestatus anpassen. Drei Dinge haengen daran: "Einstellungen"
+// ist rein administrativ und fuer alle anderen gar nicht erst sichtbar, "Info" steht
+// nur Angemeldeten offen (siehe infoTabOffen), und der Konto-Tab heisst je nach Status
+// "Anmelden" oder "Mein Konto" -- wer noch kein Konto hat, kann mit der Beschriftung
+// "Mein Konto" nichts anfangen.
 function renderNavTabs() {
   const istAdmin = !!(currentUser && currentUser.isAdmin);
+  const infoOffen = infoTabOffen();
   document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
+  document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
 
-  // Wer sich aus einem Admin-Tab heraus abmeldet, saehe sonst eine Sektion, deren
-  // Inhalt gerade komplett ausgeblendet wurde: leere Seite, kein Tab markiert.
-  if (!istAdmin) {
-    const aktiv = document.querySelector(".tab-section.active");
-    if (aktiv && (aktiv.id === "tab-admin" || aktiv.id === "tab-admin-dashboard")) {
-      activateTab("konto");
-    }
+  // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
+  // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
+  const badge = document.getElementById("version-badge");
+  badge.classList.toggle("version-badge-link", infoOffen);
+  if (infoOffen) {
+    badge.setAttribute("role", "button");
+    badge.setAttribute("tabindex", "0");
+    badge.setAttribute("title", "Versionshistorie ansehen");
+  } else {
+    badge.removeAttribute("role");
+    badge.removeAttribute("tabindex");
+    badge.removeAttribute("title");
   }
+
+  // Wer sich aus einem Admin- oder dem Info-Tab heraus abmeldet, saehe sonst eine
+  // Sektion, deren Inhalt gerade komplett ausgeblendet wurde: leere Seite, kein Tab
+  // markiert. Aus dem Info-Tab geht es aufs Dashboard, nicht in die Anmeldemaske --
+  // beim Abmelden will man die oeffentliche Startseite, kein Login-Formular.
+  const aktiv = document.querySelector(".tab-section.active");
+  if (!istAdmin && aktiv && (aktiv.id === "tab-admin" || aktiv.id === "tab-admin-dashboard")) {
+    activateTab("konto");
+  } else if (!infoOffen && aktiv && aktiv.id === "tab-info") {
+    activateTab("uebersicht");
+  }
+}
+
+// Der Info-Tab enthaelt die komplette Aenderungsliste, und die beschreibt Anmeldewege,
+// Rechte-Stufen und interne Ablaeufe. Diese Seite ist die einzige, die ein nicht
+// angemeldeter Besucher ueberhaupt erreicht -- fuer den bleibt der Tab deshalb zu.
+function infoTabOffen() {
+  return !!currentUser;
 }
 
 // Datum ohne Uhrzeit. Zweistellig erzwingen, sonst liefert de-DE "14.7.2026" statt
