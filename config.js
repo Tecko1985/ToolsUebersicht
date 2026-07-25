@@ -332,7 +332,8 @@ const APP_CHANGELOG = [
           "Neuigkeiten-Bereich über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. '2 / 5'), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten direkt im Einstellungen-Tab (anlegen, bearbeiten, löschen — Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Tool-Verknüpfung), zentral in Nextcloud gespeichert und sofort für alle sichtbar.",
           "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten anstehenden Einträge aus dem Abwesenheitskalender, sofern Zugriff besteht. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
           "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr.",
-          "Jede Neuigkeit lässt sich mit einem Emoji bereagieren (👍 ❤️ 🎉 👏 🔥 😍 😮 😂 🙏 💪): eine Reaktion pro Person und Meldung, erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt. Die Zähler sieht jeder — auch ohne Login; zum Reagieren selbst muss man angemeldet sein."
+          "Jede Neuigkeit lässt sich mit einem Emoji bereagieren (👍 ❤️ 🎉 👏 🔥 😍 😮 😂 🙏 💪): eine Reaktion pro Person und Meldung, erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt.",
+          "Neuigkeiten sind Vereinsinterna und werden erst nach dem Anmelden angezeigt — samt Reaktionszählern. Wer nicht angemeldet ist, sieht auf der Startseite nur noch die öffentlich freigegebenen Tool-Kacheln; die Meldungen werden dann auch nicht mehr an den Browser übertragen."
         ]
       },
       {

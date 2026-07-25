@@ -81,7 +81,14 @@ function defaultVisibility() {
 
 async function fetchVisibility() {
   try {
-    const resp = await fetch(WORKER_URL, { method: "GET" });
+    // Token mitschicken, falls vorhanden: der GET liefert die Neuigkeiten nur an
+    // Angemeldete, die Tool-Sichtbarkeit dagegen an jeden. Bewusst loadStoredToken()
+    // statt currentToken -- init() startet fetchVisibility() parallel zu
+    // checkSession(), currentToken ist zu dem Zeitpunkt noch null.
+    const headers = {};
+    const token = loadStoredToken();
+    if (token) headers["Authorization"] = "Bearer " + token;
+    const resp = await fetch(WORKER_URL, { method: "GET", headers });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     return await resp.json();
   } catch (e) {
@@ -192,6 +199,7 @@ function logout() {
   renderToolGrid();
   renderFeedbackTab();
   refreshMyNewsReactions(); // eigene Reaktions-Markierungen entfernen (currentUser ist jetzt null)
+  refreshNews(); // Neuigkeiten aus dem Speicher werfen -- sie gehoeren nur Angemeldeten
   loadSidebarWidget();
 }
 
@@ -1316,6 +1324,24 @@ function toolById(id) {
   return TOOLS.find((t) => t.id === id) || null;
 }
 
+// Neuigkeiten nach einer An- oder Abmeldung nachziehen. Sie kommen nur noch mit
+// gueltigem Token vom Server, ein frisch Angemeldeter saehe sonst bis zum naechsten
+// Seitenaufruf ein leeres Karussell -- und nach dem Abmelden bliebe der zuletzt
+// geladene Stand im Speicher stehen. Uebernommen werden NUR die News-Felder: die
+// Tool-Sichtbarkeit ist oeffentlich, steht seit init() und haengt nicht am Login.
+async function refreshNews() {
+  if (!currentUser) {
+    newsState = [];
+    newsReactionCounts = {};
+    renderNews();
+    return;
+  }
+  const data = await fetchVisibility();
+  newsState = (data && Array.isArray(data.news)) ? data.news : [];
+  newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {};
+  renderNews();
+}
+
 function formatNewsDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
   return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso || "");
@@ -1324,10 +1350,22 @@ function formatNewsDate(iso) {
 function renderNews() {
   const banner = document.getElementById("news-banner");
   if (!banner) return;
+  // Neuigkeiten sind Vereinsinterna und gehen nicht an nicht angemeldete Besucher.
+  // Der Worker liefert sie ihnen seit 2026-07-25 gar nicht mehr aus (news: null) --
+  // dieser Guard haelt das Karussell zusaetzlich zu, solange noch ein Seed aus
+  // config.js oder ein Stand von vor dem Abmelden im newsState steht.
+  if (!currentUser) {
+    // innerHTML mitleeren, nicht nur display:none: der zuletzt geladene Meldungstext
+    // bliebe sonst nach dem Abmelden im DOM stehen und waere dort weiter lesbar.
+    banner.innerHTML = "";
+    banner.style.display = "none";
+    return;
+  }
   const items = newsState.slice()
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
     .slice(0, NEWS_MAX_TOTAL);
   if (items.length === 0) {
+    banner.innerHTML = ""; // wie oben: nichts Altes im DOM stehen lassen
     banner.style.display = "none";
     return;
   }
@@ -3052,7 +3090,7 @@ async function afterAuthChange() {
   renderToolGrid();
   renderFeedbackTab();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
-  await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([refreshNews(), loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     // Frueher stand hier ein zweites renderKontoKarte(): die Gruppennamen liessen sich

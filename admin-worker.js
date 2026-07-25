@@ -196,12 +196,12 @@
 //     die dritte Stufe "Administrieren" (App-interne Admin-Funktionen, schließt Bearbeiten ein — resolveEditPermission
 //     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
 //     bekommen automatisch einen Eintrag im Tool.)
-//   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news an alle Besucher
+//   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news NUR an Angemeldete (optionaler Bearer-Token am GET, seit 2026-07-25), sonst news: null
 //   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine }
 //     (setzt/wechselt/entfernt die EINE Reaktion des Nutzers auf eine Meldung; Emoji strikt gegen NEWS_REACTION_EMOJIS
 //     validiert, Nutzername aus der Session; Ablage in neuigkeiten-reaktionen.json getrennt von den News)
 //   POST { action: "my-news-reactions" } (jeder eingeloggte Nutzer) -> { mine: { newsId: emoji } } (nur eigene Reaktionen)
-//   GET liefert zusätzlich newsReactions: { newsId: { emoji: anzahl } } — reine Zähler für alle Besucher, ohne Namen
+//   GET liefert zusätzlich newsReactions: { newsId: { emoji: anzahl } } — reine Zähler ohne Namen, wie news nur an Angemeldete (sonst {})
 //   POST { action: "submit-feedback", type, toolId?, text } (jeder eingeloggte Nutzer) -> { ok:true }
 //     (legt EINEN Feedback-/Wunsch-Eintrag an; Name/Nutzername kommen serverseitig aus dem eigenen Konto,
 //     der Client kann sie nicht fälschen oder für andere Nutzer einen Eintrag anlegen)
@@ -619,14 +619,32 @@ export default {
     try {
 
     if (request.method === "GET") {
+      // Der GET ist der öffentliche Kanal (Tool-Sichtbarkeit für jeden Besucher),
+      // trägt seit 2026-07-25 aber einen OPTIONALEN Bearer-Token: die Neuigkeiten
+      // sind Vereinsinterna und gehen nur an Angemeldete. Ohne Token (oder mit einem
+      // entwerteten) antwortet er wie bisher, nur mit news: null — nie mit einem Fehler,
+      // sonst käme ein nicht angemeldeter Besucher gar nicht mehr auf die Seite.
+      const payload = await getSession(request, env);
+      const tokenOk = tokenAfterCutoff(payload);
       const [config, usersDoc, reactionsDoc] = await Promise.all([
         readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} }),
         readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc()),
-        readJson(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} })
+        // Die Reaktions-Zähler nur lesen, wenn überhaupt jemand die Meldungen bekommt:
+        // dem anonymen Besucher spart das einen kompletten Nextcloud-Read (~200-450 ms).
+        tokenOk ? readJson(NEWS_REACTIONS_URL, authHeader, { version: 1, byNews: {} }) : Promise.resolve(null)
       ]);
-      // newsReactions: reine Zähler je Meldung+Emoji für ALLE Besucher (auch ohne Login),
-      // ohne Nutzernamen. Die eigene Wahl holt sich der Client separat über my-news-reactions.
-      return json({ tools: config.tools, news: Array.isArray(config.news) ? config.news : null, newsReactions: newsReactionCounts(reactionsDoc), bootstrapAvailable: Object.keys(usersDoc.users).length === 0 }, 200, corsHeaders);
+      // Voller Nutzer-Abgleich, nicht nur die Token-Signatur: ein gelöschtes oder
+      // archiviertes Konto soll die Meldungen nicht bis zum Token-Ablauf weiterlesen.
+      // Kostet nichts, usersDoc wird für bootstrapAvailable ohnehin gelesen.
+      const angemeldet = tokenOk && !!sessionUserFromDoc(payload, usersDoc);
+      // newsReactions: reine Zähler je Meldung+Emoji, ohne Nutzernamen. Die eigene
+      // Wahl holt sich der Client separat über my-news-reactions.
+      return json({
+        tools: config.tools,
+        news: (angemeldet && Array.isArray(config.news)) ? config.news : null,
+        newsReactions: angemeldet ? newsReactionCounts(reactionsDoc) : {},
+        bootstrapAvailable: Object.keys(usersDoc.users).length === 0
+      }, 200, corsHeaders);
     }
 
     if (request.method !== "POST") {
@@ -5344,25 +5362,43 @@ async function getVerifiedSession(request, env, authHeader, onTokenValid) {
   if (!payload) return null;
   // Vor dem Nutzer-Abgleich, damit ein Token von vor dem Stichtag gar keinen
   // Nextcloud-Lesezugriff mehr auslöst.
-  if ((Number(payload.iat) || 0) < SESSIONS_INVALID_BEFORE) return null;
+  if (!tokenAfterCutoff(payload)) return null;
   if (onTokenValid) onTokenValid(payload);
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = getOwn(usersDoc.users, String(payload.username || ""));
-  if (!user || user.mustSetPassword || !user.passwordHash) return null;
-  // Archivierte Konten (Personalakte) verlieren jede Session sofort, nicht nur
-  // künftige Logins — usersDoc wird oben ohnehin bei jedem Request frisch
-  // gelesen, also reicht ein einzelner Check hier.
-  if (user.archiviert) return null;
-  if (user.passwordSetAt) {
-    const setAt = Math.floor(Date.parse(user.passwordSetAt) / 1000);
-    if (Number.isFinite(setAt) && (Number(payload.iat) || 0) < setAt) return null;
-  }
+  const user = sessionUserFromDoc(payload, usersDoc);
+  if (!user) return null;
   const identity = deriveIdentity(user, usersDoc);
   // art bewusst NACH ...identity und aus dem echten Datensatz: anders als isAdmin/
   // groupIds ist die Art nicht Teil der Testansicht (set-view-as). Ein Admin, der
   // sich testweise als Gruppe ausgibt, bleibt Personal -- sonst würde die
   // Testansicht die Personal/Spieler-Trennung aushebeln statt sie zu zeigen.
   return { username: user.username, usersDoc, ...identity, art: userArt(user) };
+}
+
+// Globaler Stichtag. Bewusst eine eigene Funktion und NICHT Teil von
+// sessionUserFromDoc: sie wird geprüft, BEVOR nutzer.json gelesen wird, damit ein
+// Token von vor dem Stichtag gar keine Nextcloud-Last mehr auslöst.
+function tokenAfterCutoff(payload) {
+  return !!payload && (Number(payload.iat) || 0) >= SESSIONS_INVALID_BEFORE;
+}
+
+// Gleicht ein bereits per HMAC verifiziertes Token gegen den Nutzerbestand ab und
+// liefert den Nutzer-Datensatz (oder null). Aus getVerifiedSession herausgezogen,
+// damit auch der GET-Handler dieselben Regeln anwenden kann, ohne nutzer.json ein
+// zweites Mal zu lesen — zwei Kopien dieser Liste würden auseinanderlaufen.
+// Regeln: Nutzer muss noch existieren und ein gesetztes Passwort haben; archivierte
+// Konten (Personalakte) verlieren jede Session sofort, nicht erst beim nächsten
+// Login; Tokens von VOR dem letzten Passwort-Setzen sind ungültig (ein Admin-Reset
+// wirft damit alle alten Sitzungen raus).
+function sessionUserFromDoc(payload, usersDoc) {
+  const user = getOwn(usersDoc.users, String((payload && payload.username) || ""));
+  if (!user || user.mustSetPassword || !user.passwordHash) return null;
+  if (user.archiviert) return null;
+  if (user.passwordSetAt) {
+    const setAt = Math.floor(Date.parse(user.passwordSetAt) / 1000);
+    if (Number.isFinite(setAt) && (Number((payload && payload.iat)) || 0) < setAt) return null;
+  }
+  return user;
 }
 
 // ---------- sonstige Helfer ----------
