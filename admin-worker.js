@@ -150,13 +150,15 @@
 //     Vertretung im Raumnutzungs-Antrag. Nur diese fünf Felder, nie IBAN/Geburtsdatum/Dokumente. Gate ist das
 //     Bearbeiten-Recht der Raumnutzung-App: dieselben Personen tragen die Daten dort ohnehin von Hand ein und
 //     sehen sie in jedem gespeicherten Antrag — die Aktion spart nur das Abtippen, weicht aber keine Grenze auf.
-//   POST { action: "raumnutzung-mail-antrag", pdfBase64, dateiname } (Bearbeiten-Recht raumnutzung) -> { ok, sent, to, cc }
+//   POST { action: "raumnutzung-mail-antrag", pdfBase64, dateiname } (Administrieren-Recht raumnutzung) -> { ok, sent, to, cc }
 //     Verschickt einen fertigen Raumnutzungs-Antrag als PDF-Anhang ans Schulverwaltungsamt des Landkreises,
 //     CC an die Geschäftsstelle. Empfänger/CC/Betreff/Text stehen als RAUMNUTZUNG_MAIL_*-Konstanten im Code und
 //     werden NIE aus dem Body übernommen — sonst wäre die Aktion ein Versandweg an beliebige Adressen unter dem
-//     Absender des Vereins (gleiche Härtung wie NOTIFY_BELEG_EMAIL). Gate ist dasselbe Bearbeiten-Recht, an dem
-//     auch dav-save für diese App hängt. Versand über Brevo inkl. attachment[]; ein Fehlschlag ist ein echter
-//     Fehler (kein stilles sent:false wie bei beleg-eingang-notify) — hier IST der Versand die ganze Handlung.
+//     Absender des Vereins (gleiche Härtung wie NOTIFY_BELEG_EMAIL). Gate ist seit 2026-07-27 die DRITTE Stufe
+//     (resolveAdminPermission), nicht mehr das Bearbeiten-Recht: Anträge ausfüllen dürfen alle Bearbeiter,
+//     sie beim Amt einreichen nur die Geschäftsstelle (Michel-Vorgabe). Versand über Brevo inkl. attachment[];
+//     ein Fehlschlag ist ein echter Fehler (kein stilles sent:false wie bei beleg-eingang-notify) — hier IST
+//     der Versand die ganze Handlung.
 //   POST { action: "notify-user", username, subject, message } (jeder eingeloggte Nutzer) -> { ok:true, sent:bool }
 //     E-Mail-Benachrichtigung an einen ANDEREN Nutzer, erster Verwendungszweck: Vereinskalender-Teilen-Hinweis
 //     bei privaten Terminen (Vorbereitung fürs geplante Mail-Tool, siehe [[project-vereinskalender]]). Die
@@ -2198,9 +2200,13 @@ async function handleRaumnutzungKontaktLookup(request, body, env, authHeader, co
 const MAX_RAUMNUTZUNG_PDF_BASE64 = 8 * 1024 * 1024;
 
 // Verschickt einen fertig ausgefüllten Raumnutzungs-Antrag als PDF-Anhang ans
-// Amt. Gate ist resolveEditPermission("raumnutzung") — dieselbe Schranke, an der
-// auch dav-save für diese App hängt (WRITE_REQUIRES_EDIT_PERMISSION): wer den
-// Antrag schreiben darf, darf ihn auch einreichen, Nur-Seher nicht.
+// Amt. Gate ist seit 2026-07-27 resolveAdminPermission("raumnutzung"), also die
+// dritte Stufe — bewusst STRENGER als das Bearbeiten-Recht, an dem dav-save für
+// diese App hängt: Anträge ausfüllen und pflegen dürfen alle Bearbeiter (Trainer),
+// sie beim Amt einreichen nur die Geschäftsstelle, die im Mailtext unterschreibt
+// (Michel-Vorgabe). Achtung beim Ändern: leeres adminGroupIds heißt "niemand
+// außer globalen Admins" — ohne gesetzte Administrieren-Gruppe kann hier also
+// niemand mehr senden. Für raumnutzung ist sie auf "geschaeftsstelle" gesetzt.
 //
 // Empfänger, CC, Betreff und Text kommen AUSSCHLIESSLICH aus den Konstanten
 // oben, nie aus dem Body — der Client schickt einzig das PDF und einen
@@ -2215,8 +2221,8 @@ const MAX_RAUMNUTZUNG_PDF_BASE64 = 8 * 1024 * 1024;
 async function handleRaumnutzungMailAntrag(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
-  if (!(await resolveEditPermission("raumnutzung", session, env, authHeader))) {
-    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  if (!(await resolveAdminPermission("raumnutzung", session, env, authHeader))) {
+    return json({ error: "Kein Administrieren-Recht für dieses Tool" }, 403, corsHeaders);
   }
 
   // Reines base64 erwartet (der Client trennt den data:-Präfix ab). Bewusst
