@@ -340,6 +340,8 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8772", // Vereinsbudget (Dev-Server)
   "http://localhost:8774", // Trainerversammlung-Anmeldung (Dev-Server)
   "http://localhost:8779", // Spielersichtung (Dev-Server)
+  "http://localhost:8778", // Platzbelegung (Dev-Server)
+  "http://localhost:8781", // Personalkosten (Dev-Server)
   "http://localhost:8777", // Vereinskalender (Dev-Server)
   "http://localhost:8792", // Busplan (Dev-Server)
   "http://localhost:8780", // Kadermanager (Dev-Server, bis 1.3 Spielerplus-Klon)
