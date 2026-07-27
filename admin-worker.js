@@ -150,6 +150,13 @@
 //     Vertretung im Raumnutzungs-Antrag. Nur diese fünf Felder, nie IBAN/Geburtsdatum/Dokumente. Gate ist das
 //     Bearbeiten-Recht der Raumnutzung-App: dieselben Personen tragen die Daten dort ohnehin von Hand ein und
 //     sehen sie in jedem gespeicherten Antrag — die Aktion spart nur das Abtippen, weicht aber keine Grenze auf.
+//   POST { action: "raumnutzung-mail-antrag", pdfBase64, dateiname } (Bearbeiten-Recht raumnutzung) -> { ok, sent, to, cc }
+//     Verschickt einen fertigen Raumnutzungs-Antrag als PDF-Anhang ans Schulverwaltungsamt des Landkreises,
+//     CC an die Geschäftsstelle. Empfänger/CC/Betreff/Text stehen als RAUMNUTZUNG_MAIL_*-Konstanten im Code und
+//     werden NIE aus dem Body übernommen — sonst wäre die Aktion ein Versandweg an beliebige Adressen unter dem
+//     Absender des Vereins (gleiche Härtung wie NOTIFY_BELEG_EMAIL). Gate ist dasselbe Bearbeiten-Recht, an dem
+//     auch dav-save für diese App hängt. Versand über Brevo inkl. attachment[]; ein Fehlschlag ist ein echter
+//     Fehler (kein stilles sent:false wie bei beleg-eingang-notify) — hier IST der Versand die ganze Handlung.
 //   POST { action: "notify-user", username, subject, message } (jeder eingeloggte Nutzer) -> { ok:true, sent:bool }
 //     E-Mail-Benachrichtigung an einen ANDEREN Nutzer, erster Verwendungszweck: Vereinskalender-Teilen-Hinweis
 //     bei privaten Terminen (Vorbereitung fürs geplante Mail-Tool, siehe [[project-vereinskalender]]). Die
@@ -466,6 +473,32 @@ const PROVISION_ONLY_PATHS = {
 const NOTIFY_FROM_EMAIL = "nachwuchs@sc1911-heiligenstadt.de";
 const NOTIFY_FROM_NAME = "SC 1911 Heiligenstadt";
 
+// Empfänger, Betreff und Text der Raumnutzungs-Antragsmail (siehe
+// handleRaumnutzungMailAntrag). Beide Adressen sind öffentliche
+// Funktionspostfächer — Amt des Landkreises und Geschäftsstelle des Vereins —,
+// deshalb Konstanten statt Secrets, gleiche Einordnung wie NOTIFY_FROM_EMAIL.
+// Sie stehen SERVERSEITIG und werden nie aus dem Request übernommen: käme die
+// Zieladresse aus dem Body, wäre die Aktion für jeden Raumnutzungs-Bearbeiter
+// ein Versandweg an beliebige Empfänger — mit dem Verein als Absender. Gleiche
+// Härtung wie NOTIFY_BELEG_EMAIL bei handleBelegEingangNotify.
+const RAUMNUTZUNG_MAIL_TO = "Schulverwaltungsamt@kreis-eic.de";
+const RAUMNUTZUNG_MAIL_CC = "Info@sc1911-heiligenstadt.de";
+const RAUMNUTZUNG_MAIL_SUBJECT = "Antrag auf Raumnutzung für Veranstaltungen – SC 1911 Heiligenstadt";
+const RAUMNUTZUNG_MAIL_TEXT = [
+  "Antrag auf Raumnutzung für Fußball Hallenturniere des 1.SC 1911 Heiligenstadt e.V.",
+  "",
+  "Freundliche Grüße",
+  "Uwe Meinold",
+  "",
+  "Geschäftsstellenleiter",
+  "1.SC Heiligenstadt e.V.",
+  "Leineberg 2",
+  "37308 Heilbad Heiligenstadt",
+  "Telefon: 03606/ 612206",
+  "Mobil: 01719530102",
+  "Mail: Info@sc1911-heiligenstadt.de"
+].join("\n");
+
 // Feedback & Wünsche aus dem Feedback-Tab (seit 1.10) — eigene Datei, damit ein
 // einfacher eingeloggter Nutzer per submit-feedback schreiben darf (Einzeleintrag,
 // serverseitig zusammengebaut) ohne Zugriff auf sichtbarkeit.json/nutzer.json zu
@@ -716,6 +749,8 @@ export default {
         return handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders);
       case "raumnutzung-kontakt-lookup":
         return handleRaumnutzungKontaktLookup(request, body, env, authHeader, corsHeaders);
+      case "raumnutzung-mail-antrag":
+        return handleRaumnutzungMailAntrag(request, body, env, authHeader, corsHeaders);
       case "notify-user":
         return handleNotifyUser(request, body, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
@@ -2154,6 +2189,89 @@ async function handleRaumnutzungKontaktLookup(request, body, env, authHeader, co
       email: td.email || ""
     }
   }, 200, corsHeaders);
+}
+
+// Brevo deckelt eine Mail samt Anhängen bei 10 MB. Der Antrag ist ein
+// vierseitiges Formular (real deutlich unter 1 MB); die Grenze fängt nur ab,
+// dass ein kaputter Client den Worker mit Müll flutet. base64 ist ~4/3 der
+// Rohgröße, 8 MB entsprechen also gut 6 MB PDF.
+const MAX_RAUMNUTZUNG_PDF_BASE64 = 8 * 1024 * 1024;
+
+// Verschickt einen fertig ausgefüllten Raumnutzungs-Antrag als PDF-Anhang ans
+// Amt. Gate ist resolveEditPermission("raumnutzung") — dieselbe Schranke, an der
+// auch dav-save für diese App hängt (WRITE_REQUIRES_EDIT_PERMISSION): wer den
+// Antrag schreiben darf, darf ihn auch einreichen, Nur-Seher nicht.
+//
+// Empfänger, CC, Betreff und Text kommen AUSSCHLIESSLICH aus den Konstanten
+// oben, nie aus dem Body — der Client schickt einzig das PDF und einen
+// Dateinamen. Andernfalls wäre die Aktion für jeden Bearbeiter ein Versandweg an
+// beliebige Adressen, abgeschickt unter dem Absender des Vereins.
+//
+// Anders als bei beleg-eingang-notify ist eine ausbleibende Mail hier ein echter
+// Fehler und kein stilles sent:false: Dort lag der Beleg beim Aufruf schon in
+// Nextcloud und die Mail war bloß die Benachrichtigung — hier IST der Versand
+// die ganze Handlung. Ein grünes "erledigt" ohne tatsächlichen Versand hieße,
+// der Antrag kommt beim Amt nie an und niemand merkt es.
+async function handleRaumnutzungMailAntrag(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("raumnutzung", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+
+  // Reines base64 erwartet (der Client trennt den data:-Präfix ab). Bewusst
+  // streng geprüft: Brevo quittiert einen kaputten Anhang sonst mit einem
+  // nichtssagenden Fehler, und am Bildschirm steht nur "Versand fehlgeschlagen".
+  const pdfBase64 = String(body.pdfBase64 || "").trim();
+  if (!pdfBase64 || !/^[A-Za-z0-9+\/]+={0,2}$/.test(pdfBase64)) {
+    return json({ error: "Kein gültiges PDF übergeben" }, 400, corsHeaders);
+  }
+  if (pdfBase64.length > MAX_RAUMNUTZUNG_PDF_BASE64) {
+    return json({ error: "Das PDF ist zu groß für den Mailversand." }, 413, corsHeaders);
+  }
+
+  // Der Dateiname kommt vom Client, wird hier aber gesäubert: er landet im
+  // Content-Disposition des Anhangs, Pfadtrenner und Steuerzeichen haben dort
+  // nichts zu suchen. Die Endung wird erzwungen, nicht geprüft.
+  let dateiname = capStr(body.dateiname, 120).replace(/[\\/\r\n\t"]+/g, "_").replace(/\.pdf$/i, "");
+  if (!dateiname) dateiname = "Raumnutzung-Antrag";
+  dateiname += ".pdf";
+
+  if (!env.BREVO_API_KEY) {
+    return json({ error: "E-Mail-Versand ist serverseitig noch nicht konfiguriert." }, 500, corsHeaders);
+  }
+
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email: RAUMNUTZUNG_MAIL_TO }],
+        cc: [{ email: RAUMNUTZUNG_MAIL_CC }],
+        // Rückfragen des Amtes sollen bei der Geschäftsstelle landen, die im
+        // Mailtext unterschreibt — nicht im Nachwuchs-Postfach, das hier nur
+        // der technische Absender ist (Brevo-Einzelabsender, siehe oben).
+        replyTo: { email: RAUMNUTZUNG_MAIL_CC, name: NOTIFY_FROM_NAME },
+        subject: RAUMNUTZUNG_MAIL_SUBJECT,
+        textContent: RAUMNUTZUNG_MAIL_TEXT,
+        attachment: [{ name: dateiname, content: pdfBase64 }]
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("Brevo-Versand fehlgeschlagen", resp.status, errText);
+      return json({ error: "Mail-Versand fehlgeschlagen (HTTP " + resp.status + ")" }, 502, corsHeaders);
+    }
+  } catch (e) {
+    return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, sent: true, to: RAUMNUTZUNG_MAIL_TO, cc: RAUMNUTZUNG_MAIL_CC }, 200, corsHeaders);
 }
 
 // Ist dieser Nutzer "vertragspflichtig" (braucht einen Trainervertrag/Trainerdaten)?
