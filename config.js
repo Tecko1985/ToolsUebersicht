@@ -193,7 +193,7 @@ const TOOLS = [
   {
     id: "spiele",
     name: "Spiele",
-    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett sowie Elfmeterschießen als Echtzeit-Duell (auch solo gegen eine KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
+    description: "Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett sowie Der Maulwurf als Verräterspiel (auch solo gegen KI) — ideal für die Busfahrt zur Auswärtsfahrt.",
     url: "https://tecko1985.github.io/spiele/",
     icon: "🎮",
     category: "Verein",
