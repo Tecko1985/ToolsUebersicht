@@ -98,6 +98,22 @@ $REGISTRY = [ordered]@{
       @{ name = '405 bei GET'; methode = 'GET'; body = $null; erwartet = 405 }
     )
   }
+  'api-dashboard' = @{
+    datei = 'E:\api-dashboard\dashboard-worker.js'
+    url   = 'https://api-dashboard.michel-brunner.workers.dev'
+    hinweis = 'API- & Guthaben-Dashboard. Haelt Brevo-, Anthropic- und Cloudflare-Keys. Cron 0 3 * * *.'
+    # Die Token-Pruefung laeuft VOR der Aktions-Weiche -> jede Aktion ohne Token
+    # gibt 401, nie "Unbekannte Aktion". Einzige Ausnahme ist usage-melden, das
+    # vor der Token-Pruefung steht und ohne Geheimnis mit 403 antwortet - die
+    # Probe beweist damit, dass der Zaehler-Eingang existiert und zu ist.
+    # (Ein 403 beweist NICHT, dass USAGE_INGEST_SECRET gesetzt ist: ein fehlendes
+    # Secret fuehrt zur selben Antwort. Das ist Absicht, siehe dashboard-worker.js.)
+    proben = @(
+      @{ name = '405 bei GET';                    methode = 'GET';  body = $null;                       erwartet = 405 }
+      @{ name = '401 POST ohne Token';            methode = 'POST'; body = '{"action":"brevo"}';        erwartet = 401 }
+      @{ name = '403 usage-melden ohne Geheimnis'; methode = 'POST'; body = '{"action":"usage-melden"}'; erwartet = 403 }
+    )
+  }
 }
 
 function Schritt($text) { Write-Host "`n== $text" -ForegroundColor Cyan }

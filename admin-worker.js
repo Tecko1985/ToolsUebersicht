@@ -356,6 +356,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
   "http://localhost:8788", // Besprechung (Dev-Server)
   "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
+  "http://localhost:8803", // API & Guthaben (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
