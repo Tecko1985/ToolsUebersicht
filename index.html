@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.16" />
+<link rel="stylesheet" href="style.css?v=1.17" />
 </head>
 <body>
 
@@ -718,10 +718,12 @@
         <label for="dok-sig-datei">PDF auswählen</label>
         <input type="file" id="dok-sig-datei" accept="application/pdf,.pdf" />
       </div>
-      <p class="muted" style="margin-top:8px;">Ziehe danach ein Rechteck auf die Stelle, an der du unterschreiben willst.</p>
     </div>
 
     <p class="muted" id="dok-sig-meta"></p>
+    <!-- Sagt beim eigenen Dokument an, welcher Schritt noch fehlt. Platzieren ist
+         dort Pflicht, damit nie ein zusätzliches Blatt am Ende entsteht. -->
+    <p class="dok-platz-info" id="dok-sig-platz-info" style="display:none;"></p>
 
     <div class="dok-seiten-leiste">
       <button type="button" class="btn small secondary" id="dok-sig-seite-zurueck">‹</button>
@@ -755,7 +757,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.23"></script>
-<script src="app.js?v=1.22"></script>
+<script src="config.js?v=1.24"></script>
+<script src="app.js?v=1.23"></script>
 </body>
 </html>

@@ -2714,6 +2714,41 @@ function markerZeichnen(v) {
   marker.style.top = (v.feld.y * canvas.clientHeight) + "px";
   marker.style.width = (v.feld.w * canvas.clientWidth) + "px";
   marker.style.height = (v.feld.h * canvas.clientHeight) + "px";
+  // Sobald etwas unterschrieben ist, zeigt das Rechteck die ECHTE Unterschrift
+  // statt eines leeren Kastens -- man sieht dann vor dem Export, wie das Blatt
+  // wirklich aussieht, statt es raten zu müssen.
+  if (v.signatur) {
+    marker.style.backgroundImage = "url(" + v.signatur + ")";
+    marker.classList.add("mit-unterschrift");
+  } else {
+    marker.style.backgroundImage = "";
+    marker.classList.remove("mit-unterschrift");
+  }
+}
+
+// Verbindet das Signaturfeld mit der Seitenvorschau: jeder fertige Strich
+// aktualisiert das platzierte Bild sofort.
+function signaturInVorschauSpiegeln(v, dataUrl) {
+  v.signatur = dataUrl || "";
+  markerZeichnen(v);
+  dokSigStatusZeigen();
+}
+
+// Sagt im Selbst-Modus an, woran es noch fehlt. Beim zugewiesenen Dokument
+// bestimmt der Absender die Stelle -- da gibt es nichts zu melden.
+function dokSigStatusZeigen() {
+  const el = document.getElementById("dok-sig-platz-info");
+  if (!el) return;
+  if (dokSigModus !== "selbst") { el.style.display = "none"; return; }
+  el.style.display = "";
+  if (!dokSigOriginalBytes) {
+    el.textContent = "Wähle zuerst eine PDF-Datei aus.";
+  } else if (!vorschauSignieren.feld) {
+    el.textContent = "Unterschreibe unten und ziehe dann ein Rechteck auf die Stelle, an der die Unterschrift stehen soll.";
+  } else {
+    el.textContent = `Unterschrift steht auf Seite ${vorschauSignieren.feld.seite}.` +
+      (vorschauSignieren.signatur ? "" : " — jetzt noch unten unterschreiben.");
+  }
 }
 
 // Rechteck aufziehen. Alles in Fraktionen, und mit Guard gegen ein Canvas ohne
@@ -2875,11 +2910,23 @@ function dokSigOverlayZeigen() {
   if (!overlay) return;
   overlay.style.display = "flex";
   // Das Pad erst hier erzeugen und in jedem Fall neu vermessen: sein Canvas lag
-  // bis eben hinter display:none und hätte sonst ein 0x0-Bitmap.
-  if (!dokSigPad) dokSigPad = createSignaturePad(document.getElementById("dok-sig-pad"));
+  // bis eben hinter display:none und hätte sonst ein 0x0-Bitmap. Der onChange
+  // spiegelt jeden fertigen Strich sofort an die platzierte Stelle.
+  if (!dokSigPad) {
+    dokSigPad = createSignaturePad(
+      document.getElementById("dok-sig-pad"),
+      (dataUrl) => signaturInVorschauSpiegeln(vorschauSignieren, dataUrl)
+    );
+  }
   dokSigPad.resetSilent();
   dokSigPad.resize();
+  vorschauSignieren.signatur = "";
+  markerZeichnen(vorschauSignieren);
+  dokSigStatusZeigen();
   document.getElementById("dok-sig-original-laden").style.display = dokSigAktuell ? "" : "none";
+  // Beim eigenen Dokument ist das Ergebnis ein Download, kein Vorgang mit Gegenüber.
+  document.getElementById("btn-dok-sig-senden").textContent =
+    dokSigModus === "selbst" ? "Unterschreiben & herunterladen" : "Unterschreiben";
 }
 
 function schliesseDokSigOverlay() {
@@ -2892,6 +2939,13 @@ async function dokumentUnterschreibenSenden() {
   dokSigFehler("");
   if (!dokSigPad || dokSigPad.isEmpty()) return dokSigFehler("Bitte zuerst unterschreiben.");
   if (!dokSigOriginalBytes) return dokSigFehler("Es ist kein Dokument geladen.");
+  // Beim eigenen Dokument ist das Platzieren Pflicht -- dann entsteht nie ein
+  // zusätzliches Blatt am Ende. Die Ausweichseite bleibt dem zugewiesenen Fall
+  // vorbehalten, wo der Absender bewusst keine Stelle vorgegeben hat und man
+  // sonst gar nicht unterschreiben könnte.
+  if (dokSigModus === "selbst" && !vorschauSignieren.feld) {
+    return dokSigFehler("Bitte zieh noch ein Rechteck auf die Stelle im Dokument, an der die Unterschrift stehen soll.");
+  }
 
   const name = currentUser
     ? [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ") || currentUser.username
@@ -2980,10 +3034,10 @@ function setupDokumenteTab() {
   document.getElementById("btn-dok-sig-ablehnen").addEventListener("click", dokumentAblehnenSenden);
   document.getElementById("btn-dok-sig-pad-clear").addEventListener("click", () => { if (dokSigPad) dokSigPad.clear(); });
   document.getElementById("dok-sig-seite-zurueck").addEventListener("click", async () => {
-    if (vorschauSignieren.seite > 1) { vorschauSignieren.seite--; await vorschauRendern(vorschauSignieren); }
+    if (vorschauSignieren.seite > 1) { vorschauSignieren.seite--; await vorschauRendern(vorschauSignieren); dokSigStatusZeigen(); }
   });
   document.getElementById("dok-sig-seite-vor").addEventListener("click", async () => {
-    if (vorschauSignieren.seite < vorschauSignieren.seiten) { vorschauSignieren.seite++; await vorschauRendern(vorschauSignieren); }
+    if (vorschauSignieren.seite < vorschauSignieren.seiten) { vorschauSignieren.seite++; await vorschauRendern(vorschauSignieren); dokSigStatusZeigen(); }
   });
   document.getElementById("dok-sig-original-laden").addEventListener("click", async () => {
     if (!dokSigAktuell) return;
@@ -2994,7 +3048,12 @@ function setupDokumenteTab() {
   // Nur im Selbst-Modus darf das Feld hier gesetzt werden -- bei einer Zuweisung
   // bestimmt der Absender die Stelle, sonst wäre seine Vorgabe wirkungslos.
   vorschauZiehenAktivieren(vorschauSignieren, () => {
-    if (dokSigModus !== "selbst") { vorschauSignieren.feld = dokSigAktuell ? dokSigAktuell.feld : null; markerZeichnen(vorschauSignieren); }
+    if (dokSigModus !== "selbst") {
+      vorschauSignieren.feld = dokSigAktuell ? dokSigAktuell.feld : null;
+      markerZeichnen(vorschauSignieren);
+      return;
+    }
+    dokSigStatusZeigen();
   });
   document.getElementById("dok-sig-datei").addEventListener("change", async (e) => {
     const datei = e.target.files && e.target.files[0];
@@ -3005,8 +3064,11 @@ function setupDokumenteTab() {
       dokSigOriginalBytes = new Uint8Array(await datei.arrayBuffer());
       vorschauSignieren.feld = null;
       await vorschauLaden(vorschauSignieren, dokSigOriginalBytes);
+      dokSigStatusZeigen();
     } catch (err) {
+      dokSigOriginalBytes = null;
       dokSigFehler("Die PDF konnte nicht gelesen werden.");
+      dokSigStatusZeigen();
     }
   });
 

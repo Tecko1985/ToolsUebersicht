@@ -624,6 +624,21 @@ main { flex: 1; min-width: 0; }
   position: absolute; border: 2px dashed var(--blue, #2f5bd7); background: rgba(47, 91, 215, 0.12);
   pointer-events: none; border-radius: 3px;
 }
+/* Sobald unterschrieben ist, zeigt das Rechteck die echte Unterschrift an der
+   Stelle, an der sie im Export landet. Die getoente Fuellung muss dann weg,
+   sonst liegt ein blauer Schleier ueber dem Bild. */
+.dok-feld-marker.mit-unterschrift {
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  border-style: solid;
+  border-color: rgba(47, 91, 215, 0.5);
+}
+.dok-platz-info {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 13px;
+  background: var(--blue-light, #eef3fd); color: var(--text, #1e2330);
+}
 .dok-vorschau { margin-top: 10px; }
 
 /* Aus fahrtenbuch/TrainerCheckliste uebernommen -- das Pad ist dasselbe. */

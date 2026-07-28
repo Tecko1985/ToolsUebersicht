@@ -324,7 +324,9 @@ const APP_CHANGELOG = [
           "Wer nicht unterschreiben möchte, kann mit einer Begründung ablehnen — sie kommt bei dir an. Abhaken lässt sich eine solche Aufgabe nicht; nur die Unterschrift selbst erledigt sie.",
           "Bei mehreren Empfängern unterschreibt jeder sein eigenes Exemplar, und du siehst pro Person, wer schon dran war.",
           "Unterschriebene Dokumente bleiben erhalten, auch wenn die Aufgabe nach 14 Tagen aus der Liste läuft — sie verschwinden erst, wenn du sie löschst.",
-          "„Selbst unterschreiben“ im Dokumente-Tab: eigenes PDF wählen, unterschreiben, herunterladen — ohne jemandem etwas zuzuweisen.",
+          "„Selbst unterschreiben“ im Dokumente-Tab: eigenes PDF wählen, unterschreiben, die Unterschrift an die richtige Stelle im Dokument ziehen und herunterladen — ohne jemandem etwas zuzuweisen.",
+          "Beim Platzieren erscheint die tatsächliche Unterschrift an der gewählten Stelle, nicht nur ein leeres Rechteck — man sieht vor dem Herunterladen, wie das Blatt wirklich aussieht.",
+          "Beim eigenen Dokument wird nie eine zusätzliche Seite angehängt: die Unterschrift muss platziert werden, dafür bleibt das PDF genau so lang wie vorher.",
           "Freigeben, wer Unterschriften einfordern darf: Einstellungen → Aufgaben. Das ist eine eigene, engere Stufe als das normale Zuweisen; ohne Häkchen kann es niemand außer den Administratoren."
         ]
       }
