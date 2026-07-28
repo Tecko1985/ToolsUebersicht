@@ -313,6 +313,24 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.6",
+    groups: [
+      {
+        title: "Dokumente zum Unterschreiben",
+        items: [
+          "An eine zugewiesene Aufgabe lässt sich jetzt ein PDF hängen, das die Person unterschreiben muss. Beim Zuweisen ziehst du direkt in der Seitenvorschau ein Rechteck auf die Stelle, an der unterschrieben werden soll.",
+          "Unterschrieben wird im neuen Tab „Dokumente“ — mit dem Finger oder der Maus, in der eigenen Anmeldung. Danach steht das fertige Dokument bei dir zum Herunterladen bereit, mit Name und Zeitpunkt unter der Unterschrift.",
+          "Anders als beim Stempel-Werkzeug kann niemand für jemand anderen unterschreiben: die Unterschrift entsteht in der Sitzung der unterschreibenden Person, und der Server hält fest, wer wann unterschrieben hat.",
+          "Wer nicht unterschreiben möchte, kann mit einer Begründung ablehnen — sie kommt bei dir an. Abhaken lässt sich eine solche Aufgabe nicht; nur die Unterschrift selbst erledigt sie.",
+          "Bei mehreren Empfängern unterschreibt jeder sein eigenes Exemplar, und du siehst pro Person, wer schon dran war.",
+          "Unterschriebene Dokumente bleiben erhalten, auch wenn die Aufgabe nach 14 Tagen aus der Liste läuft — sie verschwinden erst, wenn du sie löschst.",
+          "„Selbst unterschreiben“ im Dokumente-Tab: eigenes PDF wählen, unterschreiben, herunterladen — ohne jemandem etwas zuzuweisen.",
+          "Freigeben, wer Unterschriften einfordern darf: Einstellungen → Aufgaben. Das ist eine eigene, engere Stufe als das normale Zuweisen; ohne Häkchen kann es niemand außer den Administratoren."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.5",
     groups: [
       {

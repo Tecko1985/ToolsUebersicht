@@ -1962,8 +1962,11 @@ async function onCalendarWidgetClick(e) {
 
 // Alles, was der Worker zu den Aufgaben liefert. canAssign entscheidet nur über
 // die Oberfläche -- die echte Schranke sitzt im Worker (darfAufgabenZuweisen).
-let aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, assignGroupIds: [], geladen: false };
+let aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, canAssignDocs: false, assignGroupIds: [], dokumentGroupIds: [], geladen: false };
 let aufgabenEmpfaengerCache = null; // list-directory-Ergebnis, einmal je Sitzung
+// Rohbytes der im Zuweisen-Dialog gewählten PDF. Bewusst außerhalb des States:
+// sie gehören zu einem offenen Dialog, nicht zum geladenen Datenstand.
+let zuweisenPdfBytes = null;
 
 const AUFGABEN_OFFEN_KEY = "tu_aufgaben_offen";
 
@@ -1992,7 +1995,7 @@ async function loadAufgaben() {
   // Spielerkonten und Abgemeldete bekommen die Karte gar nicht erst -- der Worker
   // antwortet ihnen ohnehin mit 403/401, ein Fehlversuch je Seitenaufruf wäre nur Lärm.
   if (!currentUser || currentUser.art === "spieler") {
-    aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, assignGroupIds: [], geladen: false };
+    aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, canAssignDocs: false, assignGroupIds: [], dokumentGroupIds: [], geladen: false };
     ziel.innerHTML = "";
     updateSidebarSichtbarkeit();
     return;
@@ -2003,7 +2006,11 @@ async function loadAufgaben() {
       meine: Array.isArray(res && res.meine) ? res.meine : [],
       zugewiesenVonMir: Array.isArray(res && res.zugewiesenVonMir) ? res.zugewiesenVonMir : [],
       canAssign: !!(res && res.canAssign),
+      // Kommt gratis aus aufgaben-load mit; der Dokumente-Tab wird davon
+      // unabhängig noch einmal geladen, das Widget braucht es aber sofort.
+      canAssignDocs: !!(res && res.canAssignDocs),
       assignGroupIds: Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : [],
+      dokumentGroupIds: Array.isArray(res && res.dokumentGroupIds) ? res.dokumentGroupIds : [],
       geladen: true
     };
     renderAufgabenWidget();
@@ -2038,6 +2045,7 @@ function renderAufgabenWidget() {
     if (a.zurueckgezogenAm) klassen.push("zurueckgezogen");
     if (aufgabeIstUeberfaellig(a, heute)) klassen.push("ueberfaellig");
     if (aufgabeIstNeu(a)) klassen.push("neu");
+    if (a.dokId) klassen.push("mit-dokument");
     const meta = [];
     if (a.faellig) meta.push("bis " + escapeHtml(formatCalendarDate(a.faellig)));
     if (a.von) meta.push("von " + escapeHtml(a.vonName || a.von));
@@ -2045,6 +2053,20 @@ function renderAufgabenWidget() {
     // Löschen darf man nur Selbstangelegtes; eine zurückgezogene Zuweisung ist nur
     // noch ein Hinweis und darf deshalb ebenfalls weg (Worker prüft das genauso).
     const loeschbar = !a.von || !!a.zurueckgezogenAm;
+    // Eine Aufgabe mit Dokument lässt sich hier nicht abhaken -- erledigt wird sie
+    // erst durch die Unterschrift im Dokumente-Tab. Der Haken bleibt sichtbar (er
+    // zeigt den Stand), ist aber gesperrt; der Worker weist ihn ohnehin ab.
+    if (a.dokId) {
+      return `
+        <div class="${klassen.join(" ")}" data-id="${escapeHtml(a.id)}" data-dok-id="${escapeHtml(a.dokId)}">
+          <input type="checkbox" class="aufgabe-check" ${a.erledigt ? "checked" : ""} disabled
+            aria-label="Wird durch die Unterschrift erledigt" />
+          <button type="button" class="aufgabe-dok-link" title="Dokument öffnen">
+            <span aria-hidden="true">📄</span> ${escapeHtml(a.text || "")}
+          </button>
+          <span class="aufgabe-meta">${meta.concat([a.erledigt ? "unterschrieben" : "zu unterschreiben"]).join(" · ")}</span>
+        </div>`;
+    }
     return `
       <div class="${klassen.join(" ")}" data-id="${escapeHtml(a.id)}">
         <input type="checkbox" class="aufgabe-check" ${a.erledigt ? "checked" : ""}
@@ -2060,11 +2082,11 @@ function renderAufgabenWidget() {
       <summary>Von mir zugewiesen (${aufgabenState.zugewiesenVonMir.length})</summary>
       ${aufgabenState.zugewiesenVonMir.map((z) => `
         <div class="aufgabe-zug-item${z.erledigt ? " erledigt" : ""}" data-id="${escapeHtml(z.id)}" data-empfaenger="${escapeHtml(z.empfaenger)}">
-          <span class="aufgabe-text">${escapeHtml(z.text || "")}</span>
+          <span class="aufgabe-text">${z.dokId ? '<span aria-hidden="true">📄</span> ' : ""}${escapeHtml(z.text || "")}</span>
           <span class="aufgabe-meta">${escapeHtml(z.empfaengerName || z.empfaenger)} · ${
-            z.zurueckgezogenAm ? "zurückgezogen" : (z.erledigt ? "erledigt" : "offen")
+            z.zurueckgezogenAm ? "zurückgezogen" : (z.erledigt ? (z.dokId ? "unterschrieben" : "erledigt") : "offen")
           }</span>
-          ${(!z.erledigt && !z.zurueckgezogenAm)
+          ${(!z.erledigt && !z.zurueckgezogenAm && !z.dokId)
             ? '<button type="button" class="aufgabe-zurueck" title="Zurückziehen">Zurückziehen</button>'
             : ""}
         </div>`).join("")}
@@ -2089,6 +2111,7 @@ function renderAufgabenWidget() {
         ${aufgabenState.canAssign
           ? '<button type="button" class="aufgaben-zuweisen-oeffnen"><span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen</button>'
           : ""}
+        <button type="button" class="aufgaben-dokumente-oeffnen"><span class="chip-icon" aria-hidden="true">📄</span>Dokumente</button>
       </div>
       <p class="aufgaben-fehler" id="aufgaben-fehler"></p>
       ${zugewiesenHtml}
@@ -2135,6 +2158,21 @@ function setupAufgabenWidget() {
     }
     if (e.target.closest(".aufgaben-zuweisen-oeffnen")) {
       oeffneAufgabeZuweisen();
+      return;
+    }
+    if (e.target.closest(".aufgaben-dokumente-oeffnen")) {
+      activateTab("dokumente");
+      loadDokumente();
+      return;
+    }
+    // Eine Unterschriftsaufgabe führt in den Tab -- unterschrieben wird nicht im
+    // Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
+    const dokLink = e.target.closest(".aufgabe-dok-link");
+    if (dokLink) {
+      const dokId = dokLink.closest(".aufgabe-item").dataset.dokId;
+      activateTab("dokumente");
+      await loadDokumente();
+      oeffneDokumentAnsicht(dokId);
       return;
     }
     const zurueckBtn = e.target.closest(".aufgabe-zurueck");
@@ -2254,6 +2292,20 @@ async function oeffneAufgabeZuweisen() {
   document.getElementById("aufgabe-zuweisen-faellig").value = "";
   document.getElementById("aufgabe-zuweisen-suche").value = "";
   document.getElementById("aufgabe-zuweisen-error").style.display = "none";
+
+  // Dokument-Teil in den Ausgangszustand: eine offene Datei aus einem früheren
+  // Aufruf darf nicht versehentlich an der nächsten Zuweisung hängen.
+  const dokBlock = document.getElementById("aufgabe-zuweisen-dok-block");
+  dokBlock.style.display = aufgabenState.canAssignDocs ? "" : "none";
+  document.getElementById("aufgabe-zuweisen-dok-an").checked = false;
+  document.getElementById("aufgabe-zuweisen-dok-felder").style.display = "none";
+  document.getElementById("aufgabe-zuweisen-dok-datei").value = "";
+  document.getElementById("aufgabe-zuweisen-dok-status").textContent = "";
+  document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "none";
+  vorschauZuweisen.doc = null;
+  vorschauZuweisen.feld = null;
+  zuweisenPdfBytes = null;
+
   overlay.style.display = "flex";
   document.getElementById("aufgabe-zuweisen-text").focus();
 
@@ -2316,6 +2368,43 @@ function setupAufgabenZuweisenDialog() {
     renderAufgabenEmpfaenger(e.target.value);
   });
   document.getElementById("btn-aufgabe-zuweisen-senden").addEventListener("click", aufgabeZuweisenSenden);
+
+  // ---- Dokument anhängen ----
+  document.getElementById("aufgabe-zuweisen-dok-an").addEventListener("change", (e) => {
+    document.getElementById("aufgabe-zuweisen-dok-felder").style.display = e.target.checked ? "" : "none";
+  });
+  document.getElementById("aufgabe-zuweisen-dok-datei").addEventListener("change", async (e) => {
+    const datei = e.target.files && e.target.files[0];
+    const statusEl = document.getElementById("aufgabe-zuweisen-dok-status");
+    if (!datei) return;
+    if (datei.size > 10 * 1024 * 1024) {
+      statusEl.textContent = "Die Datei ist größer als 10 MB.";
+      return;
+    }
+    statusEl.textContent = "Vorschau wird erzeugt …";
+    try {
+      zuweisenPdfBytes = new Uint8Array(await datei.arrayBuffer());
+      vorschauZuweisen.feld = null;
+      document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "";
+      await vorschauLaden(vorschauZuweisen, zuweisenPdfBytes);
+      statusEl.textContent = datei.name;
+    } catch (err) {
+      zuweisenPdfBytes = null;
+      statusEl.textContent = "Die PDF konnte nicht gelesen werden.";
+    }
+  });
+  document.getElementById("dok-seite-zurueck").addEventListener("click", async () => {
+    if (vorschauZuweisen.seite > 1) { vorschauZuweisen.seite--; await vorschauRendern(vorschauZuweisen); }
+  });
+  document.getElementById("dok-seite-vor").addEventListener("click", async () => {
+    if (vorschauZuweisen.seite < vorschauZuweisen.seiten) { vorschauZuweisen.seite++; await vorschauRendern(vorschauZuweisen); }
+  });
+  vorschauZiehenAktivieren(vorschauZuweisen, () => {
+    const info = document.getElementById("dok-feld-info");
+    info.textContent = vorschauZuweisen.feld
+      ? `Unterschriftsfeld auf Seite ${vorschauZuweisen.feld.seite} gesetzt.`
+      : "Kein Feld gesetzt — die Unterschrift kommt dann auf eine angehängte Seite.";
+  });
 }
 
 async function aufgabeZuweisenSenden() {
@@ -2330,8 +2419,27 @@ async function aufgabeZuweisenSenden() {
   if (!text) return zeige("Bitte eine Aufgabe eintragen.");
   if (!empfaenger.length) return zeige("Bitte mindestens eine Person auswählen.");
 
+  const mitDokument = document.getElementById("aufgabe-zuweisen-dok-an").checked;
+  if (mitDokument && !zuweisenPdfBytes) return zeige("Bitte eine PDF-Datei auswählen.");
+
   btn.disabled = true;
   try {
+    if (mitDokument) {
+      // Zwei Schritte: erst die Bytes ablegen, dann den Vorgang anlegen. Alle
+      // Empfänger teilen sich dasselbe Original -- unterschrieben wird trotzdem
+      // je Person eine eigene Kopie.
+      const fileId = neueDateiId();
+      await callWorker("dokument-datei-put", {
+        id: fileId, zweck: "original", dataBase64: bytesZuBase64(zuweisenPdfBytes)
+      });
+      await callWorker("dokument-anlegen", {
+        titel: text, faellig, empfaenger, originalFileId: fileId, feld: vorschauZuweisen.feld
+      });
+      schliesseAufgabeZuweisen();
+      await Promise.all([loadAufgaben(), loadDokumente()]);
+      return;
+    }
+
     const res = await callWorker("aufgabe-zuweisen", { text, faellig, empfaenger });
     schliesseAufgabeZuweisen();
     if (res && Array.isArray(res.uebersprungen) && res.uebersprungen.length) {
@@ -2349,20 +2457,26 @@ async function aufgabeZuweisenSenden() {
 
 async function renderAufgabenAdminPanel() {
   const listeEl = document.getElementById("aufgaben-gruppen-liste");
+  const dokListeEl = document.getElementById("aufgaben-dok-gruppen-liste");
   if (!listeEl) return;
-  try {
-    const res = await callWorker("list-groups", {});
-    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
-    const gesetzt = aufgabenState.assignGroupIds || [];
-    listeEl.innerHTML = gruppen.length
+  const zeichne = (el, gesetzt, gruppen) => {
+    if (!el) return;
+    el.innerHTML = gruppen.length
       ? gruppen.map((g) => `
           <label class="aufgaben-gruppen-zeile">
             <input type="checkbox" value="${escapeHtml(g.id)}" ${gesetzt.includes(g.id) ? "checked" : ""} />
             <span>${escapeHtml(g.name || g.id)}</span>
           </label>`).join("")
       : '<p class="muted">Es sind noch keine Gruppen angelegt.</p>';
+  };
+  try {
+    const res = await callWorker("list-groups", {});
+    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
+    zeichne(listeEl, aufgabenState.assignGroupIds || [], gruppen);
+    zeichne(dokListeEl, aufgabenState.dokumentGroupIds || [], gruppen);
   } catch (e) {
     listeEl.innerHTML = '<p class="muted">Gruppen konnten nicht geladen werden.</p>';
+    if (dokListeEl) dokListeEl.innerHTML = "";
   }
 }
 
@@ -2373,9 +2487,14 @@ async function speichereAufgabenGruppen() {
   errorEl.style.display = "none";
   successEl.style.display = "none";
   const groupIds = Array.from(document.querySelectorAll("#aufgaben-gruppen-liste input[type=checkbox]:checked")).map((c) => c.value);
+  // Beide Listen gehen IMMER gemeinsam raus -- ein Panel, ein Speichern-Knopf, ein
+  // Objekt. Nur die eine zu schicken hiesse, die andere unveraendert zu lassen;
+  // dann wuerde ein Abwaehlen hier serverseitig nicht ankommen.
+  const dokumentGroupIds = Array.from(document.querySelectorAll("#aufgaben-dok-gruppen-liste input[type=checkbox]:checked")).map((c) => c.value);
   try {
-    const res = await callWorker("set-aufgaben-gruppen", { groupIds });
+    const res = await callWorker("set-aufgaben-gruppen", { groupIds, dokumentGroupIds });
     aufgabenState.assignGroupIds = Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : groupIds;
+    aufgabenState.dokumentGroupIds = Array.isArray(res && res.dokumentGroupIds) ? res.dokumentGroupIds : dokumentGroupIds;
     successEl.style.display = "block";
     if (res && res.geaendertAm) {
       metaEl.textContent = "Zuletzt geändert am " + new Date(res.geaendertAm).toLocaleString("de-DE") + " von " + (res.geaendertVon || "");
@@ -2385,6 +2504,517 @@ async function speichereAufgabenGruppen() {
     errorEl.textContent = e && e.message ? e.message : "Speichern fehlgeschlagen.";
     errorEl.style.display = "block";
   }
+}
+
+// ---------- Dokumente zum Unterschreiben ----------
+//
+// Der Unterschied zum digitalen Stempel: dort legt jeder sein eigenes Bild an und
+// setzt es auf ein beliebiges Dokument. Hier zeichnet die unterschreibende Person
+// selbst, in ihrer eigenen Sitzung, und der Server hält fest, wer wann.
+
+let dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
+
+// Zwei Bibliotheken, zusammen ~830 KB. Sie hängen an einer konkreten Handlung
+// (ein PDF ansehen oder unterschreiben) und werden deshalb erst dann geholt --
+// nicht bei jedem Seitenaufruf des Dashboards. Muster aus digitaler-stempel.
+const dokBibliotheken = new Map();
+function ladeBibliothek(url) {
+  if (dokBibliotheken.has(url)) return dokBibliotheken.get(url);
+  const p = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url;
+    s.onload = () => resolve();
+    s.onerror = () => {
+      dokBibliotheken.delete(url); // Fehlschlag vergessen, damit ein zweiter Versuch geht
+      reject(new Error("Bibliothek konnte nicht geladen werden."));
+    };
+    document.head.appendChild(s);
+  });
+  dokBibliotheken.set(url, p);
+  return p;
+}
+async function ladePdfJs() {
+  // workerSrc erst NACH dem Laden setzen -- vorher gibt es kein pdfjsLib.
+  await ladeBibliothek("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+function ladePdfLib() {
+  return ladeBibliothek("https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js");
+}
+
+async function loadDokumente() {
+  if (!currentUser || currentUser.art === "spieler") {
+    dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
+    return;
+  }
+  try {
+    const res = await callWorker("dokumente-load", {});
+    dokumenteState = {
+      anMich: Array.isArray(res && res.anMich) ? res.anMich : [],
+      vonMir: Array.isArray(res && res.vonMir) ? res.vonMir : [],
+      canAssignDocs: !!(res && res.canAssignDocs),
+      geladen: true
+    };
+    renderDokumente();
+  } catch (e) {
+    dokumenteFehler(e && e.message ? e.message : "Dokumente konnten nicht geladen werden.");
+  }
+}
+
+function dokumenteFehler(text) {
+  const el = document.getElementById("dokumente-fehler");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
+}
+
+function dokStatusText(d) {
+  if (d.status === "unterschrieben") return "unterschrieben am " + new Date(d.unterschriebenAm).toLocaleString("de-DE");
+  if (d.status === "abgelehnt") return "abgelehnt am " + new Date(d.abgelehntAm).toLocaleString("de-DE");
+  return d.faellig ? "offen · bis " + formatCalendarDate(d.faellig) : "offen";
+}
+
+function renderDokumente() {
+  const anMichEl = document.getElementById("dokumente-an-mich");
+  const vonMirEl = document.getElementById("dokumente-von-mir");
+  if (!anMichEl || !vonMirEl) return;
+
+  const zeile = (d, rolle) => {
+    const offen = d.status === "offen";
+    const knoepfe = [];
+    if (rolle === "empfaenger" && offen) {
+      knoepfe.push('<button type="button" class="btn small dok-oeffnen">Ansehen & unterschreiben</button>');
+    } else {
+      knoepfe.push('<button type="button" class="btn small secondary dok-download-original">Original</button>');
+    }
+    if (d.status === "unterschrieben") {
+      knoepfe.push('<button type="button" class="btn small dok-download-signiert">Unterschrieben herunterladen</button>');
+    }
+    if (rolle === "absender") {
+      knoepfe.push('<button type="button" class="btn small secondary dok-loeschen">Löschen</button>');
+    }
+    const gegenueber = rolle === "empfaenger"
+      ? "von " + escapeHtml(d.vonName || d.von)
+      : "an " + escapeHtml(d.empfaengerName || d.empfaenger);
+    return `
+      <div class="dok-item status-${escapeHtml(d.status)}" data-dok-id="${escapeHtml(d.id)}">
+        <div class="dok-item-kopf">
+          <span class="dok-item-titel">${escapeHtml(d.titel || "")}</span>
+          <span class="dok-item-status">${escapeHtml(dokStatusText(d))}</span>
+        </div>
+        <div class="dok-item-meta">${gegenueber}</div>
+        ${d.status === "abgelehnt" && d.ablehnGrund
+          ? `<div class="dok-item-grund">Begründung: ${escapeHtml(d.ablehnGrund)}</div>` : ""}
+        <div class="dok-item-aktionen">${knoepfe.join("")}</div>
+      </div>`;
+  };
+
+  anMichEl.innerHTML = dokumenteState.anMich.length
+    ? dokumenteState.anMich.map((d) => zeile(d, "empfaenger")).join("")
+    : '<p class="muted">Nichts zu unterschreiben.</p>';
+  vonMirEl.innerHTML = dokumenteState.vonMir.length
+    ? dokumenteState.vonMir.map((d) => zeile(d, "absender")).join("")
+    : '<p class="muted">Du hast noch nichts zum Unterschreiben verschickt.</p>';
+
+  // Der Bereich "Von mir verschickt" ist für alle sichtbar, die etwas verschickt
+  // haben ODER verschicken dürfen -- sonst steht bei einem reinen Empfänger eine
+  // leere Karte herum, deren Zweck er nie erlebt.
+  const vonMirKarte = document.getElementById("dokumente-von-mir-karte");
+  if (vonMirKarte) {
+    vonMirKarte.style.display = (dokumenteState.vonMir.length || dokumenteState.canAssignDocs) ? "" : "none";
+  }
+}
+
+// PDF-Bytes einer Datei holen. Der Worker löst die Datei-Id selbst aus dem
+// Dokument auf -- der Client kann also keine fremde Id unterschieben.
+async function dokumentDateiHolen(dokId, welche) {
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + loadStoredToken() },
+    body: JSON.stringify({ action: "dokument-datei-get", dokId, welche })
+  });
+  if (!res.ok) {
+    let msg = "Datei konnte nicht geladen werden.";
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function bytesAlsBlobOeffnen(bytes, dateiname) {
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = dateiname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ---- PDF-Vorschau mit aufziehbarem Unterschriftsfeld ----
+//
+// Position wird als Fraktion (0..1) der Seite gehalten, nie in Pixeln: der
+// Absender sieht eine andere Vorschaugröße als der Empfänger, und gerechnet wird
+// am Ende gegen die echte PDF-Seite.
+
+function neueVorschau(canvasId, wrapId, markerId, anzeigeId) {
+  return {
+    doc: null, seite: 1, seiten: 1, feld: null, renderLauf: null,
+    canvas: () => document.getElementById(canvasId),
+    wrap: () => document.getElementById(wrapId),
+    marker: () => document.getElementById(markerId),
+    anzeige: () => document.getElementById(anzeigeId)
+  };
+}
+let vorschauZuweisen = neueVorschau("dok-vorschau-canvas", "dok-canvas-wrap", "dok-feld-marker", "dok-seite-anzeige");
+let vorschauSignieren = neueVorschau("dok-sig-canvas", "dok-sig-canvas-wrap", "dok-sig-feld-marker", "dok-sig-seite-anzeige");
+
+async function vorschauLaden(v, bytes) {
+  await ladePdfJs();
+  // pdf.js übernimmt den Puffer -- eine eigene Kopie geben, sonst ist er beim
+  // späteren Signieren mit pdf-lib "detached".
+  v.doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+  v.seiten = v.doc.numPages;
+  v.seite = 1;
+  await vorschauRendern(v);
+}
+
+async function vorschauRendern(v) {
+  const canvas = v.canvas();
+  if (!canvas || !v.doc) return;
+  // Überlappende render()-Aufrufe auf demselben Canvas brechen pdf.js ab --
+  // deshalb den laufenden Auftrag erst abwarten/abbrechen (Fix aus dem Stempel-Tool).
+  if (v.renderLauf) { try { v.renderLauf.cancel(); } catch (_) {} }
+  const page = await v.doc.getPage(v.seite);
+  const wrap = v.wrap();
+  const breite = Math.max(200, (wrap ? wrap.clientWidth : 0) || 600);
+  const roh = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: breite / roh.width });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  canvas.style.width = viewport.width + "px";
+  canvas.style.height = viewport.height + "px";
+  v.renderLauf = page.render({ canvasContext: canvas.getContext("2d"), viewport });
+  try { await v.renderLauf.promise; } catch (_) { /* abgebrochen ist kein Fehler */ }
+  v.renderLauf = null;
+  const anzeige = v.anzeige();
+  if (anzeige) anzeige.textContent = `Seite ${v.seite} / ${v.seiten}`;
+  markerZeichnen(v);
+}
+
+function markerZeichnen(v) {
+  const marker = v.marker();
+  const canvas = v.canvas();
+  if (!marker || !canvas) return;
+  if (!v.feld || v.feld.seite !== v.seite) { marker.style.display = "none"; return; }
+  marker.style.display = "block";
+  marker.style.left = (v.feld.x * canvas.clientWidth) + "px";
+  marker.style.top = (v.feld.y * canvas.clientHeight) + "px";
+  marker.style.width = (v.feld.w * canvas.clientWidth) + "px";
+  marker.style.height = (v.feld.h * canvas.clientHeight) + "px";
+}
+
+// Rechteck aufziehen. Alles in Fraktionen, und mit Guard gegen ein Canvas ohne
+// Ausdehnung -- ein unsichtbarer Container liefert 0 und erzeugte im Stempel-Tool
+// NaN-Positionen.
+function vorschauZiehenAktivieren(v, onFertig) {
+  const wrap = v.wrap();
+  if (!wrap || wrap.dataset.ziehenAktiv === "1") return;
+  wrap.dataset.ziehenAktiv = "1";
+  let start = null;
+  wrap.addEventListener("pointerdown", (e) => {
+    const canvas = v.canvas();
+    if (!canvas || !canvas.clientWidth || !canvas.clientHeight) return;
+    const r = canvas.getBoundingClientRect();
+    start = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    const canvas = v.canvas();
+    const r = canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const jetzt = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+    v.feld = {
+      seite: v.seite,
+      x: Math.max(0, Math.min(start.x, jetzt.x)),
+      y: Math.max(0, Math.min(start.y, jetzt.y)),
+      w: Math.min(1, Math.abs(jetzt.x - start.x)),
+      h: Math.min(1, Math.abs(jetzt.y - start.y))
+    };
+    markerZeichnen(v);
+  });
+  const ende = () => {
+    if (!start) return;
+    start = null;
+    // Ein Klick ohne Ziehen ist keine Auswahl, sondern ein Fehlgriff.
+    if (v.feld && (v.feld.w < 0.02 || v.feld.h < 0.01)) { v.feld = null; markerZeichnen(v); }
+    if (onFertig) onFertig();
+  };
+  wrap.addEventListener("pointerup", ende);
+  wrap.addEventListener("pointercancel", ende);
+}
+
+// ---- Signieren: Unterschrift + Nachweiszeile ins PDF brennen ----
+
+async function pdfMitUnterschrift(originalBytes, feld, signaturDataUrl, name) {
+  await ladePdfLib();
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdf = await PDFDocument.load(originalBytes);
+  const png = await pdf.embedPng(signaturDataUrl);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const zeile = `${name}, ${new Date().toLocaleString("de-DE")}`;
+
+  if (feld) {
+    const seiten = pdf.getPages();
+    // Ein Feld auf einer Seite, die es nicht (mehr) gibt, darf nicht zum Absturz
+    // führen -- dann lieber hinten anhängen.
+    const seite = seiten[feld.seite - 1];
+    if (seite) {
+      const { width, height } = seite.getSize();
+      const w = feld.w * width;
+      const h = feld.h * height;
+      // PDF zählt y von UNTEN, die Vorschau von oben.
+      const x = feld.x * width;
+      const y = height - (feld.y * height) - h;
+      seite.drawImage(png, { x, y: y + 10, width: w, height: Math.max(1, h - 10) });
+      seite.drawText(zeile, { x, y: Math.max(2, y - 2), size: 7, font, color: rgb(0.25, 0.25, 0.25) });
+      return await pdf.save();
+    }
+  }
+
+  // Kein (brauchbares) Feld: eigene Nachweisseite hinten anhängen.
+  const seite = pdf.addPage();
+  const { width, height } = seite.getSize();
+  seite.drawText("Unterschrift", { x: 60, y: height - 80, size: 16, font, color: rgb(0.1, 0.1, 0.1) });
+  seite.drawImage(png, { x: 60, y: height - 220, width: Math.min(260, width - 120), height: 90 });
+  seite.drawText(zeile, { x: 60, y: height - 240, size: 9, font, color: rgb(0.25, 0.25, 0.25) });
+  return await pdf.save();
+}
+
+function bytesZuBase64(bytes) {
+  let s = "";
+  // In Blöcken, sonst sprengt ein großes PDF den Argument-Stack von String.fromCharCode.
+  const block = 0x8000;
+  for (let i = 0; i < bytes.length; i += block) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + block));
+  }
+  return btoa(s);
+}
+
+function neueDateiId() {
+  // Der Worker verlangt echtes UUID-Format; ältere iOS-Geräte in der Flotte haben
+  // kein crypto.randomUUID, deshalb der Rückfallweg.
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : ((r & 0x3) | 0x8)).toString(16);
+  });
+}
+
+// ---- Overlay: unterschreiben ----
+
+let dokSigModus = "zugewiesen"; // oder "selbst"
+let dokSigAktuell = null;       // das Dokument (Modus zugewiesen)
+let dokSigOriginalBytes = null;
+let dokSigPad = null;
+
+function dokSigFehler(text) {
+  const el = document.getElementById("dok-sig-fehler");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
+}
+
+async function oeffneDokumentAnsicht(dokId) {
+  const dok = dokumenteState.anMich.find((d) => d.id === dokId);
+  if (!dok) return dokumenteFehler("Dokument nicht gefunden.");
+  dokSigModus = "zugewiesen";
+  dokSigAktuell = dok;
+  dokSigOriginalBytes = null;
+  vorschauSignieren.feld = dok.feld || null;
+
+  document.getElementById("dokument-signieren-titel").textContent = dok.titel || "Dokument unterschreiben";
+  document.getElementById("dok-sig-selbst-block").style.display = "none";
+  document.getElementById("btn-dok-sig-ablehnen").style.display = "";
+  document.getElementById("dok-sig-meta").textContent =
+    "von " + (dok.vonName || dok.von) + (dok.faellig ? " · bis " + formatCalendarDate(dok.faellig) : "");
+  dokSigFehler("");
+  dokSigOverlayZeigen();
+
+  try {
+    dokSigOriginalBytes = await dokumentDateiHolen(dok.id, "original");
+    await vorschauLaden(vorschauSignieren, dokSigOriginalBytes);
+  } catch (e) {
+    dokSigFehler(e && e.message ? e.message : "Dokument konnte nicht geladen werden.");
+  }
+}
+
+function oeffneSelbstUnterschreiben() {
+  dokSigModus = "selbst";
+  dokSigAktuell = null;
+  dokSigOriginalBytes = null;
+  vorschauSignieren.doc = null;
+  vorschauSignieren.feld = null;
+  document.getElementById("dokument-signieren-titel").textContent = "Selbst unterschreiben";
+  document.getElementById("dok-sig-selbst-block").style.display = "";
+  document.getElementById("btn-dok-sig-ablehnen").style.display = "none";
+  document.getElementById("dok-sig-meta").textContent = "";
+  document.getElementById("dok-sig-titel").value = "";
+  document.getElementById("dok-sig-datei").value = "";
+  const canvas = document.getElementById("dok-sig-canvas");
+  if (canvas) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  dokSigFehler("");
+  dokSigOverlayZeigen();
+}
+
+function dokSigOverlayZeigen() {
+  const overlay = document.getElementById("dokument-signieren-overlay");
+  if (!overlay) return;
+  overlay.style.display = "flex";
+  // Das Pad erst hier erzeugen und in jedem Fall neu vermessen: sein Canvas lag
+  // bis eben hinter display:none und hätte sonst ein 0x0-Bitmap.
+  if (!dokSigPad) dokSigPad = createSignaturePad(document.getElementById("dok-sig-pad"));
+  dokSigPad.resetSilent();
+  dokSigPad.resize();
+  document.getElementById("dok-sig-original-laden").style.display = dokSigAktuell ? "" : "none";
+}
+
+function schliesseDokSigOverlay() {
+  const overlay = document.getElementById("dokument-signieren-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+async function dokumentUnterschreibenSenden() {
+  const btn = document.getElementById("btn-dok-sig-senden");
+  dokSigFehler("");
+  if (!dokSigPad || dokSigPad.isEmpty()) return dokSigFehler("Bitte zuerst unterschreiben.");
+  if (!dokSigOriginalBytes) return dokSigFehler("Es ist kein Dokument geladen.");
+
+  const name = currentUser
+    ? [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ") || currentUser.username
+    : "";
+
+  btn.disabled = true;
+  try {
+    const signiert = await pdfMitUnterschrift(
+      dokSigOriginalBytes, vorschauSignieren.feld, dokSigPad.toDataURL(), name
+    );
+    const bytes = new Uint8Array(signiert);
+
+    if (dokSigModus === "selbst") {
+      // Ohne Zuweisung bleibt nichts auf dem Server liegen: das ist der Ersatz
+      // fürs eigene Stempeln, kein Vorgang mit Gegenüber.
+      bytesAlsBlobOeffnen(bytes, (document.getElementById("dok-sig-titel").value || "unterschrieben") + ".pdf");
+      schliesseDokSigOverlay();
+      return;
+    }
+
+    const fileId = neueDateiId();
+    await callWorker("dokument-datei-put", {
+      id: fileId, zweck: "signiert", dokId: dokSigAktuell.id,
+      dataBase64: bytesZuBase64(bytes)
+    });
+    await callWorker("dokument-unterschreiben", { dokId: dokSigAktuell.id, signedFileId: fileId });
+    schliesseDokSigOverlay();
+    await Promise.all([loadDokumente(), loadAufgaben()]);
+  } catch (e) {
+    dokSigFehler(e && e.message ? e.message : "Unterschreiben fehlgeschlagen.");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function dokumentAblehnenSenden() {
+  if (!dokSigAktuell) return;
+  const grund = prompt("Warum möchtest du nicht unterschreiben?\n(Die Begründung geht an " +
+    (dokSigAktuell.vonName || dokSigAktuell.von) + ".)");
+  if (grund === null) return;
+  if (!grund.trim()) return dokSigFehler("Bitte eine Begründung angeben.");
+  try {
+    await callWorker("dokument-ablehnen", { dokId: dokSigAktuell.id, grund: grund.trim() });
+    schliesseDokSigOverlay();
+    await Promise.all([loadDokumente(), loadAufgaben()]);
+  } catch (e) {
+    dokSigFehler(e && e.message ? e.message : "Ablehnen fehlgeschlagen.");
+  }
+}
+
+function setupDokumenteTab() {
+  const tab = document.getElementById("tab-dokumente");
+  if (!tab) return;
+
+  document.getElementById("btn-dokumente-neuladen").addEventListener("click", loadDokumente);
+  document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
+
+  tab.addEventListener("click", async (e) => {
+    const item = e.target.closest(".dok-item");
+    if (!item) return;
+    const dokId = item.dataset.dokId;
+    const alle = dokumenteState.anMich.concat(dokumenteState.vonMir);
+    const dok = alle.find((d) => d.id === dokId);
+    dokumenteFehler("");
+    try {
+      if (e.target.closest(".dok-oeffnen")) {
+        await oeffneDokumentAnsicht(dokId);
+      } else if (e.target.closest(".dok-download-original")) {
+        bytesAlsBlobOeffnen(await dokumentDateiHolen(dokId, "original"), (dok ? dok.titel : "dokument") + ".pdf");
+      } else if (e.target.closest(".dok-download-signiert")) {
+        bytesAlsBlobOeffnen(await dokumentDateiHolen(dokId, "signiert"), (dok ? dok.titel : "dokument") + " (unterschrieben).pdf");
+      } else if (e.target.closest(".dok-loeschen")) {
+        if (!confirm("Dieses Dokument endgültig löschen? Auch das unterschriebene Exemplar wird entfernt.")) return;
+        await callWorker("dokument-loeschen", { dokId });
+        await loadDokumente();
+      }
+    } catch (err) {
+      dokumenteFehler(err && err.message ? err.message : "Aktion fehlgeschlagen.");
+    }
+  });
+
+  // Overlay
+  document.getElementById("btn-dokument-signieren-close").addEventListener("click", schliesseDokSigOverlay);
+  document.getElementById("btn-dok-sig-abbrechen").addEventListener("click", schliesseDokSigOverlay);
+  document.getElementById("btn-dok-sig-senden").addEventListener("click", dokumentUnterschreibenSenden);
+  document.getElementById("btn-dok-sig-ablehnen").addEventListener("click", dokumentAblehnenSenden);
+  document.getElementById("btn-dok-sig-pad-clear").addEventListener("click", () => { if (dokSigPad) dokSigPad.clear(); });
+  document.getElementById("dok-sig-seite-zurueck").addEventListener("click", async () => {
+    if (vorschauSignieren.seite > 1) { vorschauSignieren.seite--; await vorschauRendern(vorschauSignieren); }
+  });
+  document.getElementById("dok-sig-seite-vor").addEventListener("click", async () => {
+    if (vorschauSignieren.seite < vorschauSignieren.seiten) { vorschauSignieren.seite++; await vorschauRendern(vorschauSignieren); }
+  });
+  document.getElementById("dok-sig-original-laden").addEventListener("click", async () => {
+    if (!dokSigAktuell) return;
+    try {
+      bytesAlsBlobOeffnen(await dokumentDateiHolen(dokSigAktuell.id, "original"), (dokSigAktuell.titel || "dokument") + ".pdf");
+    } catch (e) { dokSigFehler(e && e.message ? e.message : "Download fehlgeschlagen."); }
+  });
+  // Nur im Selbst-Modus darf das Feld hier gesetzt werden -- bei einer Zuweisung
+  // bestimmt der Absender die Stelle, sonst wäre seine Vorgabe wirkungslos.
+  vorschauZiehenAktivieren(vorschauSignieren, () => {
+    if (dokSigModus !== "selbst") { vorschauSignieren.feld = dokSigAktuell ? dokSigAktuell.feld : null; markerZeichnen(vorschauSignieren); }
+  });
+  document.getElementById("dok-sig-datei").addEventListener("change", async (e) => {
+    const datei = e.target.files && e.target.files[0];
+    if (!datei) return;
+    dokSigFehler("");
+    if (datei.size > 10 * 1024 * 1024) return dokSigFehler("Die Datei ist größer als 10 MB.");
+    try {
+      dokSigOriginalBytes = new Uint8Array(await datei.arrayBuffer());
+      vorschauSignieren.feld = null;
+      await vorschauLaden(vorschauSignieren, dokSigOriginalBytes);
+    } catch (err) {
+      dokSigFehler("Die PDF konnte nicht gelesen werden.");
+    }
+  });
+
+  const overlay = document.getElementById("dokument-signieren-overlay");
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) schliesseDokSigOverlay(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && overlay.style.display === "flex") schliesseDokSigOverlay();
+  });
 }
 
 // ---- Admin: Neuigkeiten verwalten (Einstellungen-Tab) ----
@@ -3224,7 +3854,12 @@ function activateTab(name) {
 
 function setupTabs() {
   document.querySelectorAll("nav button[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+    btn.addEventListener("click", () => {
+      activateTab(btn.dataset.tab);
+      // Erst beim Öffnen laden: die Liste kostet einen Nextcloud-Read, und die
+      // meisten Seitenaufrufe gehen nie in diesen Tab.
+      if (btn.dataset.tab === "dokumente") loadDokumente();
+    });
   });
 
   const versionBadgeHeader = document.getElementById("version-badge");
@@ -3445,6 +4080,9 @@ function renderNavTabs() {
   document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
+  // Dokumente sind Personalsache: Spielerkonten bekommen auf allen zugehoerigen
+  // Aktionen ohnehin 403, der Tab hat fuer sie also nichts zu zeigen.
+  document.getElementById("nav-dokumente").style.display = dokumenteTabOffen() ? "" : "none";
 
   // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
   // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
@@ -3469,7 +4107,19 @@ function renderNavTabs() {
     activateTab("konto");
   } else if (!infoOffen && aktiv && aktiv.id === "tab-info") {
     activateTab("uebersicht");
+  } else if (!dokumenteTabOffen() && aktiv && aktiv.id === "tab-dokumente") {
+    // Wer sich aus dem Dokumente-Tab abmeldet, stuende sonst vor der zuletzt
+    // geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
+    dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
+    renderDokumente();
+    activateTab("uebersicht");
   }
+}
+
+// Gleiche Linie wie im Worker (aufgabenSession): angemeldetes Personal, keine
+// Spielerkonten.
+function dokumenteTabOffen() {
+  return !!currentUser && currentUser.art !== "spieler";
 }
 
 // Der Info-Tab enthaelt die komplette Aenderungsliste, und die beschreibt Anmeldewege,
@@ -4046,6 +4696,7 @@ async function init() {
   setupSidebarWidgetPlacement();
   setupAufgabenWidget();
   setupAufgabenZuweisenDialog();
+  setupDokumenteTab();
   setupAuthForms();
   setupWhatsappLink();
   setupWikiFrage();

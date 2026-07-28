@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.15" />
+<link rel="stylesheet" href="style.css?v=1.16" />
 </head>
 <body>
 
@@ -27,6 +27,10 @@
 <nav>
   <button data-tab="uebersicht" class="active">Dashboard</button>
   <button data-tab="feedback">Feedback & Hilfe</button>
+  <!-- Nur für angemeldetes Personal (renderNavTabs). Default versteckt: die zu
+       unterschreibenden Dokumente gehen niemanden etwas an, der nicht angemeldet
+       ist, und der Tab soll beim Erstladen nicht kurz aufblitzen. -->
+  <button data-tab="dokumente" id="nav-dokumente" style="display:none;">Dokumente</button>
   <div class="nav-right">
     <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
     <button data-tab="konto" id="nav-konto">Anmelden</button>
@@ -119,6 +123,32 @@
         <p class="muted" style="margin-bottom:14px;">Dringende Frage oder direkter Kontakt gewünscht? Schreib Michel auf WhatsApp.</p>
         <a class="btn-link" id="feedback-whatsapp-link" href="#" target="_blank" rel="noopener">💬 Auf WhatsApp schreiben</a>
       </div>
+    </div>
+  </section>
+
+  <!-- ---------- Dokumente zum Unterschreiben ----------
+       Der schwere Teil des Unterschrifts-Workflows. Bewusst hier und nicht im
+       Aufgaben-Widget: ein PDF ansehen und unterschreiben braucht Fläche, das
+       Widget in der linken Spalte soll klein bleiben. -->
+  <section class="tab-section" id="tab-dokumente">
+    <div class="card">
+      <h2>📄 Dokumente</h2>
+      <p class="muted">Dokumente, die du unterschreiben sollst — und die, die du selbst verschickt hast.</p>
+      <div class="btn-row" style="margin-top:10px;">
+        <button type="button" class="btn small" id="btn-dokument-selbst">Selbst unterschreiben</button>
+        <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
+      </div>
+      <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    </div>
+
+    <div class="card">
+      <h2>Zu unterschreiben</h2>
+      <div id="dokumente-an-mich"><p class="muted">Wird geladen …</p></div>
+    </div>
+
+    <div class="card" id="dokumente-von-mir-karte">
+      <h2>Von mir verschickt</h2>
+      <div id="dokumente-von-mir"><p class="muted">Wird geladen …</p></div>
     </div>
   </section>
 
@@ -316,6 +346,16 @@
         außer den Administratoren — die Auswahl ist bewusst leer statt „alle“.
       </p>
       <div id="aufgaben-gruppen-liste" class="aufgaben-gruppen-liste"></div>
+
+      <h3 style="margin:18px 0 6px; font-size:15px;">Dokumente zum Unterschreiben</h3>
+      <p class="muted" style="margin-bottom:14px;">
+        Wer darf an eine Aufgabe ein PDF hängen, das unterschrieben werden muss? Das ist bewusst eine
+        <strong>eigene, engere Stufe</strong> als das Zuweisen oben — eine Unterschrift einzufordern ist etwas
+        anderes, als jemandem eine Aufgabe in die Liste zu legen. Auch hier gilt: ohne Häkchen niemand außer den
+        Administratoren.
+      </p>
+      <div id="aufgaben-dok-gruppen-liste" class="aufgaben-gruppen-liste"></div>
+
       <div style="margin-top:14px;">
         <button type="button" class="btn small" id="btn-aufgaben-gruppen-save">Speichern</button>
       </div>
@@ -622,6 +662,34 @@
       <input type="search" id="aufgabe-zuweisen-suche" placeholder="Name suchen …" autocomplete="off" />
     </div>
     <div id="aufgabe-zuweisen-empfaenger" class="aufgaben-empfaenger-liste"></div>
+
+    <!-- Nur für Gruppen aus aufgaben.dokumentGroupIds -- eine eigene, engere Stufe
+         als das Zuweisen selbst: eine Unterschrift einzufordern ist etwas anderes,
+         als jemandem eine Aufgabe in die Liste zu legen. -->
+    <div id="aufgabe-zuweisen-dok-block" style="display:none; margin-top:14px; border-top:1px solid var(--border, #e3e6ec); padding-top:12px;">
+      <label class="check-inline">
+        <input type="checkbox" id="aufgabe-zuweisen-dok-an" />
+        <span>Dokument zum Unterschreiben anhängen (PDF)</span>
+      </label>
+      <div id="aufgabe-zuweisen-dok-felder" style="display:none; margin-top:10px;">
+        <input type="file" id="aufgabe-zuweisen-dok-datei" accept="application/pdf,.pdf" />
+        <p class="muted" id="aufgabe-zuweisen-dok-status" style="margin-top:8px;"></p>
+        <div id="aufgabe-zuweisen-dok-vorschau" class="dok-vorschau" style="display:none;">
+          <div class="dok-seiten-leiste">
+            <button type="button" class="btn small secondary" id="dok-seite-zurueck">‹</button>
+            <span id="dok-seite-anzeige">Seite 1 / 1</span>
+            <button type="button" class="btn small secondary" id="dok-seite-vor">›</button>
+          </div>
+          <p class="muted" style="margin:6px 0;">Ziehe ein Rechteck auf die Stelle, an der unterschrieben werden soll.</p>
+          <div class="dok-canvas-wrap" id="dok-canvas-wrap">
+            <canvas id="dok-vorschau-canvas"></canvas>
+            <div class="dok-feld-marker" id="dok-feld-marker" style="display:none;"></div>
+          </div>
+          <p class="muted" id="dok-feld-info" style="margin-top:6px;">Kein Feld gesetzt — die Unterschrift kommt dann auf eine angehängte Seite.</p>
+        </div>
+      </div>
+    </div>
+
     <p class="muted" id="aufgabe-zuweisen-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
     <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
       <button type="button" class="btn secondary small" id="btn-aufgabe-zuweisen-abbrechen">Abbrechen</button>
@@ -630,7 +698,64 @@
   </div>
 </div>
 
-<script src="config.js?v=1.22"></script>
-<script src="app.js?v=1.21"></script>
+<!-- Unterschreiben. Dient zwei Wegen: einem zugewiesenen Dokument (dann steht der
+     Ablehnen-Knopf mit dabei) und dem eigenen PDF ohne Zuweisung ("Selbst
+     unterschreiben"), bei dem die Datei hier ausgewählt und das Feld hier gesetzt
+     wird. Gleiche Maske, weil es dieselbe Handlung ist. -->
+<div class="code-overlay" id="dokument-signieren-overlay" style="display:none;">
+  <div class="code-dialog dok-dialog" role="dialog" aria-modal="true" aria-labelledby="dokument-signieren-titel">
+    <div class="code-dialog-head">
+      <h2 id="dokument-signieren-titel">Dokument unterschreiben</h2>
+      <button type="button" class="code-dialog-close" id="btn-dokument-signieren-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+
+    <div id="dok-sig-selbst-block" style="display:none; margin-bottom:10px;">
+      <div class="form-field">
+        <label for="dok-sig-titel">Bezeichnung</label>
+        <input type="text" id="dok-sig-titel" maxlength="200" placeholder="z. B. Einverständnis Fahrtkosten" autocomplete="off" />
+      </div>
+      <div class="form-field" style="margin-top:10px;">
+        <label for="dok-sig-datei">PDF auswählen</label>
+        <input type="file" id="dok-sig-datei" accept="application/pdf,.pdf" />
+      </div>
+      <p class="muted" style="margin-top:8px;">Ziehe danach ein Rechteck auf die Stelle, an der du unterschreiben willst.</p>
+    </div>
+
+    <p class="muted" id="dok-sig-meta"></p>
+
+    <div class="dok-seiten-leiste">
+      <button type="button" class="btn small secondary" id="dok-sig-seite-zurueck">‹</button>
+      <span id="dok-sig-seite-anzeige">Seite 1 / 1</span>
+      <button type="button" class="btn small secondary" id="dok-sig-seite-vor">›</button>
+      <button type="button" class="btn small secondary" id="dok-sig-original-laden" style="margin-left:auto;">Original herunterladen</button>
+    </div>
+    <div class="dok-canvas-wrap" id="dok-sig-canvas-wrap">
+      <canvas id="dok-sig-canvas"></canvas>
+      <div class="dok-feld-marker" id="dok-sig-feld-marker" style="display:none;"></div>
+    </div>
+
+    <div id="dok-sig-pad-block" style="margin-top:14px;">
+      <label class="form-label">Deine Unterschrift</label>
+      <div class="signature-wrap">
+        <canvas id="dok-sig-pad" class="signature-canvas"></canvas>
+      </div>
+      <div class="btn-row" style="justify-content:flex-start; margin-top:6px;">
+        <button type="button" class="btn small secondary" id="btn-dok-sig-pad-clear">Unterschrift löschen</button>
+      </div>
+    </div>
+
+    <p class="muted" id="dok-sig-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+      <button type="button" class="btn secondary small" id="btn-dok-sig-abbrechen">Abbrechen</button>
+      <button type="button" class="btn secondary small" id="btn-dok-sig-ablehnen">Nicht unterschreiben</button>
+      <button type="button" class="btn small" id="btn-dok-sig-senden">Unterschreiben</button>
+    </div>
+  </div>
+</div>
+
+<script src="signature-pad.js?v=1.0"></script>
+<script src="config.js?v=1.23"></script>
+<script src="app.js?v=1.22"></script>
 </body>
 </html>

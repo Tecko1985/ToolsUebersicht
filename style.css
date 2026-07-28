@@ -586,6 +586,50 @@ main { flex: 1; min-width: 0; }
 .aufgaben-empfaenger-zeile:hover { background: var(--blue-light); border-radius: 4px; }
 .aufgaben-gruppen-liste { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 
+/* ---------- Dokumente zum Unterschreiben ---------- */
+
+/* Eine Aufgabe mit Dokument sieht anders aus als eine normale: ihr Haken ist
+   gesperrt, und der Text ist ein Knopf, der in den Dokumente-Tab fuehrt. */
+.aufgabe-item.mit-dokument .aufgabe-check { opacity: 0.45; cursor: not-allowed; }
+.aufgabe-dok-link {
+  flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0;
+  font: inherit; color: var(--blue, #2f5bd7); cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.aufgabe-dok-link:hover { color: #1b3fa0; }
+
+.dok-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.dok-item.status-unterschrieben { border-left: 3px solid #2d8c4e; }
+.dok-item.status-abgelehnt { border-left: 3px solid #c0392b; }
+.dok-item.status-offen { border-left: 3px solid var(--blue, #2f5bd7); }
+.dok-item-kopf { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.dok-item-titel { font-weight: 600; }
+.dok-item-status,
+.dok-item-meta { font-size: 12px; color: var(--muted); }
+.dok-item-grund { font-size: 13px; margin-top: 6px; padding: 6px 8px; background: #fdf3f2; border-radius: 6px; }
+.dok-item-aktionen { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* Der Signier-Dialog braucht mehr Platz als die uebrigen: er zeigt eine PDF-Seite. */
+.dok-dialog { max-width: 860px; width: 100%; max-height: 92vh; overflow-y: auto; }
+.dok-seiten-leiste { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; font-size: 13px; flex-wrap: wrap; }
+.dok-canvas-wrap {
+  position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: #f4f6fa; max-height: 55vh; overflow-y: auto;
+  /* Ohne das faengt der Browser das Ziehen als Scrollgeste ab und das Feld
+     laesst sich am Handy gar nicht aufziehen. */
+  touch-action: none;
+}
+.dok-canvas-wrap canvas { display: block; max-width: 100%; }
+.dok-feld-marker {
+  position: absolute; border: 2px dashed var(--blue, #2f5bd7); background: rgba(47, 91, 215, 0.12);
+  pointer-events: none; border-radius: 3px;
+}
+.dok-vorschau { margin-top: 10px; }
+
+/* Aus fahrtenbuch/TrainerCheckliste uebernommen -- das Pad ist dasselbe. */
+.signature-wrap { border: 1px dashed var(--border); border-radius: 8px; background: #fbfcfe; }
+.signature-canvas { width: 100%; height: 160px; display: block; touch-action: none; cursor: crosshair; }
+
 @media (max-width: 860px) {
   .page-body { flex-direction: column; }
   /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen

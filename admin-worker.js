@@ -254,8 +254,25 @@
 //     Markiert die Aufgabe beim Empfaenger als zurueckgezogen (bleibt als Hinweis stehen); Erledigtes geht nicht mehr.
 //   POST { action: "aufgaben-gesehen", ids[] } -> { ok:true, markiert }
 //     Setzt gesehenAm auf eigenen Zuweisungen (geraeteuebergreifend); schreibt nur, wenn sich etwas aendert.
-//   POST { action: "set-aufgaben-gruppen", groupIds } (Admin) -> { ok:true, assignGroupIds, geaendertAm, geaendertVon }
-//     Legt in aufgaben{} von sichtbarkeit.json ab, welche Gruppen zuweisen duerfen. LEER = niemand (nicht "alle").
+//   POST { action: "set-aufgaben-gruppen", groupIds?, dokumentGroupIds? } (Admin) -> { ok:true, assignGroupIds, dokumentGroupIds, ... }
+//     Legt in aufgaben{} von sichtbarkeit.json ab, welche Gruppen zuweisen bzw. Unterschriften einfordern duerfen.
+//     LEER = niemand (nicht "alle"). Ein FEHLENDES Feld heisst "unveraendert" -- nur ein mitgeschicktes [] leert.
+//   POST { action: "dokumente-load" } (eingeloggtes Personal) -> { anMich, vonMir, canAssignDocs }
+//     Zu unterschreibende Dokumente aus dokumente.json, getrennt nach Rolle. Nur Eintraege, an denen man beteiligt ist.
+//   POST { action: "dokument-anlegen", titel, originalFileId, empfaenger[], faellig?, feld? } (aufgaben.dokumentGroupIds) -> { ok:true, angelegt }
+//     Je Empfaenger ein eigener Eintrag auf dasselbe Original + eine Aufgabe als Erinnerung. feld = Seite + 4 Fraktionen.
+//   POST { action: "dokument-datei-put", id, zweck:"original"|"signiert", dokId?, dataBase64 } -> { ok:true, id }
+//     Ablage in unterschriften/<uuid>, NICHT in dateien/ -- dav-file-get kann diesen Ordner nicht erreichen.
+//     "original" gegen das Zuweis-Recht, "signiert" nur fuer den Empfaenger des Dokuments und nur solange offen. Nur PDF.
+//   POST { action: "dokument-datei-get", dokId, welche:"original"|"signiert" } -> PDF-Bytes
+//     Die Datei-Id kommt NIE aus dem Body, sondern immer aus dem Dokument -- sonst liesse sich die Pruefung umgehen.
+//     Zugriff nur fuer Absender, Empfaenger und globale Admins, unabhaengig von jeder Tool-Sichtbarkeit.
+//   POST { action: "dokument-unterschreiben", dokId, signedFileId } (nur der Empfaenger) -> { ok:true, dokument }
+//     Verbucht die geleistete Unterschrift (Zeitstempel vom Server) und hakt die zugehoerige Aufgabe ab.
+//   POST { action: "dokument-ablehnen", dokId, grund } (nur der Empfaenger) -> { ok:true, dokument }
+//     Begruendung ist Pflicht -- sonst laesst sich "verweigert" nicht von "uebersehen" unterscheiden.
+//   POST { action: "dokument-loeschen", dokId } (Absender oder Admin) -> { ok:true }
+//     Loescht Eintrag + Dateien; das Original nur, wenn keine weitere Kopie mehr darauf zeigt.
 //   POST { action: "get-materialcontainer-code" } + Authorization: Bearer -> { code, hinweis, geaendertAm, geaendertVon }
 //     Zahlencode des Schlosses am Materialcontainer. Eingeloggtes Personal; Spielerkonten bekommen 403.
 //     Bewusst eine eigene schmale Aktion (nicht Teil von "me" und nicht im oeffentlichen GET) -- der Code oeffnet ein echtes Schloss.
@@ -556,6 +573,30 @@ const AUFGABEN_MAX_EMPFAENGER = 20;
 const AUFGABEN_ZUGEWIESEN_ERLEDIGT_TAGE = 14;
 const AUFGABEN_ZURUECKGEZOGEN_TAGE = 7;
 
+// Zu unterschreibende Dokumente. BEWUSST eine eigene Datei neben aufgaben.json:
+// aufgabenPrune() löscht eine erledigte Zuweisung 14 Tage nach dem Abhaken hart aus
+// der Datei — ein Nachweis darf davon nicht mitgerissen werden. Die Aufgabe ist die
+// Erinnerung und darf ablaufen, das unterschriebene Dokument ist das Ergebnis und
+// bleibt, bis es jemand ausdrücklich löscht. Aufbau:
+//   { version:1, byId: { "<dokId>": { id, titel, von, empfaenger, status, ... } } }
+// Indiziert nach Dokument-Id statt nach Nutzer, weil jeder Eintrag ZWEI Beteiligte
+// hat (Absender + Empfänger) — eine byUser-Map müsste ihn doppelt führen.
+const DOKUMENTE_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/dokumente.json";
+
+// Die PDFs liegen in einem EIGENEN Unterordner, ausdrücklich nicht in "dateien".
+// dav-file-get ist nur durch die Tool-Sichtbarkeit gegated und liefert jedem mit
+// Tool-Zugriff jede Datei-Id aus; für unterschriebene Verträge reicht das nicht.
+// Da davFileDir() fest auf "dateien" zeigt, kann dav-file-get diesen Ordner gar
+// nicht erreichen — der Zugriff läuft ausschließlich über dokument-datei-get mit
+// eigener Beteiligten-Prüfung (gleiches Prinzip wie RESTRICTED_FILE_APPS).
+const UNTERSCHRIFTEN_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + "/unterschriften";
+
+const DOKUMENT_MAX_TITEL = 200;
+const DOKUMENT_MAX_ABLEHNGRUND = 500;
+// Deckel für die gemeinsame Datei. Anders als bei den Aufgaben zählt hier nicht pro
+// Nutzer, sondern insgesamt: ein Dokument gehört zwei Leuten.
+const DOKUMENTE_MAX_GESAMT = 2000;
+
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
 // Mitglieder der viewGroupId — unabhängig davon, wer sonst Zugriff auf das Tool hat.
@@ -828,6 +869,20 @@ export default {
         return handleAufgabenGesehen(request, body, env, authHeader, corsHeaders);
       case "set-aufgaben-gruppen":
         return handleSetAufgabenGruppen(request, body, env, authHeader, corsHeaders);
+      case "dokumente-load":
+        return handleDokumenteLoad(request, env, authHeader, corsHeaders);
+      case "dokument-anlegen":
+        return handleDokumentAnlegen(request, body, env, authHeader, corsHeaders);
+      case "dokument-datei-put":
+        return handleDokumentDateiPut(request, body, env, authHeader, corsHeaders);
+      case "dokument-datei-get":
+        return handleDokumentDateiGet(request, body, env, authHeader, corsHeaders);
+      case "dokument-unterschreiben":
+        return handleDokumentUnterschreiben(request, body, env, authHeader, corsHeaders);
+      case "dokument-ablehnen":
+        return handleDokumentAblehnen(request, body, env, authHeader, corsHeaders);
+      case "dokument-loeschen":
+        return handleDokumentLoeschen(request, body, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -2854,6 +2909,35 @@ function darfAufgabenZuweisen(session, config) {
   return erlaubt.some((g) => session.groupIds.includes(g));
 }
 
+// Zweite, engere Stufe: wer eine Unterschrift einfordern darf. Bewusst NICHT an
+// assignGroupIds gekoppelt — „Trikots zählen" zuweisen und „unterschreib diesen
+// Vertrag" verlangen sind verschiedene Dinge. Leer heißt auch hier NIEMAND, aus
+// demselben Grund wie oben: der unkonfigurierte Zustand fällt zu.
+function darfDokumenteZuweisen(session, config) {
+  if (session.isAdmin) return true;
+  const cfg = (config && config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
+  const erlaubt = Array.isArray(cfg.dokumentGroupIds) ? cfg.dokumentGroupIds : [];
+  return erlaubt.some((g) => session.groupIds.includes(g));
+}
+
+// Wer ein Dokument sehen/herunterladen darf: die beiden Beteiligten, plus globale
+// Admins als Rückfallebene — ohne die käme an einen Vertrag niemand mehr heran,
+// sobald das Absenderkonto gelöscht oder archiviert wird. Bewusst unabhängig von
+// jeder Tool-Sichtbarkeit: ein Personalkonto zu haben reicht hier nicht.
+function istDokumentBeteiligt(session, dok) {
+  if (!dok) return false;
+  if (session.isAdmin) return true;
+  return dok.von === session.username || dok.empfaenger === session.username;
+}
+
+function dokumenteById(doc) {
+  return (doc && doc.byId && typeof doc.byId === "object") ? doc.byId : {};
+}
+
+function dokumentHolen(doc, id) {
+  return getOwn(dokumenteById(doc), String(id || "")) || null;
+}
+
 function aufgabenListe(doc, username) {
   const liste = doc && doc.byUser ? getOwn(doc.byUser, username) : undefined;
   return Array.isArray(liste) ? liste : [];
@@ -2933,18 +3017,30 @@ async function handleAufgabenLoad(request, env, authHeader, corsHeaders) {
         erledigtAm: a.erledigtAm || null,
         gesehenAm: a.gesehenAm || null,
         zurueckgezogenAm: a.zurueckgezogenAm || null,
+        // Damit die Rückansicht eine Unterschriftsaufgabe als solche zeigt und
+        // nicht das Zurückziehen anbietet -- die gehört in den Dokumente-Tab.
+        dokId: a.dokId || null,
         empfaenger,
         empfaengerName: aufgabenAnzeigeName(session.usersDoc, empfaenger)
       });
     }
   }
 
-  const antwort = { meine, zugewiesenVonMir, canAssign: darfAufgabenZuweisen(session, config) };
+  const antwort = {
+    meine,
+    zugewiesenVonMir,
+    canAssign: darfAufgabenZuweisen(session, config),
+    // Kommt hier gratis mit, weil sichtbarkeit.json ohnehin gelesen ist: der
+    // Zuweisen-Dialog braucht es, um den Dokument-Abschnitt zu zeigen, und muss
+    // dafür nicht erst dokumente-load abwarten.
+    canAssignDocs: darfDokumenteZuweisen(session, config)
+  };
   // Für das Admin-Panel: die konfigurierten Gruppen kommen additiv mit, weil
   // sichtbarkeit.json hier ohnehin schon gelesen ist (kein zweiter Request nötig).
   if (session.isAdmin) {
     const cfg = (config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
     antwort.assignGroupIds = Array.isArray(cfg.assignGroupIds) ? cfg.assignGroupIds : [];
+    antwort.dokumentGroupIds = Array.isArray(cfg.dokumentGroupIds) ? cfg.dokumentGroupIds : [];
   }
   return json(antwort, 200, corsHeaders);
 }
@@ -2977,6 +3073,13 @@ async function handleAufgabeSpeichern(request, body, env, authHeader, corsHeader
       if (!eintrag) return json({ error: "Unbekannte Aufgabe" }, 404, corsHeaders);
       if (eintrag.von && (textGesetzt || faelligGesetzt)) {
         return json({ error: "Zugewiesene Aufgaben lassen sich nur abhaken" }, 403, corsHeaders);
+      }
+      // Eine Aufgabe mit Dokument wird ausschließlich durch die geleistete
+      // Unterschrift (oder eine begründete Ablehnung) erledigt. Wäre der Haken
+      // frei, könnte der Empfänger „erledigt" melden, ohne je unterschrieben zu
+      // haben — und der Absender wartet auf ein Dokument, das nie kommt.
+      if (eintrag.dokId && erledigt !== null) {
+        return json({ error: "Diese Aufgabe wird durch die Unterschrift erledigt" }, 403, corsHeaders);
       }
       if (textGesetzt) {
         if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
@@ -3226,26 +3329,460 @@ async function handleAufgabenGesehen(request, body, env, authHeader, corsHeaders
   return json({ error: "Konnte nicht als gesehen markiert werden" }, 502, corsHeaders);
 }
 
+// ---------- Aktionen: zu unterschreibende Dokumente ----------
+//
+// Der Unterschied zum digitalen Stempel, und der ganze Zweck dieses Blocks:
+// dort legt jeder Tool-Nutzer selbst ein Stempelbild an und setzt es auf ein
+// beliebiges Dokument — die Unterschrift ist damit an niemanden gebunden. Hier
+// entsteht sie in der eingeloggten Sitzung der unterzeichnenden Person, und der
+// Server hält fest, wer wann unterschrieben hat.
+
+// Position des Unterschriftsfelds als Seitenzahl + vier Fraktionen (0..1) der
+// Seitengröße — bewusst nicht in Pixeln: der Absender setzt das Feld auf einer
+// skalierten Vorschau, der Empfänger sieht eine andere Größe, und gerechnet wird
+// am Ende gegen die echte PDF-Seite. Fehlt oder taugt das Feld nicht, wird daraus
+// null und das Ergebnis bekommt eine Unterschriftsseite angehängt.
+function dokumentFeld(roh) {
+  if (!roh || typeof roh !== "object") return null;
+  const seite = Number(roh.seite);
+  if (!Number.isInteger(seite) || seite < 1 || seite > 2000) return null;
+  const f = {};
+  for (const k of ["x", "y", "w", "h"]) {
+    const v = Number(roh[k]);
+    if (!Number.isFinite(v) || v < 0 || v > 1) return null;
+    f[k] = v;
+  }
+  if (f.w <= 0 || f.h <= 0) return null;
+  return { seite, x: f.x, y: f.y, w: f.w, h: f.h };
+}
+
+function dokumentOeffentlich(dok, usersDoc) {
+  return {
+    ...dok,
+    vonName: aufgabenAnzeigeName(usersDoc, dok.von),
+    empfaengerName: aufgabenAnzeigeName(usersDoc, dok.empfaenger)
+  };
+}
+
+// Alles, woran ich beteiligt bin — in beide Richtungen getrennt. Der Client
+// filtert daraus die Status; die Aufteilung nach Rolle muss dagegen hier
+// passieren, denn sie entscheidet, was jemand überhaupt zu sehen bekommt.
+async function handleDokumenteLoad(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const [doc, config] = await Promise.all([
+    readJson(DOKUMENTE_URL, authHeader, { version: 1, byId: {} }),
+    readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} })
+  ]);
+
+  const anMich = [];
+  const vonMir = [];
+  for (const dok of Object.values(dokumenteById(doc))) {
+    if (!dok || typeof dok !== "object") continue;
+    if (dok.empfaenger === session.username) anMich.push(dokumentOeffentlich(dok, session.usersDoc));
+    if (dok.von === session.username) vonMir.push(dokumentOeffentlich(dok, session.usersDoc));
+  }
+  const nachDatum = (a, b) => String(b.erstelltAm || "").localeCompare(String(a.erstelltAm || ""));
+  anMich.sort(nachDatum);
+  vonMir.sort(nachDatum);
+
+  return json({
+    anMich,
+    vonMir,
+    canAssignDocs: darfDokumenteZuweisen(session, config)
+  }, 200, corsHeaders);
+}
+
+// Legt je Empfänger einen eigenen Dokument-Eintrag an — alle zeigen auf DASSELBE
+// hochgeladene Original, unterschrieben wird aber jede Kopie einzeln. Zusätzlich
+// entsteht je Empfänger eine Aufgabe als Erinnerung.
+//
+// Reihenfolge der beiden Schreibvorgänge ist Absicht: erst dokumente.json, dann
+// aufgaben.json. Bricht der zweite ab, existiert ein Dokument ohne Erinnerung —
+// der Empfänger findet es trotzdem im Tab, weil dokumente-load nicht an den
+// Aufgaben hängt. Andersherum stünde eine Aufgabe da, die auf nichts zeigt.
+async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!darfDokumenteZuweisen(session, config)) {
+    return json({ error: "Keine Berechtigung, Dokumente zum Unterschreiben zu verschicken" }, 403, corsHeaders);
+  }
+
+  const titel = capStr(body && body.titel, DOKUMENT_MAX_TITEL);
+  if (!titel) return json({ error: "Titel fehlt" }, 400, corsHeaders);
+  const originalFileId = String((body && body.originalFileId) || "");
+  if (!FILE_ID_RE.test(originalFileId)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+  const faellig = aufgabenDatum(body && body.faellig);
+  const feld = dokumentFeld(body && body.feld);
+
+  const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
+  if (!roh.length) return json({ error: "Kein Empfänger gewählt" }, 400, corsHeaders);
+  if (roh.length > AUFGABEN_MAX_EMPFAENGER) {
+    return json({ error: `Höchstens ${AUFGABEN_MAX_EMPFAENGER} Empfänger auf einmal` }, 400, corsHeaders);
+  }
+  // Gleiche Regel wie beim Zuweisen: Empfänger müssen existieren und Personal
+  // sein, serverseitig geprüft — der Client ist beim Ziel eines Schreibvorgangs
+  // in eine fremde Liste keine Instanz.
+  const empfaenger = [];
+  for (const r of roh) {
+    const u = normalizeUsername(r);
+    const user = getOwn((session.usersDoc && session.usersDoc.users) || {}, u);
+    if (!user || !istPersonal(user)) return json({ error: "Unbekannter Empfänger: " + u }, 400, corsHeaders);
+    if (!empfaenger.includes(u)) empfaenger.push(u);
+  }
+
+  let angelegt = [];
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byId || typeof doc.byId !== "object") doc.byId = {};
+    if (Object.keys(doc.byId).length + empfaenger.length > DOKUMENTE_MAX_GESAMT) {
+      return json({ error: "Die Dokumentenliste ist voll. Bitte erledigte Dokumente löschen." }, 400, corsHeaders);
+    }
+
+    const jetztIso = new Date().toISOString();
+    angelegt = [];
+    for (const u of empfaenger) {
+      const id = crypto.randomUUID();
+      doc.byId[id] = {
+        id,
+        titel,
+        von: session.username,
+        empfaenger: u,
+        erstelltAm: jetztIso,
+        faellig,
+        originalFileId,
+        feld,
+        status: "offen",
+        unterschriebenAm: null,
+        signedFileId: null,
+        abgelehntAm: null,
+        ablehnGrund: "",
+        geoeffnetAm: null
+      };
+      angelegt.push({ id, empfaenger: u });
+    }
+
+    try {
+      await writeJson(DOKUMENTE_URL, authHeader, doc, rev || undefined);
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  if (!angelegt.length) return json({ error: "Anlegen fehlgeschlagen" }, 502, corsHeaders);
+
+  // Zweiter Schritt: die Erinnerungen. Ein Fehlschlag hier kippt das Dokument
+  // NICHT — es ist bereits gespeichert und sichtbar; siehe Kommentar oben.
+  let aufgabenAngelegt = 0;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: adoc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+      adoc.version = adoc.version || 1;
+      if (!adoc.byUser || typeof adoc.byUser !== "object") adoc.byUser = {};
+      const jetztIso = new Date().toISOString();
+      aufgabenAngelegt = 0;
+      for (const a of angelegt) {
+        const liste = aufgabenListe(adoc, a.empfaenger).slice();
+        if (liste.length >= AUFGABEN_MAX_PRO_NUTZER) continue;
+        liste.push({
+          id: crypto.randomUUID(),
+          text: titel,
+          faellig,
+          erledigt: false,
+          erledigtAm: null,
+          erstelltAm: jetztIso,
+          von: session.username,
+          zugewiesenAm: jetztIso,
+          gesehenAm: null,
+          dokId: a.id
+        });
+        adoc.byUser[a.empfaenger] = liste;
+        aufgabenAngelegt++;
+      }
+      aufgabenPrune(adoc);
+      await writeJson(AUFGABEN_URL, authHeader, adoc, rev || undefined);
+      break;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      break;
+    }
+  }
+
+  return json({ ok: true, angelegt, aufgabenAngelegt }, 200, corsHeaders);
+}
+
+// Datei-Upload in den abgeschotteten Ordner. Zwei Zwecke mit unterschiedlicher
+// Schranke, weil sie zu verschiedenen Zeitpunkten stattfinden:
+//   "original"  — noch bevor das Dokument existiert, also gegen das Zuweis-Recht
+//   "signiert"  — gegen das fertige Dokument: nur der Empfänger, nur solange offen
+async function handleDokumentDateiPut(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = String((body && body.id) || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+  const zweck = String((body && body.zweck) || "");
+
+  if (zweck === "original") {
+    const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+    if (!darfDokumenteZuweisen(session, config)) {
+      return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+    }
+  } else if (zweck === "signiert") {
+    const doc = await readJson(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+    const dok = dokumentHolen(doc, body && body.dokId);
+    if (!dok) return json({ error: "Dokument nicht gefunden" }, 404, corsHeaders);
+    if (dok.empfaenger !== session.username) {
+      return json({ error: "Nur der Empfänger kann unterschreiben" }, 403, corsHeaders);
+    }
+    if (dok.status !== "offen") return json({ error: "Dokument ist nicht mehr offen" }, 400, corsHeaders);
+  } else {
+    return json({ error: "Unbekannter Zweck" }, 400, corsHeaders);
+  }
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String((body && body.dataBase64) || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß (max. 10 MB)" }, 413, corsHeaders);
+  // Nur PDF. Ein unterschriebenes .docx bliebe frei editierbar und wäre als
+  // Nachweis wertlos — deshalb wird das Format hier hart geprüft und nicht dem
+  // Datei-Dialog des Browsers überlassen.
+  if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
+    return json({ error: "Nur PDF-Dateien sind erlaubt" }, 400, corsHeaders);
+  }
+
+  const fileUrl = UNTERSCHRIFTEN_DIR + "/" + id;
+  const headers = { Authorization: authHeader, "Content-Type": "application/pdf" };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  // Gleicher MKCOL-Autofix wie bei dav-file-put: 409 = eine Ebene fehlt, 404 =
+  // zwei oder mehr (der Fall beim allerersten Upload überhaupt).
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(UNTERSCHRIFTEN_DIR, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, id }, 200, corsHeaders);
+}
+
+// Herunterladen/Ansehen. Die Datei-Id wird NICHT direkt entgegengenommen, sondern
+// immer über das Dokument aufgelöst: sonst könnte jeder, der eine Id errät oder
+// aus einem anderen Vorgang kennt, sie an der Beteiligten-Prüfung vorbei abrufen.
+async function handleDokumentDateiGet(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const doc = await readJson(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+  const dok = dokumentHolen(doc, body && body.dokId);
+  if (!dok) return json({ error: "Dokument nicht gefunden" }, 404, corsHeaders);
+  if (!istDokumentBeteiligt(session, dok)) {
+    return json({ error: "Kein Zugriff auf dieses Dokument" }, 403, corsHeaders);
+  }
+
+  const welche = String((body && body.welche) || "original");
+  const fileId = welche === "signiert" ? dok.signedFileId : dok.originalFileId;
+  if (!fileId || !FILE_ID_RE.test(String(fileId))) {
+    return json({ error: "Datei nicht vorhanden" }, 404, corsHeaders);
+  }
+
+  let resp;
+  try {
+    resp = await fetch(UNTERSCHRIFTEN_DIR + "/" + fileId, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/pdf", "Cache-Control": "private, no-store" }
+  });
+}
+
+// Die Unterschrift ist geleistet: der Client hat das signierte PDF bereits über
+// dokument-datei-put hochgeladen, hier wird es verbucht und die Aufgabe erledigt.
+// Der Zeitstempel kommt vom SERVER, nie aus dem Body — er ist der Nachweis.
+async function handleDokumentUnterschreiben(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const signedFileId = String((body && body.signedFileId) || "");
+  if (!FILE_ID_RE.test(signedFileId)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+  const dokId = String((body && body.dokId) || "");
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+    const dok = dokumentHolen(doc, dokId);
+    if (!dok) return json({ error: "Dokument nicht gefunden" }, 404, corsHeaders);
+    if (dok.empfaenger !== session.username) {
+      return json({ error: "Nur der Empfänger kann unterschreiben" }, 403, corsHeaders);
+    }
+    if (dok.status !== "offen") return json({ error: "Dokument ist nicht mehr offen" }, 400, corsHeaders);
+
+    dok.status = "unterschrieben";
+    dok.signedFileId = signedFileId;
+    dok.unterschriebenAm = new Date().toISOString();
+
+    try {
+      await writeJson(DOKUMENTE_URL, authHeader, doc, rev || undefined);
+      await dokumentAufgabeAbschliessen(authHeader, session.username, dokId);
+      return json({ ok: true, dokument: dokumentOeffentlich(dok, session.usersDoc) }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Unterschreiben fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// „Ich unterschreibe das nicht" — mit Pflicht-Begründung. Ohne diesen Weg bliebe
+// eine bewusst verweigerte Unterschrift für immer offen stehen, und der Absender
+// könnte sie nicht von einer bloß übersehenen unterscheiden.
+async function handleDokumentAblehnen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const grund = capStr(body && body.grund, DOKUMENT_MAX_ABLEHNGRUND);
+  if (!grund) return json({ error: "Bitte eine Begründung angeben" }, 400, corsHeaders);
+  const dokId = String((body && body.dokId) || "");
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+    const dok = dokumentHolen(doc, dokId);
+    if (!dok) return json({ error: "Dokument nicht gefunden" }, 404, corsHeaders);
+    if (dok.empfaenger !== session.username) {
+      return json({ error: "Nur der Empfänger kann ablehnen" }, 403, corsHeaders);
+    }
+    if (dok.status !== "offen") return json({ error: "Dokument ist nicht mehr offen" }, 400, corsHeaders);
+
+    dok.status = "abgelehnt";
+    dok.ablehnGrund = grund;
+    dok.abgelehntAm = new Date().toISOString();
+
+    try {
+      await writeJson(DOKUMENTE_URL, authHeader, doc, rev || undefined);
+      await dokumentAufgabeAbschliessen(authHeader, session.username, dokId);
+      return json({ ok: true, dokument: dokumentOeffentlich(dok, session.usersDoc) }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Ablehnen fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// Hakt die zugehörige Erinnerung ab, nachdem das Dokument seinen Endzustand
+// erreicht hat. Bewusst ohne Fehlerweitergabe: der Vorgang selbst ist zu diesem
+// Zeitpunkt bereits gespeichert, und eine stehengebliebene Aufgabe darf eine
+// geleistete Unterschrift nicht zurückrollen.
+async function dokumentAufgabeAbschliessen(authHeader, username, dokId) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    try {
+      const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+      if (!doc.byUser || typeof doc.byUser !== "object") return;
+      let geaendert = false;
+      for (const a of aufgabenListe(doc, username)) {
+        if (a && a.dokId === dokId && !a.erledigt) {
+          a.erledigt = true;
+          a.erledigtAm = new Date().toISOString();
+          geaendert = true;
+        }
+      }
+      if (!geaendert) return;
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return;
+    }
+  }
+}
+
+// Absender oder Admin räumt auf. Die Originaldatei wird nur gelöscht, wenn KEIN
+// anderes Dokument mehr auf sie zeigt — bei einer Zuweisung an mehrere Personen
+// teilen sich alle Kopien dasselbe Original, und das Löschen der ersten würde
+// sonst allen übrigen das Dokument unter den Füßen wegziehen.
+async function handleDokumentLoeschen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const dokId = String((body && body.dokId) || "");
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(DOKUMENTE_URL, authHeader, { version: 1, byId: {} });
+    const dok = dokumentHolen(doc, dokId);
+    if (!dok) return json({ error: "Dokument nicht gefunden" }, 404, corsHeaders);
+    if (dok.von !== session.username && !session.isAdmin) {
+      return json({ error: "Nur der Absender kann das Dokument löschen" }, 403, corsHeaders);
+    }
+
+    const signedFileId = dok.signedFileId;
+    const originalFileId = dok.originalFileId;
+    delete doc.byId[dokId];
+    const originalNochGenutzt = Object.values(dokumenteById(doc))
+      .some((d) => d && d.originalFileId === originalFileId);
+
+    try {
+      await writeJson(DOKUMENTE_URL, authHeader, doc, rev || undefined);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+
+    // Erst der Eintrag, dann die Bytes: bricht das Löschen der Datei ab, bleibt
+    // eine verwaiste Datei ohne Verweis liegen — harmloser als ein Eintrag, der
+    // auf eine nicht mehr vorhandene Datei zeigt.
+    for (const fid of [signedFileId, originalNochGenutzt ? null : originalFileId]) {
+      if (!fid || !FILE_ID_RE.test(String(fid))) continue;
+      try {
+        await fetch(UNTERSCHRIFTEN_DIR + "/" + fid, { method: "DELETE", headers: { Authorization: authHeader } });
+      } catch (_) { /* verwaiste Datei ist hinnehmbar */ }
+    }
+    return json({ ok: true }, 200, corsHeaders);
+  }
+  return json({ error: "Löschen fehlgeschlagen" }, 502, corsHeaders);
+}
+
 // Admin legt fest, welche Gruppen zuweisen dürfen. Read-modify-write wie
 // set-materialcontainer-code, damit tools/news/materialcontainer erhalten bleiben.
 async function handleSetAufgabenGruppen(request, body, env, authHeader, corsHeaders) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
 
-  const roh = Array.isArray(body && body.groupIds) ? body.groupIds : [];
   const vorhandene = (session.usersDoc && session.usersDoc.groups) || {};
-  const assignGroupIds = [];
-  for (const r of roh) {
-    const id = capStr(r, 64);
-    // Nur existierende Gruppen: ein toter Verweis wäre im Panel nicht sichtbar
-    // und würde stillschweigend niemanden berechtigen.
-    if (id && getOwn(vorhandene, id) && !assignGroupIds.includes(id)) assignGroupIds.push(id);
-  }
+  // Nur existierende Gruppen: ein toter Verweis wäre im Panel nicht sichtbar
+  // und würde stillschweigend niemanden berechtigen.
+  const saubereGruppen = (roh) => {
+    const raus = [];
+    for (const r of Array.isArray(roh) ? roh : []) {
+      const id = capStr(r, 64);
+      if (id && getOwn(vorhandene, id) && !raus.includes(id)) raus.push(id);
+    }
+    return raus;
+  };
 
   const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
   config.version = config.version || 1;
+  const bisher = (config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
+  // Zwei getrennte Stufen in EINEM Objekt: Aufgaben zuweisen und Unterschriften
+  // einfordern. Ein fehlendes Feld heißt „unverändert", nicht „leeren" — sonst
+  // würde ein Panel, das nur die eine Liste schickt, die andere stillschweigend
+  // entwerten und damit ein Recht entziehen, das niemand angefasst hat.
   config.aufgaben = {
-    assignGroupIds,
+    assignGroupIds: Array.isArray(body && body.groupIds)
+      ? saubereGruppen(body.groupIds)
+      : (Array.isArray(bisher.assignGroupIds) ? bisher.assignGroupIds : []),
+    dokumentGroupIds: Array.isArray(body && body.dokumentGroupIds)
+      ? saubereGruppen(body.dokumentGroupIds)
+      : (Array.isArray(bisher.dokumentGroupIds) ? bisher.dokumentGroupIds : []),
     geaendertAm: new Date().toISOString(),
     geaendertVon: session.username
   };
