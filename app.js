@@ -1972,8 +1972,18 @@ function heuteIso() {
 
 // Reihenfolge: überfällig/heute zuerst, dann datierte, dann undatierte, erledigte
 // zuletzt. Der Schlüssel ist ein String, damit stabil sortiert werden kann.
+// Reihenfolge: überfällig, dann was heute dran ist ODER neu zugewiesen wurde,
+// dann kommende Fristen, dann Fristloses, zuletzt Abgeschlossenes.
+//
+// Dass eine ungesehene Zuweisung mit nach oben rückt, ist der Punkt: ohne Frist
+// fiel sie vorher in dieselbe Gruppe wie alles Fristlose und stand damit unter
+// jedem Termin, der Monate entfernt ist -- ausgerechnet das, worauf der Zähler
+// oben aufmerksam machen soll, wäre ans Ende der Liste gerutscht.
 function aufgabeSortKey(a, heute) {
-  const gruppe = a.erledigt ? 3 : (!a.faellig ? 2 : (a.faellig <= heute ? 0 : 1));
+  const gruppe = (a.erledigt || a.zurueckgezogenAm) ? 4
+    : aufgabeIstUeberfaellig(a, heute) ? 0
+    : (aufgabeIstHeuteFaellig(a, heute) || aufgabeIstNeu(a)) ? 1
+    : a.faellig ? 2 : 3;
   return `${gruppe}|${a.faellig || "9999-99-99"}|${a.erstelltAm || ""}`;
 }
 
@@ -2104,10 +2114,20 @@ function renderAufgabenWidget() {
     if (a.erledigt) klassen.push("erledigt");
     if (a.zurueckgezogenAm) klassen.push("zurueckgezogen");
     if (aufgabeIstUeberfaellig(a, heute)) klassen.push("ueberfaellig");
+    if (aufgabeIstHeuteFaellig(a, heute)) klassen.push("heute");
     if (aufgabeIstNeu(a)) klassen.push("neu");
     if (a.dokId) klassen.push("mit-dokument");
+    // "neu" steht vorn: es ist der einzige Vermerk, der etwas über die Aufgabe
+    // sagt, was man beim nächsten Öffnen nicht mehr sieht.
     const meta = [];
-    if (a.faellig) meta.push("bis " + escapeHtml(formatCalendarDate(a.faellig)));
+    if (aufgabeIstNeu(a)) meta.push("neu");
+    if (a.faellig) {
+      meta.push(aufgabeIstHeuteFaellig(a, heute)
+        ? "heute fällig"
+        : (aufgabeIstUeberfaellig(a, heute)
+            ? "überfällig seit " + escapeHtml(formatCalendarDate(a.faellig))
+            : "bis " + escapeHtml(formatCalendarDate(a.faellig))));
+    }
     if (a.von) meta.push("von " + escapeHtml(a.vonName || a.von));
     if (a.zurueckgezogenAm) meta.push("zurückgezogen");
     // Löschen darf man nur Selbstangelegtes; eine zurückgezogene Zuweisung ist nur
@@ -2170,7 +2190,19 @@ function renderAufgabenWidget() {
   // Ohne aufklappbare Karte: im Fenster ist Platz, und wer es öffnet, will die
   // Liste sehen. Der frühere Zugeklappt-Zustand samt localStorage-Merker ist mit
   // der Dashboard-Karte weggefallen.
+  // Der Hinweis steht über dem Eingabefeld, nicht unter der Liste: er ist der
+  // Grund, aus dem man das Fenster geöffnet hat. Er wird mit der Liste zusammen
+  // gerendert und kann deshalb nicht stehenbleiben, wenn sich der Stand ändert.
+  const signalTexte = aufgabenSignalTexte(sig);
+  const signalHtml = signalTexte.length
+    ? `<p class="aufgaben-signal${sig.ueberfaellig ? " dringend" : ""}">
+         <span aria-hidden="true">${sig.ueberfaellig ? "⚠" : "🔔"}</span>
+         ${escapeHtml(signalTexte.join(" · "))}
+       </p>`
+    : "";
+
   ziel.innerHTML = `
+      ${signalHtml}
       <form class="aufgaben-neu" id="aufgaben-neu-form">
         <input type="text" id="aufgabe-neu-text" maxlength="200" placeholder="Neue Aufgabe …" autocomplete="off" />
         <input type="date" id="aufgabe-neu-faellig" aria-label="Fällig bis" />
@@ -3180,6 +3212,11 @@ async function oeffneDokumenteFenster() {
 function schliesseDokumenteFenster() {
   const overlay = document.getElementById("dokumente-overlay");
   if (overlay) overlay.style.display = "none";
+  // Beim Öffnen wurden die neuen Zuweisungen als gesehen markiert -- allerdings
+  // nur im Zustand, ohne neu zu rendern (das würde die Liste unter dem Finger
+  // umsortieren). Ohne diesen Aufruf behielte der Kopf-Knopf sein Signal, obwohl
+  // man gerade nachgesehen hat.
+  renderAufgabenWidget();
 }
 
 function dokumenteFensterOffen() {

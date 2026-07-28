@@ -132,6 +132,14 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   white-space: nowrap;
 }
 .header-code-btn:hover { background: rgba(255, 255, 255, 0.24); }
+/* Signal am Kopf-Knopf, wenn etwas neu zugewiesen, heute fällig oder überfällig
+   ist. Bewusst nur Hintergrund und Rahmen: ein zusätzliches Badge oder ein
+   absolut gesetzter Punkt kostet Layoutbreite, und die Kopfzeile hat am Handy
+   keine mehr übrig (bei 375px Fenster endet sie bei 341px). */
+.header-code-btn.hat-signal {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.8);
+}
 
 /* Kleines Fenster fuer den Code. Bewusst schlicht gehalten: es zeigt genau einen
    Wert und wird sofort wieder geschlossen. */
@@ -513,7 +521,12 @@ main { flex: 1; min-width: 0; }
   background: rgba(255, 255, 255, 0.9); color: var(--blue);
   border-radius: 999px; padding: 1px 7px; line-height: 1.5;
 }
-.header-zaehler.warn { background: #fee2e2; color: #b91c1c; }
+/* Der Ring hebt die rote Zahl vom hellen Kopfbereich ab -- box-shadow liegt
+   außerhalb des Layouts und verbreitert den Knopf nicht. */
+.header-zaehler.warn {
+  background: #fee2e2; color: #b91c1c;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.5);
+}
 
 /* Umbrechend, NICHT drei Felder in einer Zeile: das Datumsfeld bringt eine
    intrinsische Mindestbreite mit, die sich per width/min-width nicht wegkürzen
@@ -544,6 +557,20 @@ main { flex: 1; min-width: 0; }
 .aufgabe-item.erledigt .aufgabe-text,
 .aufgabe-item.zurueckgezogen .aufgabe-text { text-decoration: line-through; color: var(--muted); }
 .aufgabe-item.ueberfaellig .aufgabe-meta { color: #b91c1c; font-weight: 700; }
+/* Heute fällig ist eine Vorwarnung, keine Mahnung: Bernstein statt desselben
+   Rots wie bei überfällig -- sonst sieht beides gleich dringend aus. */
+.aufgabe-item.heute .aufgabe-meta { color: #b45309; font-weight: 700; }
+
+/* Hinweiszeile über der Liste. Sagt in Worten, was der Zähler am Kopf-Knopf nur
+   andeutet ("3" verrät nicht, ob eine neue Zuweisung dabei ist). Erscheint nur,
+   wenn es wirklich etwas zu melden gibt, und verschwindet mit dem Anlass. */
+.aufgaben-signal {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 12px 0 0; padding: 8px 11px;
+  border-radius: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.45;
+  background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe;
+}
+.aufgaben-signal.dringend { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
 /* Ungesehene Zuweisung: farbiger Balken links statt eines eigenen Badges --
    in der schmalen Spalte ist jede zusätzliche Zeile teurer als ein Rand. */
 .aufgabe-item.neu { box-shadow: inset 3px 0 0 var(--blue); padding-left: 8px; }

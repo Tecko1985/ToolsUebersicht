@@ -323,6 +323,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.8",
+    groups: [
+      {
+        title: "Meine Aufgaben meldet sich von selbst",
+        items: [
+          "Der Knopf „Meine Aufgaben“ oben zeigt jetzt, wenn etwas deine Aufmerksamkeit braucht: die Zahl wird rot, sobald dir jemand eine neue Aufgabe zugewiesen hat, heute eine fällig ist oder eine Frist verstrichen ist. Fährst du mit der Maus darüber, steht dort im Klartext, worum es geht.",
+          "Im Fenster selbst steht der Hinweis noch einmal ausgeschrieben über der Liste — zum Beispiel „1 neue Aufgabe für dich · 2 Aufgaben sind heute fällig“.",
+          "„Heute fällig“ und „überfällig“ werden nicht mehr in einen Topf geworfen: heute fällig steht jetzt in Bernstein, erst eine verstrichene Frist wird rot. Bis dahin sah eine Aufgabe, für die noch der ganze Tag Zeit ist, genauso alarmierend aus wie eine, die seit einer Woche liegt.",
+          "Neu zugewiesene Aufgaben sind in der Liste zusätzlich mit „neu“ gekennzeichnet, solange du sie noch nicht angesehen hast."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.7",
     groups: [
       {
