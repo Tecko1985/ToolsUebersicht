@@ -2057,9 +2057,12 @@ function renderAufgabenWidget() {
     // erst durch die Unterschrift im Dokumente-Tab. Der Haken bleibt sichtbar (er
     // zeigt den Stand), ist aber gesperrt; der Worker weist ihn ohnehin ab.
     if (a.dokId) {
+      // Der Haken bleibt bedienbar, obwohl er nichts umschaltet: ein gesperrtes
+      // Kästchen schluckt den Klick, und wer draufdrückt bekäme gar keine Antwort.
+      // So fängt der change-Handler ihn ab und zeigt den Weg zum Dokument.
       return `
         <div class="${klassen.join(" ")}" data-id="${escapeHtml(a.id)}" data-dok-id="${escapeHtml(a.dokId)}">
-          <input type="checkbox" class="aufgabe-check" ${a.erledigt ? "checked" : ""} disabled
+          <input type="checkbox" class="aufgabe-check" ${a.erledigt ? "checked" : ""}
             aria-label="Wird durch die Unterschrift erledigt" />
           <button type="button" class="aufgabe-dok-link" title="Dokument öffnen">
             <span aria-hidden="true">📄</span> ${escapeHtml(a.text || "")}
@@ -2077,19 +2080,31 @@ function renderAufgabenWidget() {
       </div>`;
   };
 
+  // Abgeschlossenes darf der Zuweiser selbst wegräumen -- sonst steht es hier bis
+  // zum Ablauf der 14-Tage-Frist und verdeckt, was noch offen ist.
+  const zugAbgeschlossen = aufgabenState.zugewiesenVonMir.filter((z) => z.erledigt || z.zurueckgezogenAm).length;
   const zugewiesenHtml = aufgabenState.zugewiesenVonMir.length ? `
     <details class="aufgaben-zugewiesen">
       <summary>Von mir zugewiesen (${aufgabenState.zugewiesenVonMir.length})</summary>
-      ${aufgabenState.zugewiesenVonMir.map((z) => `
+      ${aufgabenState.zugewiesenVonMir.map((z) => {
+        const fertig = z.erledigt || z.zurueckgezogenAm;
+        return `
         <div class="aufgabe-zug-item${z.erledigt ? " erledigt" : ""}" data-id="${escapeHtml(z.id)}" data-empfaenger="${escapeHtml(z.empfaenger)}">
           <span class="aufgabe-text">${z.dokId ? '<span aria-hidden="true">📄</span> ' : ""}${escapeHtml(z.text || "")}</span>
           <span class="aufgabe-meta">${escapeHtml(z.empfaengerName || z.empfaenger)} · ${
             z.zurueckgezogenAm ? "zurückgezogen" : (z.erledigt ? (z.dokId ? "unterschrieben" : "erledigt") : "offen")
           }</span>
-          ${(!z.erledigt && !z.zurueckgezogenAm && !z.dokId)
+          ${(!fertig && !z.dokId)
             ? '<button type="button" class="aufgabe-zurueck" title="Zurückziehen">Zurückziehen</button>'
             : ""}
-        </div>`).join("")}
+          ${fertig
+            ? `<button type="button" class="aufgabe-zug-weg" title="${z.dokId ? "Aus der Liste entfernen (das Dokument bleibt)" : "Aus der Liste entfernen"}" aria-label="Aus der Liste entfernen">✕</button>`
+            : ""}
+        </div>`;
+      }).join("")}
+      ${zugAbgeschlossen > 1
+        ? `<button type="button" class="aufgaben-zug-aufraeumen">Abgeschlossene aufräumen (${zugAbgeschlossen})</button>`
+        : ""}
     </details>` : "";
 
   ziel.innerHTML = `
@@ -2123,7 +2138,19 @@ function renderAufgabenWidget() {
 
 function aufgabenFehler(text) {
   const el = document.getElementById("aufgaben-fehler");
-  if (el) el.textContent = text || "";
+  // innerHTML statt textContent zurücksetzen, sonst bliebe ein zuvor gesetzter
+  // Knopf (siehe unten) stehen und würde neben der neuen Meldung weiterleben.
+  if (el) { el.innerHTML = ""; el.textContent = text || ""; }
+}
+
+// „Diese Aufgabe wird durch die Unterschrift erledigt" ist als reiner roter Satz
+// eine Sackgasse: er sagt, was nicht geht, aber nicht wohin. Deshalb kommt der
+// Weg gleich als Knopf mit.
+function aufgabenHinweisMitWeg(text, dokId) {
+  const el = document.getElementById("aufgaben-fehler");
+  if (!el) return;
+  el.innerHTML = escapeHtml(text) +
+    ` <button type="button" class="aufgabe-zu-dokumenten"${dokId ? ` data-dok-id="${escapeHtml(dokId)}"` : ""}>Zu den Dokumenten</button>`;
 }
 
 // Meldet ungesehene Zuweisungen als gesehen. Bewusst nicht awaited und ohne
@@ -2181,6 +2208,26 @@ function setupAufgabenWidget() {
       await aufgabeZurueckziehen(row.dataset.id, row.dataset.empfaenger);
       return;
     }
+    // Weg aus dem Hinweis heraus, den das Abhaken einer Unterschriftsaufgabe zeigt.
+    const wegBtn = e.target.closest(".aufgabe-zu-dokumenten");
+    if (wegBtn) {
+      const dokId = wegBtn.dataset.dokId;
+      activateTab("dokumente");
+      await loadDokumente();
+      if (dokId) oeffneDokumentAnsicht(dokId);
+      return;
+    }
+    // Rückansicht aufräumen: einzeln oder alles Abgeschlossene auf einmal.
+    const wegRow = e.target.closest(".aufgabe-zug-weg");
+    if (wegRow) {
+      const row = wegRow.closest(".aufgabe-zug-item");
+      await zuweisungEntfernen(row.dataset.id, row.dataset.empfaenger);
+      return;
+    }
+    if (e.target.closest(".aufgaben-zug-aufraeumen")) {
+      await zuweisungEntfernen();
+      return;
+    }
     if (details && e.target.closest("summary")) {
       // Der Toggle passiert erst nach diesem Klick -- der gemerkte Zustand ist
       // deshalb der invertierte aktuelle.
@@ -2192,8 +2239,16 @@ function setupAufgabenWidget() {
   container.addEventListener("change", async (e) => {
     const box = e.target.closest(".aufgabe-check");
     if (!box) return;
-    const id = box.closest(".aufgabe-item").dataset.id;
-    await aufgabeAbhaken(id, box.checked);
+    const zeile = box.closest(".aufgabe-item");
+    // Unterschriftsaufgaben lassen sich hier nicht abhaken. Den Haken sofort
+    // zurücksetzen und statt einer Absage den Weg dorthin anbieten -- der Server
+    // würde es ohnehin mit 403 ablehnen, aber erst nach einem Rundlauf.
+    if (zeile.dataset.dokId) {
+      box.checked = !box.checked;
+      aufgabenHinweisMitWeg("Das erledigt erst deine Unterschrift.", zeile.dataset.dokId);
+      return;
+    }
+    await aufgabeAbhaken(zeile.dataset.id, box.checked);
   });
 
   container.addEventListener("submit", async (e) => {
@@ -2264,6 +2319,24 @@ async function aufgabenAufraeumen() {
       if (a.zurueckgezogenAm) return false;
       if (!a.erledigt) return true;
       return !!a.von;
+    });
+    renderAufgabenWidget();
+  } catch (e) {
+    aufgabenFehler(e && e.message ? e.message : "Aufräumen fehlgeschlagen.");
+  }
+}
+
+// Räumt die Rückansicht auf. Ohne Argumente: alles Abgeschlossene auf einmal.
+// Ein daran hängendes Dokument bleibt erhalten -- das steht im Dokumente-Tab und
+// hat mit der Erinnerung nichts mehr zu tun.
+async function zuweisungEntfernen(id, empfaenger) {
+  aufgabenFehler("");
+  try {
+    await callWorker("zuweisung-entfernen", id ? { id, empfaenger } : {});
+    aufgabenState.zugewiesenVonMir = aufgabenState.zugewiesenVonMir.filter((z) => {
+      const abgeschlossen = z.erledigt || z.zurueckgezogenAm;
+      if (!abgeschlossen) return true;
+      return id ? !(z.id === id && z.empfaenger === empfaenger) : false;
     });
     renderAufgabenWidget();
   } catch (e) {

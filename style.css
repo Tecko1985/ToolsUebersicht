@@ -590,7 +590,26 @@ main { flex: 1; min-width: 0; }
 
 /* Eine Aufgabe mit Dokument sieht anders aus als eine normale: ihr Haken ist
    gesperrt, und der Text ist ein Knopf, der in den Dokumente-Tab fuehrt. */
-.aufgabe-item.mit-dokument .aufgabe-check { opacity: 0.45; cursor: not-allowed; }
+/* Der Haken einer Unterschriftsaufgabe bleibt anfassbar (er antwortet mit dem
+   Weg zum Dokument), sieht aber gedaempft aus -- er schaltet nichts um. */
+.aufgabe-item.mit-dokument .aufgabe-check { opacity: 0.55; }
+/* Knopf im Hinweis unter der Liste: fuehrt dorthin, wo es wirklich weitergeht. */
+.aufgabe-zu-dokumenten {
+  background: var(--blue, #2f5bd7); color: #fff; border: 0; border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; cursor: pointer; margin-left: 4px; white-space: nowrap;
+}
+.aufgabe-zu-dokumenten:hover { background: #1b3fa0; }
+/* Abgeschlossene Zuweisung aus der eigenen Rueckansicht raeumen. */
+.aufgabe-zug-weg {
+  background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px;
+  padding: 0 2px; line-height: 1;
+}
+.aufgabe-zug-weg:hover { color: #b91c1c; }
+.aufgaben-zug-aufraeumen {
+  background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+  cursor: pointer; font-size: 12px; padding: 3px 10px; margin-top: 8px;
+}
+.aufgaben-zug-aufraeumen:hover { border-color: var(--blue, #2f5bd7); color: var(--blue, #2f5bd7); }
 .aufgabe-dok-link {
   flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0;
   font: inherit; color: var(--blue, #2f5bd7); cursor: pointer; text-decoration: underline;

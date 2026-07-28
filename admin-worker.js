@@ -252,6 +252,10 @@
 //     Je Empfaenger eine eigene Kopie mit eigener Id. Empfaenger muessen existieren und Personal sein.
 //   POST { action: "aufgabe-zurueckziehen", id, empfaenger } (nur der Zuweiser) -> { ok:true }
 //     Markiert die Aufgabe beim Empfaenger als zurueckgezogen (bleibt als Hinweis stehen); Erledigtes geht nicht mehr.
+//   POST { action: "zuweisung-entfernen", id?, empfaenger? } (nur der Zuweiser) -> { ok:true, entfernt }
+//     Raeumt die Rueckansicht "Von mir zugewiesen" auf. Mit id+empfaenger genau einer, ohne beides alle
+//     ABGESCHLOSSENEN (erledigt oder zurueckgezogen) auf einmal. Offene bleiben stehen -- dafuer gibt es
+//     das Zurueckziehen. Ein daran haengendes Dokument bleibt in dokumente.json unberuehrt.
 //   POST { action: "aufgaben-gesehen", ids[] } -> { ok:true, markiert }
 //     Setzt gesehenAm auf eigenen Zuweisungen (geraeteuebergreifend); schreibt nur, wenn sich etwas aendert.
 //   POST { action: "set-aufgaben-gruppen", groupIds?, dokumentGroupIds? } (Admin) -> { ok:true, assignGroupIds, dokumentGroupIds, ... }
@@ -865,6 +869,8 @@ export default {
         return handleAufgabeZuweisen(request, body, env, authHeader, corsHeaders);
       case "aufgabe-zurueckziehen":
         return handleAufgabeZurueckziehen(request, body, env, authHeader, corsHeaders);
+      case "zuweisung-entfernen":
+        return handleZuweisungEntfernen(request, body, env, authHeader, corsHeaders);
       case "aufgaben-gesehen":
         return handleAufgabenGesehen(request, body, env, authHeader, corsHeaders);
       case "set-aufgaben-gruppen":
@@ -3295,6 +3301,63 @@ async function handleAufgabeZurueckziehen(request, body, env, authHeader, corsHe
     }
   }
   return json({ error: "Zurückziehen fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// Der Zuweiser räumt seine Rückansicht auf. Ohne das wächst „Von mir zugewiesen"
+// bis zum Ablauf der 14-Tage-Frist zu, und man sieht vor lauter Erledigtem nicht
+// mehr, was noch offen ist.
+//
+// Zwei Formen in einer Aktion: mit id+empfaenger genau ein Eintrag, ohne beides
+// alle abgeschlossenen auf einmal. Erfasst wird ausschließlich, was NICHT mehr
+// offen ist — eine laufende Zuweisung soll man nicht versehentlich wegräumen,
+// dafür gibt es das Zurückziehen.
+//
+// ⚠️ Ein daran hängendes Dokument wird NICHT angefasst: der Eintrag ist die
+// Erinnerung, das unterschriebene PDF ist der Nachweis und lebt in dokumente.json
+// weiter — genau die Trennung, wegen der die beiden Dateien getrennt sind.
+async function handleZuweisungEntfernen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = capStr(body && body.id, 64);
+  const empfaenger = body && body.empfaenger ? normalizeUsername(body.empfaenger) : "";
+  const einzeln = !!(id && empfaenger);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+
+    // Abgeschlossen heißt: erledigt ODER zurückgezogen. Beides ist ein Endzustand,
+    // den der Zuweiser gesehen hat, wenn er hier klickt.
+    const abgeschlossen = (a) => a && a.von === session.username && (a.erledigt || a.zurueckgezogenAm);
+    let entfernt = 0;
+    for (const u of Object.keys(doc.byUser)) {
+      if (einzeln && u !== empfaenger) continue;
+      const liste = aufgabenListe(doc, u);
+      const behalten = liste.filter((a) => {
+        if (!abgeschlossen(a)) return true;
+        if (einzeln && a.id !== id) return true;
+        entfernt++;
+        return false;
+      });
+      if (behalten.length === liste.length) continue;
+      if (behalten.length) doc.byUser[u] = behalten;
+      else delete doc.byUser[u];
+    }
+
+    if (!entfernt) return json({ ok: true, entfernt: 0 }, 200, corsHeaders);
+
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, entfernt }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Aufräumen fehlgeschlagen" }, 502, corsHeaders);
 }
 
 // Markiert eigene Zuweisungen als gesehen (geräteübergreifend, Michel-Vorgabe —
