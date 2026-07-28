@@ -238,6 +238,24 @@
 //     bleibt unangetastet. Letzter Admin kann nicht archiviert werden.
 //   POST { action: "reactivate-trainer", username } (Personalakte-Sichtrecht) -> { ok:true, username }
 //     Hebt die Login-Sperre wieder auf, ergänzt den Snapshot in personalakte.json um reaktiviertAm/reaktiviertVon.
+//   POST { action: "aufgaben-load" } (eingeloggtes Personal) -> { meine, zugewiesenVonMir, canAssign, assignGroupIds? }
+//     Persoenliche Aufgabenliste aus aufgaben.json. zugewiesenVonMir ist streng auf die selbst erzeugten Eintraege
+//     gefiltert (nie die uebrige Liste des Empfaengers); assignGroupIds kommt nur fuer Admins mit (fuers Panel).
+//   POST { action: "aufgabe-speichern", id?, text?, faellig?, erledigt? } -> { ok:true, aufgabe }
+//     Ohne id anlegen, mit id aendern -- immer in der EIGENEN Liste (Nutzername aus der Session).
+//     Bei zugewiesenen Aufgaben ist nur erledigt erlaubt (Text/Faelligkeit gehoeren dem Zuweiser) -> sonst 403.
+//   POST { action: "aufgabe-loeschen", id } -> { ok:true, id }
+//     Nur selbst angelegte oder bereits zurueckgezogene Eintraege; eine offene Zuweisung laesst sich nicht wegklicken.
+//   POST { action: "aufgaben-aufraeumen" } -> { ok:true, entfernt }
+//     Entfernt erledigte EIGENE Eintraege; erledigte Zuweisungen bleiben befristet stehen (Rueckkanal des Zuweisers).
+//   POST { action: "aufgabe-zuweisen", text, faellig?, empfaenger[] } (Gruppen aus aufgaben.assignGroupIds) -> { ok:true, zugewiesen, uebersprungen }
+//     Je Empfaenger eine eigene Kopie mit eigener Id. Empfaenger muessen existieren und Personal sein.
+//   POST { action: "aufgabe-zurueckziehen", id, empfaenger } (nur der Zuweiser) -> { ok:true }
+//     Markiert die Aufgabe beim Empfaenger als zurueckgezogen (bleibt als Hinweis stehen); Erledigtes geht nicht mehr.
+//   POST { action: "aufgaben-gesehen", ids[] } -> { ok:true, markiert }
+//     Setzt gesehenAm auf eigenen Zuweisungen (geraeteuebergreifend); schreibt nur, wenn sich etwas aendert.
+//   POST { action: "set-aufgaben-gruppen", groupIds } (Admin) -> { ok:true, assignGroupIds, geaendertAm, geaendertVon }
+//     Legt in aufgaben{} von sichtbarkeit.json ab, welche Gruppen zuweisen duerfen. LEER = niemand (nicht "alle").
 //   POST { action: "get-materialcontainer-code" } + Authorization: Bearer -> { code, hinweis, geaendertAm, geaendertVon }
 //     Zahlencode des Schlosses am Materialcontainer. Eingeloggtes Personal; Spielerkonten bekommen 403.
 //     Bewusst eine eigene schmale Aktion (nicht Teil von "me" und nicht im oeffentlichen GET) -- der Code oeffnet ein echtes Schloss.
@@ -517,6 +535,28 @@ const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/
 // Zähler = auszählen. Der öffentliche GET liefert daraus NUR Zähler (keine Namen).
 const NEWS_REACTIONS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/neuigkeiten-reaktionen.json";
 
+// Persönliche Aufgabenlisten (seit 1.5) — eigene Datei aus demselben Grund wie die
+// Neuigkeiten-Reaktionen: sichtbarkeit.json wird von Admin-Aktionen komplett
+// ersetzt (save-visibility/save-news), die Aufgaben schreibt dagegen jeder
+// Eingeloggte laufend. Aufbau:
+//   { version:1, byUser: { "<username>": [ { id, text, faellig, erledigt, ... } ] } }
+// Der Rückkanal "von mir zugewiesen" braucht KEINE zweite Struktur: er ist ein
+// Filter über byUser auf von === eigener Nutzername, also ein einziger Read.
+// Die KONFIGURATION (wer zuweisen darf) liegt dagegen bewusst in sichtbarkeit.json
+// unter aufgaben.assignGroupIds — das ist Konfiguration, keine Nutzdaten.
+const AUFGABEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/aufgaben.json";
+
+// Grenzen je Nutzer. Ohne Deckel wächst eine gemeinsame Datei unbegrenzt, und sie
+// wird bei JEDEM Aufgaben-Zugriff komplett gelesen und geschrieben.
+const AUFGABEN_MAX_PRO_NUTZER = 200;
+const AUFGABEN_MAX_TEXT = 200;
+const AUFGABEN_MAX_EMPFAENGER = 20;
+// Erledigte Zuweisungen bleiben stehen, damit der Zuweiser sie in seiner
+// Rückansicht noch sieht — der Aufräumen-Knopf des Empfängers lässt sie deshalb
+// bewusst stehen. Zurückgezogene bleiben kürzer: sie sind nur ein Hinweis.
+const AUFGABEN_ZUGEWIESEN_ERLEDIGT_TAGE = 14;
+const AUFGABEN_ZURUECKGEZOGEN_TAGE = 7;
+
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
 // Mitglieder der viewGroupId — unabhängig davon, wer sonst Zugriff auf das Tool hat.
@@ -773,6 +813,22 @@ export default {
         return handleToggleNewsReaction(request, body, env, authHeader, corsHeaders);
       case "my-news-reactions":
         return handleMyNewsReactions(request, env, authHeader, corsHeaders);
+      case "aufgaben-load":
+        return handleAufgabenLoad(request, env, authHeader, corsHeaders);
+      case "aufgabe-speichern":
+        return handleAufgabeSpeichern(request, body, env, authHeader, corsHeaders);
+      case "aufgabe-loeschen":
+        return handleAufgabeLoeschen(request, body, env, authHeader, corsHeaders);
+      case "aufgaben-aufraeumen":
+        return handleAufgabenAufraeumen(request, env, authHeader, corsHeaders);
+      case "aufgabe-zuweisen":
+        return handleAufgabeZuweisen(request, body, env, authHeader, corsHeaders);
+      case "aufgabe-zurueckziehen":
+        return handleAufgabeZurueckziehen(request, body, env, authHeader, corsHeaders);
+      case "aufgaben-gesehen":
+        return handleAufgabenGesehen(request, body, env, authHeader, corsHeaders);
+      case "set-aufgaben-gruppen":
+        return handleSetAufgabenGruppen(request, body, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -2771,6 +2827,435 @@ async function handleSetMaterialcontainerCode(request, body, env, authHeader, co
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
   return json({ ok: true, ...config.materialcontainer }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Persönliche Aufgaben ----------
+
+// Jede Aufgaben-Aktion verlangt eingeloggtes PERSONAL. Spielerkonten bekommen 403
+// wie beim Materialcontainer-Code: der Default „keine Gruppe = alle eingeloggten"
+// gilt für sie nirgends in diesem Worker, und ~200 Spielerkonten, die einander und
+// dem Trainerteam Einträge in die Liste legen könnten, sind kein Feature.
+async function aufgabenSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf die Aufgaben" }, 403, corsHeaders) };
+  }
+  return { session, fehler: null };
+}
+
+// Wer darf anderen etwas in die Liste legen? Anders als bei der Tool-Sichtbarkeit
+// heißt eine LEERE Gruppenliste hier bewusst NIEMAND statt „alle eingeloggten".
+// Zuweisen ist ein Schreibzugriff in fremde Listen — der Zustand „noch nichts
+// konfiguriert" muss in die geschlossene Richtung fallen, nicht in die offene.
+function darfAufgabenZuweisen(session, config) {
+  if (session.isAdmin) return true;
+  const cfg = (config && config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
+  const erlaubt = Array.isArray(cfg.assignGroupIds) ? cfg.assignGroupIds : [];
+  return erlaubt.some((g) => session.groupIds.includes(g));
+}
+
+function aufgabenListe(doc, username) {
+  const liste = doc && doc.byUser ? getOwn(doc.byUser, username) : undefined;
+  return Array.isArray(liste) ? liste : [];
+}
+
+// Anzeigename aus der ohnehin geladenen nutzer.json — der Name wird bewusst NICHT
+// in der Aufgabe gespeichert, sonst zeigt ein alter Eintrag nach einer Umbenennung
+// weiter den früheren Namen.
+function aufgabenAnzeigeName(usersDoc, username) {
+  const u = getOwn((usersDoc && usersDoc.users) || {}, username);
+  if (!u) return username;
+  return (u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : (u.username || username);
+}
+
+function aufgabenDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+// Zwei Sorten Altlast, beide mit Frist: eine erledigte Zuweisung muss stehen
+// bleiben, bis der Zuweiser sie in seiner Rückansicht gesehen haben kann (der
+// Aufräumen-Knopf des Empfängers lässt sie deshalb bewusst stehen), ein
+// zurückgezogener Eintrag ist nur noch ein Hinweis und darf früher weg.
+function aufgabeIstAbgelaufen(a, jetzt) {
+  const aelterAls = (iso, tage) => {
+    const t = Date.parse(iso || "");
+    return Number.isFinite(t) && (jetzt - t) > tage * 86400000;
+  };
+  if (a.zurueckgezogenAm && aelterAls(a.zurueckgezogenAm, AUFGABEN_ZURUECKGEZOGEN_TAGE)) return true;
+  if (a.von && a.erledigt && aelterAls(a.erledigtAm, AUFGABEN_ZUGEWIESEN_ERLEDIGT_TAGE)) return true;
+  return false;
+}
+
+// Läuft in jedem schreibenden Handler über ALLE Listen, nicht nur die des
+// Schreibenden: die Datei wird ohnehin als Ganzes geschrieben, und so bleibt
+// nichts bei jemandem liegen, der sich lange nicht anmeldet.
+function aufgabenPrune(doc) {
+  const jetzt = Date.now();
+  for (const username of Object.keys(doc.byUser || {})) {
+    const liste = aufgabenListe(doc, username);
+    const behalten = liste.filter((a) => !aufgabeIstAbgelaufen(a, jetzt));
+    if (behalten.length) doc.byUser[username] = behalten;
+    else delete doc.byUser[username];
+  }
+}
+
+// Eigene Liste + was ich anderen gegeben habe + ob ich überhaupt zuweisen darf.
+async function handleAufgabenLoad(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  // Beide Reads parallel: die Aufgaben selbst und die Konfiguration (wer zuweisen
+  // darf). Nacheinander wären das zwei Nextcloud-Roundtrips à 200–450 ms.
+  const [doc, config] = await Promise.all([
+    readJson(AUFGABEN_URL, authHeader, { version: 1, byUser: {} }),
+    readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} })
+  ]);
+
+  const jetzt = Date.now();
+  const meine = aufgabenListe(doc, session.username)
+    .filter((a) => !aufgabeIstAbgelaufen(a, jetzt))
+    .map((a) => ({ ...a, vonName: a.von ? aufgabenAnzeigeName(session.usersDoc, a.von) : "" }));
+
+  // Rückkanal: streng auf die von MIR erzeugten Einträge gefiltert. Die übrige
+  // Liste des Empfängers verlässt den Worker nie — das ist der ganze Unterschied
+  // zwischen „ich sehe meine Zuweisung" und „ich sehe fremde Aufgaben".
+  const zugewiesenVonMir = [];
+  for (const empfaenger of Object.keys(doc.byUser || {})) {
+    if (empfaenger === session.username) continue;
+    for (const a of aufgabenListe(doc, empfaenger)) {
+      if (a.von !== session.username || aufgabeIstAbgelaufen(a, jetzt)) continue;
+      zugewiesenVonMir.push({
+        id: a.id,
+        text: a.text,
+        faellig: a.faellig || "",
+        erledigt: !!a.erledigt,
+        erledigtAm: a.erledigtAm || null,
+        gesehenAm: a.gesehenAm || null,
+        zurueckgezogenAm: a.zurueckgezogenAm || null,
+        empfaenger,
+        empfaengerName: aufgabenAnzeigeName(session.usersDoc, empfaenger)
+      });
+    }
+  }
+
+  const antwort = { meine, zugewiesenVonMir, canAssign: darfAufgabenZuweisen(session, config) };
+  // Für das Admin-Panel: die konfigurierten Gruppen kommen additiv mit, weil
+  // sichtbarkeit.json hier ohnehin schon gelesen ist (kein zweiter Request nötig).
+  if (session.isAdmin) {
+    const cfg = (config.aufgaben && typeof config.aufgaben === "object") ? config.aufgaben : {};
+    antwort.assignGroupIds = Array.isArray(cfg.assignGroupIds) ? cfg.assignGroupIds : [];
+  }
+  return json(antwort, 200, corsHeaders);
+}
+
+// Anlegen und Ändern in der EIGENEN Liste. Der Nutzername kommt aus der Session,
+// nie aus dem Body. Bei einer ZUGEWIESENEN Aufgabe darf nur der Haken gesetzt
+// werden: Text und Fälligkeit gehören dem Zuweiser, sonst könnte der Empfänger
+// den Auftrag umschreiben und ihn danach „erledigen".
+async function handleAufgabeSpeichern(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = capStr(body && body.id, 64);
+  const textGesetzt = !!(body && body.text != null);
+  const faelligGesetzt = !!(body && body.faellig != null);
+  const text = capStr(body && body.text, AUFGABEN_MAX_TEXT);
+  const faellig = aufgabenDatum(body && body.faellig);
+  const erledigt = (body && body.erledigt != null) ? !!body.erledigt : null;
+  if (!id && !text) return json({ error: "Text fehlt" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const liste = aufgabenListe(doc, session.username).slice();
+
+    let eintrag;
+    if (id) {
+      eintrag = liste.find((a) => a && a.id === id);
+      if (!eintrag) return json({ error: "Unbekannte Aufgabe" }, 404, corsHeaders);
+      if (eintrag.von && (textGesetzt || faelligGesetzt)) {
+        return json({ error: "Zugewiesene Aufgaben lassen sich nur abhaken" }, 403, corsHeaders);
+      }
+      if (textGesetzt) {
+        if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
+        eintrag.text = text;
+      }
+      if (faelligGesetzt) eintrag.faellig = faellig;
+      if (erledigt !== null) {
+        eintrag.erledigt = erledigt;
+        eintrag.erledigtAm = erledigt ? new Date().toISOString() : null;
+      }
+    } else {
+      if (liste.length >= AUFGABEN_MAX_PRO_NUTZER) {
+        return json({ error: `Deine Liste ist voll (${AUFGABEN_MAX_PRO_NUTZER} Aufgaben). Bitte erledigte aufräumen.` }, 400, corsHeaders);
+      }
+      eintrag = {
+        id: crypto.randomUUID(),
+        text,
+        faellig,
+        erledigt: false,
+        erledigtAm: null,
+        erstelltAm: new Date().toISOString(),
+        von: "",
+        zugewiesenAm: null,
+        gesehenAm: null
+      };
+      liste.push(eintrag);
+    }
+
+    doc.byUser[session.username] = liste;
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, aufgabe: eintrag }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue; // paralleles Gerät -> neu lesen
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Aufgabe konnte nicht gespeichert werden" }, 502, corsHeaders);
+}
+
+// Löschen nur für selbst angelegte Einträge. Eine zugewiesene Aufgabe lässt sich
+// nicht wegklicken — sonst wäre „zuweisen" wirkungslos. Ausnahme: ein
+// zurückgezogener Eintrag ist nur noch ein Hinweis, den darf der Empfänger weg.
+async function handleAufgabeLoeschen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = capStr(body && body.id, 64);
+  if (!id) return json({ error: "Aufgabe fehlt" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const liste = aufgabenListe(doc, session.username);
+    const eintrag = liste.find((a) => a && a.id === id);
+    if (!eintrag) return json({ error: "Unbekannte Aufgabe" }, 404, corsHeaders);
+    if (eintrag.von && !eintrag.zurueckgezogenAm) {
+      return json({ error: "Zugewiesene Aufgaben lassen sich nur abhaken" }, 403, corsHeaders);
+    }
+    doc.byUser[session.username] = liste.filter((a) => a !== eintrag);
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, id }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Aufgabe konnte nicht gelöscht werden" }, 502, corsHeaders);
+}
+
+// Erledigte wegräumen. Zugewiesene Erledigte bleiben bewusst stehen (Frist in
+// aufgabeIstAbgelaufen), sonst ist die Rückansicht des Zuweisers leer, bevor er
+// hingeschaut hat. Zurückgezogene Hinweise verschwinden hier mit.
+async function handleAufgabenAufraeumen(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const liste = aufgabenListe(doc, session.username);
+    const behalten = liste.filter((a) => {
+      if (a.zurueckgezogenAm) return false;
+      if (!a.erledigt) return true;
+      return !!a.von; // erledigte Zuweisung bleibt für den Rückkanal stehen
+    });
+    const entfernt = liste.length - behalten.length;
+    if (behalten.length) doc.byUser[session.username] = behalten;
+    else delete doc.byUser[session.username];
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, entfernt }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Aufräumen fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// Aufgabe an mehrere Personen verteilen — jeder bekommt eine eigene Kopie mit
+// eigener Id und hakt für sich ab. Bewusst KEIN gemeinsamer Eintrag: sonst wäre
+// „erledigt" eine Sammelaussage, und das Abhaken des einen träfe alle anderen.
+async function handleAufgabeZuweisen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!darfAufgabenZuweisen(session, config)) {
+    return json({ error: "Keine Berechtigung, Aufgaben zuzuweisen" }, 403, corsHeaders);
+  }
+
+  const text = capStr(body && body.text, AUFGABEN_MAX_TEXT);
+  if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
+  const faellig = aufgabenDatum(body && body.faellig);
+
+  const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
+  if (!roh.length) return json({ error: "Kein Empfänger gewählt" }, 400, corsHeaders);
+  if (roh.length > AUFGABEN_MAX_EMPFAENGER) {
+    return json({ error: `Höchstens ${AUFGABEN_MAX_EMPFAENGER} Empfänger auf einmal` }, 400, corsHeaders);
+  }
+  // Empfänger müssen existieren UND Personal sein — dieselbe Regel wie im Picker
+  // (list-directory), hier aber serverseitig noch einmal geprüft: der Client ist
+  // beim Ziel eines Schreibvorgangs in eine fremde Liste keine Instanz.
+  const empfaenger = [];
+  for (const r of roh) {
+    const u = normalizeUsername(r);
+    const user = getOwn((session.usersDoc && session.usersDoc.users) || {}, u);
+    if (!user || !istPersonal(user)) return json({ error: "Unbekannter Empfänger: " + u }, 400, corsHeaders);
+    if (!empfaenger.includes(u)) empfaenger.push(u);
+  }
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+
+    const jetztIso = new Date().toISOString();
+    const zugewiesen = [];
+    const uebersprungen = [];
+    for (const u of empfaenger) {
+      const liste = aufgabenListe(doc, u).slice();
+      if (liste.length >= AUFGABEN_MAX_PRO_NUTZER) { uebersprungen.push(u); continue; }
+      liste.push({
+        id: crypto.randomUUID(),
+        text,
+        faellig,
+        erledigt: false,
+        erledigtAm: null,
+        erstelltAm: jetztIso,
+        von: session.username,
+        zugewiesenAm: jetztIso,
+        gesehenAm: null
+      });
+      doc.byUser[u] = liste;
+      zugewiesen.push(u);
+    }
+    if (!zugewiesen.length) {
+      return json({ error: "Die Liste aller gewählten Empfänger ist voll" }, 400, corsHeaders);
+    }
+
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, zugewiesen, uebersprungen }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Zuweisen fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// Der Zuweiser nimmt eine Aufgabe zurück. Sie verschwindet nicht spurlos: der
+// Eintrag bleibt beim Empfänger als durchgestrichener Hinweis stehen, bis er ihn
+// wegklickt (oder die Frist abläuft) — wer schon angefangen hatte, soll sehen,
+// warum die Aufgabe weg ist. Nur solange sie offen ist; Erledigtes bleibt.
+async function handleAufgabeZurueckziehen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const id = capStr(body && body.id, 64);
+  const empfaenger = normalizeUsername(body && body.empfaenger);
+  if (!id || !empfaenger) return json({ error: "Aufgabe oder Empfänger fehlt" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const eintrag = aufgabenListe(doc, empfaenger).find((a) => a && a.id === id);
+    // Nur die eigene Zuweisung — der Nutzername kommt aus der Session.
+    if (!eintrag || eintrag.von !== session.username) {
+      return json({ error: "Unbekannte Zuweisung" }, 404, corsHeaders);
+    }
+    if (eintrag.erledigt) return json({ error: "Erledigte Aufgaben lassen sich nicht zurückziehen" }, 400, corsHeaders);
+    if (eintrag.zurueckgezogenAm) return json({ ok: true, id, empfaenger }, 200, corsHeaders);
+
+    eintrag.zurueckgezogenVon = session.username;
+    eintrag.zurueckgezogenAm = new Date().toISOString();
+    aufgabenPrune(doc);
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, id, empfaenger }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Zurückziehen fehlgeschlagen" }, 502, corsHeaders);
+}
+
+// Markiert eigene Zuweisungen als gesehen (geräteübergreifend, Michel-Vorgabe —
+// deshalb serverseitig statt im localStorage). Schreibt NUR, wenn sich wirklich
+// etwas ändert: sonst löst jedes Aufklappen des Widgets einen Schreibvorgang aus.
+async function handleAufgabenGesehen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const ids = Array.isArray(body && body.ids) ? body.ids.slice(0, AUFGABEN_MAX_PRO_NUTZER).map((i) => capStr(i, 64)) : [];
+  if (!ids.length) return json({ ok: true, markiert: 0 }, 200, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(AUFGABEN_URL, authHeader, { version: 1, byUser: {} });
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    const jetztIso = new Date().toISOString();
+    let markiert = 0;
+    for (const a of aufgabenListe(doc, session.username)) {
+      if (a && a.von && !a.gesehenAm && ids.includes(a.id)) { a.gesehenAm = jetztIso; markiert++; }
+    }
+    if (!markiert) return json({ ok: true, markiert: 0 }, 200, corsHeaders);
+
+    try {
+      await writeJson(AUFGABEN_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, markiert }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Konnte nicht als gesehen markiert werden" }, 502, corsHeaders);
+}
+
+// Admin legt fest, welche Gruppen zuweisen dürfen. Read-modify-write wie
+// set-materialcontainer-code, damit tools/news/materialcontainer erhalten bleiben.
+async function handleSetAufgabenGruppen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const roh = Array.isArray(body && body.groupIds) ? body.groupIds : [];
+  const vorhandene = (session.usersDoc && session.usersDoc.groups) || {};
+  const assignGroupIds = [];
+  for (const r of roh) {
+    const id = capStr(r, 64);
+    // Nur existierende Gruppen: ein toter Verweis wäre im Panel nicht sichtbar
+    // und würde stillschweigend niemanden berechtigen.
+    if (id && getOwn(vorhandene, id) && !assignGroupIds.includes(id)) assignGroupIds.push(id);
+  }
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  config.version = config.version || 1;
+  config.aufgaben = {
+    assignGroupIds,
+    geaendertAm: new Date().toISOString(),
+    geaendertVon: session.username
+  };
+  try {
+    await writeJson(env.NEXTCLOUD_URL, authHeader, config);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+  return json({ ok: true, ...config.aufgaben }, 200, corsHeaders);
 }
 
 // Speichert die Neuigkeiten (Array) im news-Key von sichtbarkeit.json. Admin-only,

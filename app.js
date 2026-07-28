@@ -201,6 +201,7 @@ function logout() {
   refreshMyNewsReactions(); // eigene Reaktions-Markierungen entfernen (currentUser ist jetzt null)
   refreshNews(); // Neuigkeiten aus dem Speicher werfen -- sie gehoeren nur Angemeldeten
   loadSidebarWidget();
+  loadAufgaben(); // leert die Aufgabenkarte -- sie gehoert dem abgemeldeten Konto
 }
 
 async function loadAndRenderUsers() {
@@ -1613,6 +1614,21 @@ function isUebersichtTabActive() {
   return !!(section && section.classList.contains("active"));
 }
 
+// Die linke Spalte trägt zwei unabhängige Bereiche (Termine + Aufgaben). Sichtbar
+// ist sie, sobald EINER davon Inhalt hat — sonst verschwände die Aufgabenliste bei
+// jemandem ohne Kalenderrecht, obwohl sie jedem Mitarbeiterkonto zusteht.
+function updateSidebarSichtbarkeit() {
+  const widget = document.getElementById("calendar-widget");
+  if (!widget) return;
+  const gefuellt = (id) => {
+    const el = document.getElementById(id);
+    return !!(el && el.innerHTML.trim());
+  };
+  const hatInhalt = gefuellt("termine-widget-inhalt") || gefuellt("aufgaben-widget-inhalt");
+  widget.dataset.hasContent = hatInhalt ? "1" : "0";
+  widget.style.display = (hatInhalt && isUebersichtTabActive()) ? "block" : "none";
+}
+
 // Am Handy stapelt sich .page-body zu einer Spalte — das Widget stünde dort als
 // erstes Kind ÜBER den Neuigkeiten. Gewollt ist Neuigkeiten → Termine → Kacheln.
 // Per CSS allein geht das nicht: das Neuigkeiten-Banner steckt in <main>, das
@@ -1710,12 +1726,14 @@ async function loadSidebarWidget() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
 
+  const termineEl = document.getElementById("termine-widget-inhalt");
+  if (!termineEl) return;
+
   const showCalendar = !!currentUser && isVisibleToUser(CALENDAR_WIDGET_APP_ID, currentUser);
   const showAbsences = !!currentUser && isVisibleToUser(ABSENCE_WIDGET_APP_ID, currentUser);
   if (!showCalendar && !showAbsences) {
-    widget.dataset.hasContent = "0";
-    widget.style.display = "none";
-    widget.innerHTML = "";
+    termineEl.innerHTML = "";
+    updateSidebarSichtbarkeit();
     return;
   }
 
@@ -1767,9 +1785,8 @@ async function loadSidebarWidget() {
   const calendarOk = showCalendar && !calendarFailed;
   const absenceOk = showAbsences && !absenceFailed;
   if (!calendarOk && !absenceOk) {
-    widget.dataset.hasContent = "0";
-    widget.style.display = "none";
-    widget.innerHTML = "";
+    termineEl.innerHTML = "";
+    updateSidebarSichtbarkeit();
     return;
   }
 
@@ -1883,9 +1900,9 @@ function renderSidebarWidget(widget, opts) {
     `;
   }
 
-  widget.innerHTML = `<div class="card">${calendarHtml}${absenceHtml}</div>`;
-  widget.dataset.hasContent = "1";
-  widget.style.display = isUebersichtTabActive() ? "block" : "none";
+  const termineEl = document.getElementById("termine-widget-inhalt");
+  if (termineEl) termineEl.innerHTML = `<div class="card">${calendarHtml}${absenceHtml}</div>`;
+  updateSidebarSichtbarkeit();
 
   // Für das Neu-Rendern nach einer abgegebenen Stimme merken; der Klick-Handler
   // hängt am Container (überlebt das innerHTML-Ersetzen) und wird nur einmal
@@ -1938,6 +1955,433 @@ async function onCalendarWidgetClick(e) {
     console.warn("Abstimmen im Termine-Widget fehlgeschlagen:", err);
     knoepfe.forEach((b) => { b.disabled = false; });
     if (msgEl) msgEl.textContent = err && err.message ? err.message : "Abstimmen fehlgeschlagen.";
+  }
+}
+
+// ---------- Persönliche Aufgaben (zweite Karte der linken Spalte) ----------
+
+// Alles, was der Worker zu den Aufgaben liefert. canAssign entscheidet nur über
+// die Oberfläche -- die echte Schranke sitzt im Worker (darfAufgabenZuweisen).
+let aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, assignGroupIds: [], geladen: false };
+let aufgabenEmpfaengerCache = null; // list-directory-Ergebnis, einmal je Sitzung
+
+const AUFGABEN_OFFEN_KEY = "tu_aufgaben_offen";
+
+function heuteIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Reihenfolge: überfällig/heute zuerst, dann datierte, dann undatierte, erledigte
+// zuletzt. Der Schlüssel ist ein String, damit stabil sortiert werden kann.
+function aufgabeSortKey(a, heute) {
+  const gruppe = a.erledigt ? 3 : (!a.faellig ? 2 : (a.faellig <= heute ? 0 : 1));
+  return `${gruppe}|${a.faellig || "9999-99-99"}|${a.erstelltAm || ""}`;
+}
+
+function aufgabeIstUeberfaellig(a, heute) {
+  return !a.erledigt && !a.zurueckgezogenAm && !!a.faellig && a.faellig <= heute;
+}
+
+function aufgabeIstNeu(a) {
+  return !!a.von && !a.gesehenAm && !a.erledigt && !a.zurueckgezogenAm;
+}
+
+async function loadAufgaben() {
+  const ziel = document.getElementById("aufgaben-widget-inhalt");
+  if (!ziel) return;
+  // Spielerkonten und Abgemeldete bekommen die Karte gar nicht erst -- der Worker
+  // antwortet ihnen ohnehin mit 403/401, ein Fehlversuch je Seitenaufruf wäre nur Lärm.
+  if (!currentUser || currentUser.art === "spieler") {
+    aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, assignGroupIds: [], geladen: false };
+    ziel.innerHTML = "";
+    updateSidebarSichtbarkeit();
+    return;
+  }
+  try {
+    const res = await callWorker("aufgaben-load", {});
+    aufgabenState = {
+      meine: Array.isArray(res && res.meine) ? res.meine : [],
+      zugewiesenVonMir: Array.isArray(res && res.zugewiesenVonMir) ? res.zugewiesenVonMir : [],
+      canAssign: !!(res && res.canAssign),
+      assignGroupIds: Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : [],
+      geladen: true
+    };
+    renderAufgabenWidget();
+  } catch (e) {
+    console.warn("Aufgaben nicht ladbar:", e);
+    ziel.innerHTML = "";
+    updateSidebarSichtbarkeit();
+  }
+}
+
+function renderAufgabenWidget() {
+  const ziel = document.getElementById("aufgaben-widget-inhalt");
+  if (!ziel || !aufgabenState.geladen) return;
+
+  const heute = heuteIso();
+  const liste = aufgabenState.meine.slice().sort((a, b) => aufgabeSortKey(a, heute).localeCompare(aufgabeSortKey(b, heute)));
+  const offen = liste.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
+  const ueberfaellig = liste.some((a) => aufgabeIstUeberfaellig(a, heute));
+  const neuesDa = liste.some(aufgabeIstNeu);
+  const wegraeumbar = liste.some((a) => (a.erledigt && !a.von) || a.zurueckgezogenAm);
+
+  // Zugeklappt starten (Michel-Vorgabe), gemerkten Zustand übernehmen -- aber eine
+  // frisch zugewiesene oder überfällige Aufgabe reißt die Karte einmal auf, sonst
+  // ist der Zähler ein Wecker hinter einer Tür.
+  const vorhandene = document.getElementById("aufgaben-details");
+  const gemerkt = vorhandene ? vorhandene.open : localStorage.getItem(AUFGABEN_OFFEN_KEY) === "1";
+  const offenAnzeigen = gemerkt || neuesDa || ueberfaellig;
+
+  const zeile = (a) => {
+    const klassen = ["aufgabe-item"];
+    if (a.erledigt) klassen.push("erledigt");
+    if (a.zurueckgezogenAm) klassen.push("zurueckgezogen");
+    if (aufgabeIstUeberfaellig(a, heute)) klassen.push("ueberfaellig");
+    if (aufgabeIstNeu(a)) klassen.push("neu");
+    const meta = [];
+    if (a.faellig) meta.push("bis " + escapeHtml(formatCalendarDate(a.faellig)));
+    if (a.von) meta.push("von " + escapeHtml(a.vonName || a.von));
+    if (a.zurueckgezogenAm) meta.push("zurückgezogen");
+    // Löschen darf man nur Selbstangelegtes; eine zurückgezogene Zuweisung ist nur
+    // noch ein Hinweis und darf deshalb ebenfalls weg (Worker prüft das genauso).
+    const loeschbar = !a.von || !!a.zurueckgezogenAm;
+    return `
+      <div class="${klassen.join(" ")}" data-id="${escapeHtml(a.id)}">
+        <input type="checkbox" class="aufgabe-check" ${a.erledigt ? "checked" : ""}
+          ${a.zurueckgezogenAm ? "disabled" : ""} aria-label="Erledigt" />
+        <span class="aufgabe-text">${escapeHtml(a.text || "")}</span>
+        ${meta.length ? `<span class="aufgabe-meta">${meta.join(" · ")}</span>` : ""}
+        ${loeschbar ? '<button type="button" class="aufgabe-del" title="Löschen" aria-label="Löschen">✕</button>' : ""}
+      </div>`;
+  };
+
+  const zugewiesenHtml = aufgabenState.zugewiesenVonMir.length ? `
+    <details class="aufgaben-zugewiesen">
+      <summary>Von mir zugewiesen (${aufgabenState.zugewiesenVonMir.length})</summary>
+      ${aufgabenState.zugewiesenVonMir.map((z) => `
+        <div class="aufgabe-zug-item${z.erledigt ? " erledigt" : ""}" data-id="${escapeHtml(z.id)}" data-empfaenger="${escapeHtml(z.empfaenger)}">
+          <span class="aufgabe-text">${escapeHtml(z.text || "")}</span>
+          <span class="aufgabe-meta">${escapeHtml(z.empfaengerName || z.empfaenger)} · ${
+            z.zurueckgezogenAm ? "zurückgezogen" : (z.erledigt ? "erledigt" : "offen")
+          }</span>
+          ${(!z.erledigt && !z.zurueckgezogenAm)
+            ? '<button type="button" class="aufgabe-zurueck" title="Zurückziehen">Zurückziehen</button>'
+            : ""}
+        </div>`).join("")}
+    </details>` : "";
+
+  ziel.innerHTML = `
+    <details class="card aufgaben-card" id="aufgaben-details"${offenAnzeigen ? " open" : ""}>
+      <summary class="aufgaben-summary">
+        <span>✅ Meine Aufgaben</span>
+        <span class="aufgaben-zaehler${ueberfaellig ? " warn" : ""}">${offen} offen</span>
+      </summary>
+      <form class="aufgaben-neu" id="aufgaben-neu-form">
+        <input type="text" id="aufgabe-neu-text" maxlength="200" placeholder="Neue Aufgabe …" autocomplete="off" />
+        <input type="date" id="aufgabe-neu-faellig" aria-label="Fällig bis" />
+        <button type="submit" class="btn small" title="Hinzufügen">+</button>
+      </form>
+      <div class="aufgaben-liste">${
+        liste.length ? liste.map(zeile).join("") : '<p class="muted" style="padding:4px 0;">Noch nichts zu tun.</p>'
+      }</div>
+      <div class="aufgaben-aktionen">
+        ${wegraeumbar ? '<button type="button" class="aufgaben-aufraeumen">Erledigte aufräumen</button>' : ""}
+        ${aufgabenState.canAssign ? '<button type="button" class="aufgaben-zuweisen-oeffnen">Aufgabe zuweisen …</button>' : ""}
+      </div>
+      <p class="aufgaben-fehler" id="aufgaben-fehler"></p>
+      ${zugewiesenHtml}
+    </details>`;
+
+  updateSidebarSichtbarkeit();
+  if (offenAnzeigen) markiereAufgabenGesehen();
+}
+
+function aufgabenFehler(text) {
+  const el = document.getElementById("aufgaben-fehler");
+  if (el) el.textContent = text || "";
+}
+
+// Meldet ungesehene Zuweisungen als gesehen. Bewusst nicht awaited und ohne
+// Neu-Rendern: die Markierung ist Nebensache, sie darf den Klick nicht bremsen
+// und die Liste nicht unter dem Finger neu sortieren.
+function markiereAufgabenGesehen() {
+  const ids = aufgabenState.meine.filter(aufgabeIstNeu).map((a) => a.id);
+  if (!ids.length) return;
+  aufgabenState.meine.forEach((a) => { if (ids.includes(a.id)) a.gesehenAm = new Date().toISOString(); });
+  callWorker("aufgaben-gesehen", { ids }).catch((e) => console.warn("Gesehen-Markierung fehlgeschlagen:", e));
+}
+
+function setupAufgabenWidget() {
+  const container = document.getElementById("aufgaben-widget-inhalt");
+  if (!container) return;
+
+  // Ein Handler am Container: die Karte wird bei jeder Änderung neu gebaut, ein
+  // Listener an den Zeilen selbst wäre nach dem ersten Klick verwaist.
+  container.addEventListener("click", async (e) => {
+    const details = document.getElementById("aufgaben-details");
+    if (e.target.closest(".aufgabe-check")) return; // hat einen eigenen change-Handler
+
+    const delBtn = e.target.closest(".aufgabe-del");
+    if (delBtn) {
+      const id = delBtn.closest(".aufgabe-item").dataset.id;
+      await aufgabeLoeschen(id);
+      return;
+    }
+    if (e.target.closest(".aufgaben-aufraeumen")) {
+      await aufgabenAufraeumen();
+      return;
+    }
+    if (e.target.closest(".aufgaben-zuweisen-oeffnen")) {
+      oeffneAufgabeZuweisen();
+      return;
+    }
+    const zurueckBtn = e.target.closest(".aufgabe-zurueck");
+    if (zurueckBtn) {
+      const row = zurueckBtn.closest(".aufgabe-zug-item");
+      await aufgabeZurueckziehen(row.dataset.id, row.dataset.empfaenger);
+      return;
+    }
+    if (details && e.target.closest("summary")) {
+      // Der Toggle passiert erst nach diesem Klick -- der gemerkte Zustand ist
+      // deshalb der invertierte aktuelle.
+      localStorage.setItem(AUFGABEN_OFFEN_KEY, details.open ? "0" : "1");
+      if (!details.open) markiereAufgabenGesehen();
+    }
+  });
+
+  container.addEventListener("change", async (e) => {
+    const box = e.target.closest(".aufgabe-check");
+    if (!box) return;
+    const id = box.closest(".aufgabe-item").dataset.id;
+    await aufgabeAbhaken(id, box.checked);
+  });
+
+  container.addEventListener("submit", async (e) => {
+    if (!e.target.closest("#aufgaben-neu-form")) return;
+    e.preventDefault();
+    await aufgabeAnlegen();
+  });
+}
+
+async function aufgabeAnlegen() {
+  const textEl = document.getElementById("aufgabe-neu-text");
+  const faelligEl = document.getElementById("aufgabe-neu-faellig");
+  const text = (textEl.value || "").trim();
+  if (!text) return;
+  aufgabenFehler("");
+  try {
+    const res = await callWorker("aufgabe-speichern", { text, faellig: faelligEl.value || "" });
+    if (res && res.aufgabe) aufgabenState.meine.push(res.aufgabe);
+    textEl.value = "";
+    faelligEl.value = "";
+    renderAufgabenWidget();
+    const neuesFeld = document.getElementById("aufgabe-neu-text");
+    if (neuesFeld) neuesFeld.focus();
+  } catch (e) {
+    aufgabenFehler(e && e.message ? e.message : "Speichern fehlgeschlagen.");
+  }
+}
+
+// Optimistisch: der Haken sitzt schon, wir bestätigen ihn nur noch. Schlägt das
+// fehl, wird der lokale Stand zurückgedreht und neu gerendert -- im Widget steht
+// dann wieder das, was der Server tatsächlich kennt.
+async function aufgabeAbhaken(id, erledigt) {
+  const a = aufgabenState.meine.find((x) => x.id === id);
+  if (!a) return;
+  const vorher = { erledigt: a.erledigt, erledigtAm: a.erledigtAm };
+  a.erledigt = erledigt;
+  a.erledigtAm = erledigt ? new Date().toISOString() : null;
+  aufgabenFehler("");
+  try {
+    await callWorker("aufgabe-speichern", { id, erledigt });
+    renderAufgabenWidget();
+  } catch (e) {
+    a.erledigt = vorher.erledigt;
+    a.erledigtAm = vorher.erledigtAm;
+    renderAufgabenWidget();
+    aufgabenFehler(e && e.message ? e.message : "Speichern fehlgeschlagen.");
+  }
+}
+
+async function aufgabeLoeschen(id) {
+  aufgabenFehler("");
+  try {
+    await callWorker("aufgabe-loeschen", { id });
+    aufgabenState.meine = aufgabenState.meine.filter((a) => a.id !== id);
+    renderAufgabenWidget();
+  } catch (e) {
+    aufgabenFehler(e && e.message ? e.message : "Löschen fehlgeschlagen.");
+  }
+}
+
+async function aufgabenAufraeumen() {
+  aufgabenFehler("");
+  try {
+    await callWorker("aufgaben-aufraeumen", {});
+    // Serverregel spiegeln: erledigte Zuweisungen bleiben stehen (der Zuweiser
+    // soll sie noch sehen), Selbstangelegtes und Zurückgezogenes geht.
+    aufgabenState.meine = aufgabenState.meine.filter((a) => {
+      if (a.zurueckgezogenAm) return false;
+      if (!a.erledigt) return true;
+      return !!a.von;
+    });
+    renderAufgabenWidget();
+  } catch (e) {
+    aufgabenFehler(e && e.message ? e.message : "Aufräumen fehlgeschlagen.");
+  }
+}
+
+async function aufgabeZurueckziehen(id, empfaenger) {
+  aufgabenFehler("");
+  try {
+    await callWorker("aufgabe-zurueckziehen", { id, empfaenger });
+    const z = aufgabenState.zugewiesenVonMir.find((x) => x.id === id && x.empfaenger === empfaenger);
+    if (z) z.zurueckgezogenAm = new Date().toISOString();
+    renderAufgabenWidget();
+  } catch (e) {
+    aufgabenFehler(e && e.message ? e.message : "Zurückziehen fehlgeschlagen.");
+  }
+}
+
+// ---- Aufgabe zuweisen (Dialog) ----
+
+async function oeffneAufgabeZuweisen() {
+  const overlay = document.getElementById("aufgaben-zuweisen-overlay");
+  if (!overlay) return;
+  document.getElementById("aufgabe-zuweisen-text").value = "";
+  document.getElementById("aufgabe-zuweisen-faellig").value = "";
+  document.getElementById("aufgabe-zuweisen-suche").value = "";
+  document.getElementById("aufgabe-zuweisen-error").style.display = "none";
+  overlay.style.display = "flex";
+  document.getElementById("aufgabe-zuweisen-text").focus();
+
+  const listeEl = document.getElementById("aufgabe-zuweisen-empfaenger");
+  listeEl.innerHTML = '<p class="muted">Namen werden geladen …</p>';
+  try {
+    // list-directory gibt es schon (Picker "Teilen mit" im Vereinskalender): nur
+    // Personal, Spielerkonten sind serverseitig ausgeschlossen.
+    if (!aufgabenEmpfaengerCache) {
+      const res = await callWorker("list-directory", {});
+      aufgabenEmpfaengerCache = Array.isArray(res && res.users) ? res.users : [];
+    }
+    renderAufgabenEmpfaenger("");
+  } catch (e) {
+    listeEl.innerHTML = '<p class="muted">Namen konnten nicht geladen werden.</p>';
+  }
+}
+
+function renderAufgabenEmpfaenger(filter) {
+  const listeEl = document.getElementById("aufgabe-zuweisen-empfaenger");
+  if (!listeEl || !aufgabenEmpfaengerCache) return;
+  const ich = currentUser ? currentUser.username : "";
+  const suche = (filter || "").trim().toLowerCase();
+  // Bereits Angehakte bleiben immer sichtbar -- sonst verschwindet eine Auswahl
+  // beim Weitertippen aus dem Bild und wird später überraschend mitgeschickt.
+  const gewaehlt = aufgabenGewaehlteEmpfaenger();
+  const treffer = aufgabenEmpfaengerCache
+    .filter((u) => u.username !== ich)
+    .filter((u) => !suche || (u.displayName || "").toLowerCase().includes(suche) || gewaehlt.includes(u.username));
+  listeEl.innerHTML = treffer.length
+    ? treffer.map((u) => `
+        <label class="aufgaben-empfaenger-zeile">
+          <input type="checkbox" value="${escapeHtml(u.username)}" ${gewaehlt.includes(u.username) ? "checked" : ""} />
+          <span>${escapeHtml(u.displayName || u.username)}</span>
+        </label>`).join("")
+    : '<p class="muted">Kein Name gefunden.</p>';
+}
+
+function aufgabenGewaehlteEmpfaenger() {
+  const listeEl = document.getElementById("aufgabe-zuweisen-empfaenger");
+  if (!listeEl) return [];
+  return Array.from(listeEl.querySelectorAll("input[type=checkbox]:checked")).map((c) => c.value);
+}
+
+function schliesseAufgabeZuweisen() {
+  const overlay = document.getElementById("aufgaben-zuweisen-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+function setupAufgabenZuweisenDialog() {
+  const overlay = document.getElementById("aufgaben-zuweisen-overlay");
+  if (!overlay) return;
+  document.getElementById("btn-aufgaben-zuweisen-close").addEventListener("click", schliesseAufgabeZuweisen);
+  document.getElementById("btn-aufgabe-zuweisen-abbrechen").addEventListener("click", schliesseAufgabeZuweisen);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) schliesseAufgabeZuweisen(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && overlay.style.display === "flex") schliesseAufgabeZuweisen();
+  });
+  document.getElementById("aufgabe-zuweisen-suche").addEventListener("input", (e) => {
+    renderAufgabenEmpfaenger(e.target.value);
+  });
+  document.getElementById("btn-aufgabe-zuweisen-senden").addEventListener("click", aufgabeZuweisenSenden);
+}
+
+async function aufgabeZuweisenSenden() {
+  const fehlerEl = document.getElementById("aufgabe-zuweisen-error");
+  const btn = document.getElementById("btn-aufgabe-zuweisen-senden");
+  const text = (document.getElementById("aufgabe-zuweisen-text").value || "").trim();
+  const faellig = document.getElementById("aufgabe-zuweisen-faellig").value || "";
+  const empfaenger = aufgabenGewaehlteEmpfaenger();
+  const zeige = (msg) => { fehlerEl.textContent = msg; fehlerEl.style.display = "block"; };
+
+  fehlerEl.style.display = "none";
+  if (!text) return zeige("Bitte eine Aufgabe eintragen.");
+  if (!empfaenger.length) return zeige("Bitte mindestens eine Person auswählen.");
+
+  btn.disabled = true;
+  try {
+    const res = await callWorker("aufgabe-zuweisen", { text, faellig, empfaenger });
+    schliesseAufgabeZuweisen();
+    if (res && Array.isArray(res.uebersprungen) && res.uebersprungen.length) {
+      aufgabenFehler("Übersprungen (Liste voll): " + res.uebersprungen.join(", "));
+    }
+    await loadAufgaben(); // Rückkanal neu holen, damit die Zuweisung sofort dasteht
+  } catch (e) {
+    zeige(e && e.message ? e.message : "Zuweisen fehlgeschlagen.");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---- Admin: wer darf Aufgaben zuweisen (Einstellungen-Tab) ----
+
+async function renderAufgabenAdminPanel() {
+  const listeEl = document.getElementById("aufgaben-gruppen-liste");
+  if (!listeEl) return;
+  try {
+    const res = await callWorker("list-groups", {});
+    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
+    const gesetzt = aufgabenState.assignGroupIds || [];
+    listeEl.innerHTML = gruppen.length
+      ? gruppen.map((g) => `
+          <label class="aufgaben-gruppen-zeile">
+            <input type="checkbox" value="${escapeHtml(g.id)}" ${gesetzt.includes(g.id) ? "checked" : ""} />
+            <span>${escapeHtml(g.name || g.id)}</span>
+          </label>`).join("")
+      : '<p class="muted">Es sind noch keine Gruppen angelegt.</p>';
+  } catch (e) {
+    listeEl.innerHTML = '<p class="muted">Gruppen konnten nicht geladen werden.</p>';
+  }
+}
+
+async function speichereAufgabenGruppen() {
+  const errorEl = document.getElementById("aufgaben-admin-error");
+  const successEl = document.getElementById("aufgaben-admin-success");
+  const metaEl = document.getElementById("aufgaben-admin-meta");
+  errorEl.style.display = "none";
+  successEl.style.display = "none";
+  const groupIds = Array.from(document.querySelectorAll("#aufgaben-gruppen-liste input[type=checkbox]:checked")).map((c) => c.value);
+  try {
+    const res = await callWorker("set-aufgaben-gruppen", { groupIds });
+    aufgabenState.assignGroupIds = Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : groupIds;
+    successEl.style.display = "block";
+    if (res && res.geaendertAm) {
+      metaEl.textContent = "Zuletzt geändert am " + new Date(res.geaendertAm).toLocaleString("de-DE") + " von " + (res.geaendertVon || "");
+    }
+    await loadAufgaben(); // eigene Berechtigung kann sich damit geändert haben
+  } catch (e) {
+    errorEl.textContent = e && e.message ? e.message : "Speichern fehlgeschlagen.";
+    errorEl.style.display = "block";
   }
 }
 
@@ -2810,6 +3254,7 @@ function setupTabs() {
     if (e.key === "Escape") schliesseMaterialcontainer();
   });
   document.getElementById("btn-materialcontainer-save").addEventListener("click", speichereMaterialcontainerCode);
+  document.getElementById("btn-aufgaben-gruppen-save").addEventListener("click", speichereAufgabenGruppen);
 
   const jumpToAdminPanel = (panelId) => {
     activateTab("admin");
@@ -3136,6 +3581,7 @@ function renderAdminPanels() {
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
+  document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
   // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
   // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
@@ -3152,6 +3598,7 @@ function renderAdminPanels() {
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
       document.getElementById("admin-materialcontainer-panel").style.display = "block";
+      document.getElementById("admin-aufgaben-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
     return;
@@ -3263,7 +3710,7 @@ async function afterAuthChange() {
   renderToolGrid();
   renderFeedbackTab();
   refreshMyNewsReactions(); // eigene Neuigkeiten-Reaktionen nach An-/Abmeldung neu laden (bzw. leeren)
-  await Promise.all([refreshNews(), loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([refreshNews(), loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     await loadAndRenderGroups();
     // Frueher stand hier ein zweites renderKontoKarte(): die Gruppennamen liessen sich
@@ -3274,6 +3721,7 @@ async function afterAuthChange() {
     renderNewsAdmin();
     await loadAndRenderFeedback();
     await ladeMaterialcontainerInsAdminFeld();
+    await renderAufgabenAdminPanel();
   }
   await loadDirectoryGroupsIfNeeded();
 }
@@ -3594,6 +4042,8 @@ async function init() {
   renderChangelog();
   setupTabs();
   setupSidebarWidgetPlacement();
+  setupAufgabenWidget();
+  setupAufgabenZuweisenDialog();
   setupAuthForms();
   setupWhatsappLink();
   setupWikiFrage();
@@ -3619,7 +4069,7 @@ async function init() {
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
-  await Promise.all([loadSidebarWidget(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
+  await Promise.all([loadSidebarWidget(), loadAufgaben(), loadTrainerdatenStatus(), loadTestspielplanerStatus()]);
   if (currentUser && currentUser.isAdmin) {
     // Seriell statt Promise.all: renderUsersList baut aus groupsState das
     // Gruppen-Dropdown des Nutzer-Filters, das also schon geladen sein muss,
@@ -3631,6 +4081,7 @@ async function init() {
     renderNewsAdmin();
     await loadAndRenderFeedback();
     await ladeMaterialcontainerInsAdminFeld();
+    await renderAufgabenAdminPanel();
   }
   await loadDirectoryGroupsIfNeeded();
 

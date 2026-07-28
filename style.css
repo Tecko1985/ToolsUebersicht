@@ -485,6 +485,90 @@ main { flex: 1; min-width: 0; }
   border-top: 1px solid var(--border);
 }
 
+/* ---------- Aufgaben (zweite Karte der linken Spalte) ---------- */
+
+/* Die Karte ist ein <details> und startet zugeklappt: sichtbar ist dann nur die
+   Kopfzeile mit dem Zähler. Der Abstand nach oben trennt sie von den Terminen. */
+.aufgaben-card { margin-top: 14px; margin-bottom: 0; }
+.aufgaben-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted);
+  list-style: none;
+}
+.aufgaben-summary::-webkit-details-marker { display: none; }
+.aufgaben-zaehler {
+  flex-shrink: 0; font-size: 11px; font-weight: 700;
+  background: var(--gray); color: var(--muted);
+  border-radius: 999px; padding: 2px 9px;
+}
+.aufgaben-zaehler.warn { background: #fee2e2; color: #b91c1c; }
+
+/* Umbrechend, NICHT drei Felder in einer Zeile: das Datumsfeld bringt eine
+   intrinsische Mindestbreite mit, die sich per width/min-width nicht wegkürzen
+   lässt. In einer Zeile erzwang es am Handy eine Kartenbreite von 403px bei
+   371px Fenster — und weil die Seite dadurch insgesamt breiter wurde, liefen
+   auch Neuigkeiten und Kacheln seitlich heraus (im iframe-Test gemessen).
+   Text bekommt deshalb eine eigene Zeile, Datum und Knopf teilen sich die
+   nächste. 16px Schriftgröße, damit iOS beim Antippen nicht hineinzoomt. */
+.aufgaben-neu { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+.aufgaben-neu input[type="text"] { flex: 1 1 100%; min-width: 0; }
+.aufgaben-neu input[type="date"] { flex: 1 1 0; min-width: 0; }
+.aufgaben-neu input { font-size: 16px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
+.aufgaben-neu button { flex: 0 0 auto; }
+/* Sicherheitsnetz gegen genau diesen Fehlermodus: die Karte darf ihren
+   Container nie überschreiten, egal was später hineinwandert. */
+.aufgaben-card, .aufgaben-card * { max-width: 100%; }
+
+.aufgaben-liste { display: flex; flex-direction: column; }
+.aufgabe-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 4px; border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text);
+}
+.aufgabe-item:first-child { border-top: none; }
+.aufgabe-check { flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+.aufgabe-text { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.aufgabe-meta { flex-shrink: 0; font-size: 11px; color: var(--muted); }
+.aufgabe-item.erledigt .aufgabe-text,
+.aufgabe-item.zurueckgezogen .aufgabe-text { text-decoration: line-through; color: var(--muted); }
+.aufgabe-item.ueberfaellig .aufgabe-meta { color: #b91c1c; font-weight: 700; }
+/* Ungesehene Zuweisung: farbiger Balken links statt eines eigenen Badges --
+   in der schmalen Spalte ist jede zusätzliche Zeile teurer als ein Rand. */
+.aufgabe-item.neu { box-shadow: inset 3px 0 0 var(--blue); padding-left: 8px; }
+.aufgabe-del {
+  flex-shrink: 0; border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: 13px; line-height: 1; padding: 2px 4px;
+}
+.aufgabe-del:hover { color: #b91c1c; }
+
+.aufgaben-aktionen { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.aufgaben-aktionen button {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 12px; color: var(--blue); text-decoration: underline;
+}
+.aufgaben-fehler { color: #b91c1c; font-size: 12px; margin-top: 8px; }
+.aufgaben-fehler:empty { display: none; }
+
+.aufgaben-zugewiesen { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.aufgaben-zugewiesen > summary { cursor: pointer; font-size: 12px; font-weight: 700; color: var(--muted); }
+.aufgabe-zug-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 4px; font-size: 12px;
+}
+.aufgabe-zug-item.erledigt .aufgabe-text { text-decoration: line-through; color: var(--muted); }
+.aufgabe-zurueck {
+  border: 1px solid var(--border); background: var(--white); border-radius: 6px;
+  padding: 2px 8px; font-size: 11px; font-family: inherit; cursor: pointer; color: var(--muted);
+}
+.aufgabe-zurueck:hover { border-color: #b91c1c; color: #b91c1c; }
+
+/* Empfänger- und Gruppenauswahl (Zuweis-Dialog + Admin-Panel) */
+.aufgaben-empfaenger-liste { max-height: 220px; overflow-y: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; padding: 6px; }
+.aufgaben-empfaenger-zeile,
+.aufgaben-gruppen-zeile { display: flex; align-items: center; gap: 8px; padding: 5px 4px; font-size: 14px; cursor: pointer; }
+.aufgaben-empfaenger-zeile:hover { background: var(--blue-light); border-radius: 4px; }
+.aufgaben-gruppen-liste { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
 @media (max-width: 860px) {
   .page-body { flex-direction: column; }
   /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen

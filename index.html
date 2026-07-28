@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.13" />
+<link rel="stylesheet" href="style.css?v=1.14" />
 </head>
 <body>
 
@@ -42,7 +42,14 @@
 </nav>
 
 <div class="page-body">
-  <aside id="calendar-widget" class="calendar-widget" style="display:none;"></aside>
+  <!-- Linke Dashboard-Spalte. Zwei getrennte Container, weil beide Bereiche
+       unabhängig voneinander neu gerendert werden: ein abgehakter Haken darf die
+       geladene Terminliste nicht mitreißen. Die Sichtbarkeit der ganzen Spalte
+       hängt am Inhalt BEIDER (siehe updateSidebarSichtbarkeit in app.js). -->
+  <aside id="calendar-widget" class="calendar-widget" style="display:none;">
+    <div id="termine-widget-inhalt"></div>
+    <div id="aufgaben-widget-inhalt"></div>
+  </aside>
 
   <main>
 
@@ -298,6 +305,23 @@
       <p class="muted" id="materialcontainer-admin-meta" style="margin-top:10px; font-size:12px;"></p>
       <p class="muted" id="materialcontainer-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
       <p class="muted" id="materialcontainer-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Aufgaben: wer darf zuweisen (nur Admin) -->
+    <details class="card collapsible" id="admin-aufgaben-panel" style="display:none;">
+      <summary>Aufgaben</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Eine eigene Aufgabenliste hat automatisch jedes Mitarbeiterkonto (Spielerkonten nicht). Hier legst du nur
+        fest, wer <strong>anderen</strong> eine Aufgabe in die Liste legen darf. Ohne Häkchen kann das niemand
+        außer den Administratoren — die Auswahl ist bewusst leer statt „alle“.
+      </p>
+      <div id="aufgaben-gruppen-liste" class="aufgaben-gruppen-liste"></div>
+      <div style="margin-top:14px;">
+        <button type="button" class="btn small" id="btn-aufgaben-gruppen-save">Speichern</button>
+      </div>
+      <p class="muted" id="aufgaben-admin-meta" style="margin-top:10px; font-size:12px;"></p>
+      <p class="muted" id="aufgaben-admin-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="aufgaben-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
     </details>
 
     <!-- Feedback & Wünsche (nur Admin) -->
@@ -578,7 +602,35 @@
   </div>
 </div>
 
-<script src="config.js?v=1.20"></script>
-<script src="app.js?v=1.19"></script>
+<!-- Aufgabe zuweisen (nur für Mitglieder der berechtigten Gruppen) -->
+<div class="code-overlay" id="aufgaben-zuweisen-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="aufgaben-zuweisen-titel">
+    <div class="code-dialog-head">
+      <h2 id="aufgaben-zuweisen-titel">📋 Aufgabe zuweisen</h2>
+      <button type="button" class="code-dialog-close" id="btn-aufgaben-zuweisen-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <div class="form-field">
+      <label for="aufgabe-zuweisen-text">Aufgabe</label>
+      <input type="text" id="aufgabe-zuweisen-text" maxlength="200" placeholder="z. B. Trikots zählen" autocomplete="off" />
+    </div>
+    <div class="form-field" style="margin-top:10px;">
+      <label for="aufgabe-zuweisen-faellig">Fällig bis (optional)</label>
+      <input type="date" id="aufgabe-zuweisen-faellig" />
+    </div>
+    <div class="form-field" style="margin-top:10px;">
+      <label for="aufgabe-zuweisen-suche">An wen? (Mehrfachauswahl)</label>
+      <input type="search" id="aufgabe-zuweisen-suche" placeholder="Name suchen …" autocomplete="off" />
+    </div>
+    <div id="aufgabe-zuweisen-empfaenger" class="aufgaben-empfaenger-liste"></div>
+    <p class="muted" id="aufgabe-zuweisen-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+    <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
+      <button type="button" class="btn secondary small" id="btn-aufgabe-zuweisen-abbrechen">Abbrechen</button>
+      <button type="button" class="btn small" id="btn-aufgabe-zuweisen-senden">Zuweisen</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js?v=1.21"></script>
+<script src="app.js?v=1.20"></script>
 </body>
 </html>

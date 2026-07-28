@@ -323,6 +323,23 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.5",
+    groups: [
+      {
+        title: "Meine Aufgaben",
+        items: [
+          "Neue Aufgabenliste auf der Startseite: jedes Mitarbeiterkonto hat seine eigene, mit optionalem Fälligkeitsdatum. Überfällige stehen oben und sind rot markiert.",
+          "Die Karte startet zugeklappt und zeigt nur die Zahl der offenen Aufgaben — es sei denn, es ist etwas überfällig oder neu zugewiesen, dann klappt sie einmal von allein auf.",
+          "Erledigte bleiben durchgestrichen stehen, bis sie über „Erledigte aufräumen“ weggeräumt werden. Ein Fehlklick lässt sich also zurücknehmen.",
+          "Wer in einer dafür freigegebenen Gruppe ist, kann anderen eine Aufgabe zuweisen — auch mehreren auf einmal. Jeder bekommt seine eigene Kopie und hakt für sich ab.",
+          "Zugewiesene Aufgaben lassen sich abhaken, aber nicht löschen. Zurücknehmen kann sie nur, wer sie vergeben hat; der Empfänger sieht dann den Hinweis, dass sie zurückgezogen wurde.",
+          "Unter „Von mir zugewiesen“ steht, was man selbst verteilt hat und ob es erledigt ist.",
+          "Freigeben, wer zuweisen darf: Einstellungen → Aufgaben. Ohne Häkchen kann das niemand außer den Administratoren."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.4",
     groups: [
       {
