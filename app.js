@@ -1772,14 +1772,17 @@ function renderSidebarWidget(widget, opts) {
             <button type="button" class="cw-vote cw-vote-${val}${c.meins === val ? " active" : ""}"
               data-termin-id="${escapeHtml(row.termin.id)}" data-cand-id="${escapeHtml(row.candId)}"
               data-val="${val}" title="${titel}">${zeichen} ${anzahl}</button>`;
+    // .cw-vote-msg steht als Geschwister von .cw-votes, nicht darin: sie bricht
+    // im Fehlerfall in eine eigene Zeile um (flex-basis 100%) und drückt die
+    // Knöpfe nicht aus der schmalen Spalte. Leer ist sie per :empty ausgeblendet.
     return `
         <div class="calendar-widget-item calendar-widget-poll">
-          <a class="cw-main" href="${escapeHtml(url)}">${inner}</a>
+          <a class="cw-main" href="${escapeHtml(url)}" title="${escapeHtml(row.termin.titel || "")}">${inner}</a>
           <div class="cw-votes">
             ${knopf("ja", "✓", c.ja, "Zusagen (nochmal klicken = zurückziehen)")}
             ${knopf("nein", "✗", c.nein, "Absagen (nochmal klicken = zurückziehen)")}
-            <span class="cw-vote-msg"></span>
           </div>
+          <span class="cw-vote-msg"></span>
         </div>
       `;
   };
