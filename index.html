@@ -5,16 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.18" />
+<link rel="stylesheet" href="style.css?v=1.19" />
 </head>
 <body>
 
 <header>
   <h1>🧰 Tools-Übersicht <span class="version-badge version-badge-link" id="version-badge" role="button" tabindex="0" title="Versionshistorie ansehen"></span></h1>
-  <!-- margin-right:auto (in style.css) haelt den Knopf links neben dem Titel: der
-       Admin-Dashboard-Button daneben ist absolut in der Mitte positioniert und
-       zaehlt im Flex-Fluss nicht mit. -->
-  <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
+  <!-- margin-right:auto (in style.css) sitzt am WRAPPER, nicht an den Knoepfen: beide
+       koennen je nach Konto einzeln ausgeblendet sein, und ein Layout-Anker an einem
+       versteckten Element traegt nicht. Der Admin-Dashboard-Button daneben ist absolut
+       in der Mitte positioniert und zaehlt im Flex-Fluss nicht mit -- ohne das
+       Auto-Margin landete die Gruppe mittig unter ihm. -->
+  <div class="header-btns">
+    <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
+    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Dokumente zum Unterschreiben">📄 Dokumente</button>
+  </div>
   <button type="button" class="header-admin-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
   <div class="header-right">
     <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
@@ -27,10 +32,6 @@
 <nav>
   <button data-tab="uebersicht" class="active">Dashboard</button>
   <button data-tab="feedback">Feedback & Hilfe</button>
-  <!-- Nur für angemeldetes Personal (renderNavTabs). Default versteckt: die zu
-       unterschreibenden Dokumente gehen niemanden etwas an, der nicht angemeldet
-       ist, und der Tab soll beim Erstladen nicht kurz aufblitzen. -->
-  <button data-tab="dokumente" id="nav-dokumente" style="display:none;">Dokumente</button>
   <div class="nav-right">
     <!-- Beschriftung wechselt mit dem Anmeldestatus (renderNavTabs) -->
     <button data-tab="konto" id="nav-konto">Anmelden</button>
@@ -123,32 +124,6 @@
         <p class="muted" style="margin-bottom:14px;">Dringende Frage oder direkter Kontakt gewünscht? Schreib Michel auf WhatsApp.</p>
         <a class="btn-link" id="feedback-whatsapp-link" href="#" target="_blank" rel="noopener">💬 Auf WhatsApp schreiben</a>
       </div>
-    </div>
-  </section>
-
-  <!-- ---------- Dokumente zum Unterschreiben ----------
-       Der schwere Teil des Unterschrifts-Workflows. Bewusst hier und nicht im
-       Aufgaben-Widget: ein PDF ansehen und unterschreiben braucht Fläche, das
-       Widget in der linken Spalte soll klein bleiben. -->
-  <section class="tab-section" id="tab-dokumente">
-    <div class="card">
-      <h2>📄 Dokumente</h2>
-      <p class="muted">Dokumente, die du unterschreiben sollst — und die, die du selbst verschickt hast.</p>
-      <div class="btn-row" style="margin-top:10px;">
-        <button type="button" class="btn small" id="btn-dokument-selbst">Selbst unterschreiben</button>
-        <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
-      </div>
-      <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
-    </div>
-
-    <div class="card">
-      <h2>Zu unterschreiben</h2>
-      <div id="dokumente-an-mich"><p class="muted">Wird geladen …</p></div>
-    </div>
-
-    <div class="card" id="dokumente-von-mir-karte">
-      <h2>Von mir verschickt</h2>
-      <div id="dokumente-von-mir"><p class="muted">Wird geladen …</p></div>
     </div>
   </section>
 
@@ -698,6 +673,33 @@
   </div>
 </div>
 
+<!-- Dokumente zum Unterschreiben. Eigenes Fenster über dem Dashboard statt eines
+     Tabs (Michel-Vorgabe 2026-07-28): der Zugang sitzt als Knopf oben im Header
+     neben dem Materialcontainercode. Der Inhalt wird erst beim Öffnen geholt --
+     die meisten Seitenaufrufe gehen nie hier hinein. -->
+<div class="code-overlay" id="dokumente-overlay" style="display:none;">
+  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="dokumente-titel">
+    <div class="code-dialog-head">
+      <h2 id="dokumente-titel">📄 Dokumente</h2>
+      <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted">Dokumente, die du unterschreiben sollst — und die, die du selbst verschickt hast.</p>
+    <div class="btn-row" style="margin-top:10px;">
+      <button type="button" class="btn small" id="btn-dokument-selbst">Selbst unterschreiben</button>
+      <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
+    </div>
+    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <h3 class="dok-abschnitt">Zu unterschreiben</h3>
+    <div id="dokumente-an-mich"><p class="muted">Wird geladen …</p></div>
+
+    <div id="dokumente-von-mir-karte">
+      <h3 class="dok-abschnitt">Von mir verschickt</h3>
+      <div id="dokumente-von-mir"><p class="muted">Wird geladen …</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- Unterschreiben. Dient zwei Wegen: einem zugewiesenen Dokument (dann steht der
      Ablehnen-Knopf mit dabei) und dem eigenen PDF ohne Zuweisung ("Selbst
      unterschreiben"), bei dem die Datei hier ausgewählt und das Feld hier gesetzt
@@ -757,7 +759,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.25"></script>
-<script src="app.js?v=1.24"></script>
+<script src="config.js?v=1.26"></script>
+<script src="app.js?v=1.25"></script>
 </body>
 </html>

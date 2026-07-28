@@ -2188,17 +2188,15 @@ function setupAufgabenWidget() {
       return;
     }
     if (e.target.closest(".aufgaben-dokumente-oeffnen")) {
-      activateTab("dokumente");
-      loadDokumente();
+      await oeffneDokumenteFenster();
       return;
     }
-    // Eine Unterschriftsaufgabe führt in den Tab -- unterschrieben wird nicht im
-    // Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
+    // Eine Unterschriftsaufgabe führt ins Dokumente-Fenster -- unterschrieben wird
+    // nicht im Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
     const dokLink = e.target.closest(".aufgabe-dok-link");
     if (dokLink) {
       const dokId = dokLink.closest(".aufgabe-item").dataset.dokId;
-      activateTab("dokumente");
-      await loadDokumente();
+      await oeffneDokumenteFenster();
       oeffneDokumentAnsicht(dokId);
       return;
     }
@@ -2212,8 +2210,7 @@ function setupAufgabenWidget() {
     const wegBtn = e.target.closest(".aufgabe-zu-dokumenten");
     if (wegBtn) {
       const dokId = wegBtn.dataset.dokId;
-      activateTab("dokumente");
-      await loadDokumente();
+      await oeffneDokumenteFenster();
       if (dokId) oeffneDokumentAnsicht(dokId);
       return;
     }
@@ -3069,12 +3066,43 @@ async function dokumentAblehnenSenden() {
   }
 }
 
+// Öffnet das Dokumente-Fenster und lädt den Inhalt nach. Der Header-Knopf und der
+// Weg aus dem Aufgaben-Widget landen beide hier.
+async function oeffneDokumenteFenster() {
+  const overlay = document.getElementById("dokumente-overlay");
+  if (!overlay) return;
+  dokumenteFehler("");
+  overlay.style.display = "flex";
+  await loadDokumente();
+}
+
+function schliesseDokumenteFenster() {
+  const overlay = document.getElementById("dokumente-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+function dokumenteFensterOffen() {
+  const overlay = document.getElementById("dokumente-overlay");
+  return !!overlay && overlay.style.display === "flex";
+}
+
 function setupDokumenteTab() {
-  const tab = document.getElementById("tab-dokumente");
+  const tab = document.getElementById("dokumente-overlay");
   if (!tab) return;
 
   document.getElementById("btn-dokumente-neuladen").addEventListener("click", loadDokumente);
   document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
+  document.getElementById("btn-dokumente-oeffnen").addEventListener("click", oeffneDokumenteFenster);
+  document.getElementById("btn-dokumente-close").addEventListener("click", schliesseDokumenteFenster);
+  tab.addEventListener("click", (e) => { if (e.target === tab) schliesseDokumenteFenster(); });
+  document.addEventListener("keydown", (e) => {
+    // Nur schließen, wenn der Signier-Dialog NICHT offen ist -- der liegt darüber
+    // und hat seinen eigenen Escape-Handler; sonst gingen beide auf einmal zu.
+    if (e.key === "Escape" && dokumenteFensterOffen() &&
+        document.getElementById("dokument-signieren-overlay").style.display !== "flex") {
+      schliesseDokumenteFenster();
+    }
+  });
 
   tab.addEventListener("click", async (e) => {
     const item = e.target.closest(".dok-item");
@@ -3989,12 +4017,7 @@ function activateTab(name) {
 
 function setupTabs() {
   document.querySelectorAll("nav button[data-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      activateTab(btn.dataset.tab);
-      // Erst beim Öffnen laden: die Liste kostet einen Nextcloud-Read, und die
-      // meisten Seitenaufrufe gehen nie in diesen Tab.
-      if (btn.dataset.tab === "dokumente") loadDokumente();
-    });
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 
   const versionBadgeHeader = document.getElementById("version-badge");
@@ -4216,8 +4239,9 @@ function renderNavTabs() {
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
   // Dokumente sind Personalsache: Spielerkonten bekommen auf allen zugehoerigen
-  // Aktionen ohnehin 403, der Tab hat fuer sie also nichts zu zeigen.
-  document.getElementById("nav-dokumente").style.display = dokumenteTabOffen() ? "" : "none";
+  // Aktionen ohnehin 403, das Fenster hat fuer sie also nichts zu zeigen. Der
+  // Zugang sitzt im Header neben dem Materialcontainercode, nicht in der Nav.
+  document.getElementById("btn-dokumente-oeffnen").style.display = dokumenteTabOffen() ? "" : "none";
 
   // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
   // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
@@ -4242,12 +4266,17 @@ function renderNavTabs() {
     activateTab("konto");
   } else if (!infoOffen && aktiv && aktiv.id === "tab-info") {
     activateTab("uebersicht");
-  } else if (!dokumenteTabOffen() && aktiv && aktiv.id === "tab-dokumente") {
-    // Wer sich aus dem Dokumente-Tab abmeldet, stuende sonst vor der zuletzt
-    // geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
-    dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
-    renderDokumente();
-    activateTab("uebersicht");
+  }
+
+  // Wer sich bei offenem Dokumente-Fenster abmeldet, stuende sonst weiter vor der
+  // zuletzt geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
+  // Ausblenden allein genuegt hier nicht, der Inhalt muss auch weg.
+  if (!dokumenteTabOffen()) {
+    schliesseDokumenteFenster();
+    if (dokumenteState.geladen || dokumenteState.anMich.length || dokumenteState.vonMir.length) {
+      dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
+      renderDokumente();
+    }
   }
 }
 
