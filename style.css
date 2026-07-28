@@ -183,6 +183,7 @@ nav {
   background: var(--white);
   padding: 8px 28px 0;
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 nav button {
   background: none;
@@ -876,3 +877,13 @@ body.printing-report #print-area { display: block; padding: 20px; }
    am Wrapper, damit die Gruppe rechts bleibt, auch wenn einzelne Buttons
    fuer Nicht-Admins ausgeblendet sind. */
 nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
+
+/* ---------- Handy: Formularfelder mindestens 16px ----------
+   iOS Safari zoomt beim Antippen eines Feldes unter 16px automatisch in die
+   Seite hinein — und wieder heraus zoomt es nicht. Die Feldregeln weiter oben
+   laufen über Klassen und sind damit höher spezifisch als ein reiner
+   Elementsatz, deshalb hier !important. Gilt nur auf schmalen Schirmen, das
+   Desktop-Design bleibt unverändert. */
+@media (max-width: 820px) {
+  input, select, textarea { font-size: 16px !important; }
+}
