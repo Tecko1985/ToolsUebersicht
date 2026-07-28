@@ -319,7 +319,8 @@ const APP_CHANGELOG = [
         title: "Dokumente zum Unterschreiben",
         items: [
           "An eine zugewiesene Aufgabe lässt sich jetzt ein PDF hängen, das die Person unterschreiben muss. Beim Zuweisen ziehst du direkt in der Seitenvorschau ein Rechteck auf die Stelle, an der unterschrieben werden soll.",
-          "Der Knopf „Meine Aufgaben“ oben in der Kopfzeile neben dem Materialcontainercode öffnet ein eigenes Fenster: dort weist du Aufgaben zu, unterschreibst Dokumente und siehst, was zurückgekommen ist. Die Karte auf der Startseite bleibt dafür klein — sie zeigt nur noch deine eigene Liste.",
+          "Alles rund um Aufgaben steckt jetzt hinter dem Knopf „Meine Aufgaben“ oben in der Kopfzeile neben dem Materialcontainercode: die eigene Liste, das Zuweisen an andere, die Dokumente und der Rücklauf. Die Karte unten links auf der Startseite ist dafür ganz entfallen — dort stehen nur noch die Termine.",
+          "Am Knopf zeigt ein Zähler, wie viele Aufgaben offen sind; er wird rot, sobald etwas überfällig oder neu zugewiesen ist. So sieht man es beim Aufrufen der Seite, ohne das Fenster zu öffnen.",
           "Unterschrieben wird mit dem Finger oder der Maus, in der eigenen Anmeldung. Danach steht das fertige Dokument bei dir zum Herunterladen bereit, mit Name und Zeitpunkt unter der Unterschrift.",
           "Anders als beim Stempel-Werkzeug kann niemand für jemand anderen unterschreiben: die Unterschrift entsteht in der Sitzung der unterschreibenden Person, und der Server hält fest, wer wann unterschrieben hat.",
           "Wer nicht unterschreiben möchte, kann mit einer Begründung ablehnen — sie kommt bei dir an. Abhaken lässt sich eine solche Aufgabe nicht; wer es versucht, bekommt einen Knopf direkt zum Dokument statt einer Absage.",
@@ -340,8 +341,7 @@ const APP_CHANGELOG = [
       {
         title: "Meine Aufgaben",
         items: [
-          "Neue Aufgabenliste auf der Startseite: jedes Mitarbeiterkonto hat seine eigene, mit optionalem Fälligkeitsdatum. Überfällige stehen oben und sind rot markiert.",
-          "Die Karte startet zugeklappt und zeigt nur die Zahl der offenen Aufgaben — es sei denn, es ist etwas überfällig oder neu zugewiesen, dann klappt sie einmal von allein auf.",
+          "Neue Aufgabenliste: jedes Mitarbeiterkonto hat seine eigene, mit optionalem Fälligkeitsdatum. Überfällige stehen oben und sind rot markiert.",
           "Erledigte bleiben durchgestrichen stehen, bis sie über „Erledigte aufräumen“ weggeräumt werden. Ein Fehlklick lässt sich also zurücknehmen.",
           "Wer in einer dafür freigegebenen Gruppe ist, kann anderen eine Aufgabe zuweisen — auch mehreren auf einmal. Jeder bekommt seine eigene Kopie und hakt für sich ab.",
           "Zugewiesene Aufgaben lassen sich abhaken, aber nicht löschen. Zurücknehmen kann sie nur, wer sie vergeben hat; der Empfänger sieht dann den Hinweis, dass sie zurückgezogen wurde.",

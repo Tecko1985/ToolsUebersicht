@@ -503,23 +503,17 @@ main { flex: 1; min-width: 0; }
   border-top: 1px solid var(--border);
 }
 
-/* ---------- Aufgaben (zweite Karte der linken Spalte) ---------- */
+/* ---------- Aufgaben (im Fenster "Meine Aufgaben") ---------- */
 
-/* Die Karte ist ein <details> und startet zugeklappt: sichtbar ist dann nur die
-   Kopfzeile mit dem Zähler. Der Abstand nach oben trennt sie von den Terminen. */
-.aufgaben-card { margin-top: 14px; margin-bottom: 0; }
-.aufgaben-summary {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted);
-  list-style: none;
+/* Bis 2026-07-28 eine aufklappbare Karte unten links im Dashboard; auf Michels
+   Wunsch komplett ins Fenster gezogen. Der Zähler sitzt seither am Kopf-Knopf --
+   ohne ihn sähe man beim Seitenaufruf nicht mehr, dass etwas offen ist. */
+.header-zaehler {
+  flex-shrink: 0; margin-left: 7px; font-size: 11px; font-weight: 700;
+  background: rgba(255, 255, 255, 0.9); color: var(--blue);
+  border-radius: 999px; padding: 1px 7px; line-height: 1.5;
 }
-.aufgaben-summary::-webkit-details-marker { display: none; }
-.aufgaben-zaehler {
-  flex-shrink: 0; font-size: 11px; font-weight: 700;
-  background: var(--gray); color: var(--muted);
-  border-radius: 999px; padding: 2px 9px;
-}
-.aufgaben-zaehler.warn { background: #fee2e2; color: #b91c1c; }
+.header-zaehler.warn { background: #fee2e2; color: #b91c1c; }
 
 /* Umbrechend, NICHT drei Felder in einer Zeile: das Datumsfeld bringt eine
    intrinsische Mindestbreite mit, die sich per width/min-width nicht wegkürzen
@@ -533,9 +527,9 @@ main { flex: 1; min-width: 0; }
 .aufgaben-neu input[type="date"] { flex: 1 1 0; min-width: 0; }
 .aufgaben-neu input { font-size: 16px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; }
 .aufgaben-neu button { flex: 0 0 auto; }
-/* Sicherheitsnetz gegen genau diesen Fehlermodus: die Karte darf ihren
+/* Sicherheitsnetz gegen genau diesen Fehlermodus: der Bereich darf seinen
    Container nie überschreiten, egal was später hineinwandert. */
-.aufgaben-card, .aufgaben-card * { max-width: 100%; }
+#aufgaben-widget-inhalt, #aufgaben-widget-inhalt * { max-width: 100%; }
 
 .aufgaben-liste { display: flex; flex-direction: column; }
 .aufgabe-item {

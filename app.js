@@ -1614,17 +1614,14 @@ function isUebersichtTabActive() {
   return !!(section && section.classList.contains("active"));
 }
 
-// Die linke Spalte trägt zwei unabhängige Bereiche (Termine + Aufgaben). Sichtbar
-// ist sie, sobald EINER davon Inhalt hat — sonst verschwände die Aufgabenliste bei
-// jemandem ohne Kalenderrecht, obwohl sie jedem Mitarbeiterkonto zusteht.
+// Die linke Spalte trägt nur noch die Termine — die Aufgabenkarte ist am
+// 2026-07-28 auf Michels Wunsch ins Fenster "Meine Aufgaben" gezogen. Sichtbar
+// ist die Spalte also genau dann, wenn Termine geladen sind.
 function updateSidebarSichtbarkeit() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
-  const gefuellt = (id) => {
-    const el = document.getElementById(id);
-    return !!(el && el.innerHTML.trim());
-  };
-  const hatInhalt = gefuellt("termine-widget-inhalt") || gefuellt("aufgaben-widget-inhalt");
+  const el = document.getElementById("termine-widget-inhalt");
+  const hatInhalt = !!(el && el.innerHTML.trim());
   widget.dataset.hasContent = hatInhalt ? "1" : "0";
   widget.style.display = (hatInhalt && isUebersichtTabActive()) ? "block" : "none";
 }
@@ -1968,7 +1965,6 @@ let aufgabenEmpfaengerCache = null; // list-directory-Ergebnis, einmal je Sitzun
 // sie gehören zu einem offenen Dialog, nicht zum geladenen Datenstand.
 let zuweisenPdfBytes = null;
 
-const AUFGABEN_OFFEN_KEY = "tu_aufgaben_offen";
 
 function heuteIso() {
   return new Date().toISOString().slice(0, 10);
@@ -1997,7 +1993,7 @@ async function loadAufgaben() {
   if (!currentUser || currentUser.art === "spieler") {
     aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, canAssignDocs: false, assignGroupIds: [], dokumentGroupIds: [], geladen: false };
     ziel.innerHTML = "";
-    updateSidebarSichtbarkeit();
+    aufgabenKopfZaehlerLeeren();
     return;
   }
   try {
@@ -2017,8 +2013,18 @@ async function loadAufgaben() {
   } catch (e) {
     console.warn("Aufgaben nicht ladbar:", e);
     ziel.innerHTML = "";
-    updateSidebarSichtbarkeit();
+    aufgabenKopfZaehlerLeeren();
   }
+}
+
+// Der Zähler am Kopf-Knopf hängt nicht am Fenster, sondern am geladenen Stand --
+// er muss deshalb auch dann verschwinden, wenn gar nichts gerendert wird.
+function aufgabenKopfZaehlerLeeren() {
+  const z = document.getElementById("aufgaben-kopf-zaehler");
+  if (!z) return;
+  z.textContent = "";
+  z.style.display = "none";
+  z.classList.remove("warn");
 }
 
 function renderAufgabenWidget() {
@@ -2032,12 +2038,15 @@ function renderAufgabenWidget() {
   const neuesDa = liste.some(aufgabeIstNeu);
   const wegraeumbar = liste.some((a) => (a.erledigt && !a.von) || a.zurueckgezogenAm);
 
-  // Zugeklappt starten (Michel-Vorgabe), gemerkten Zustand übernehmen -- aber eine
-  // frisch zugewiesene oder überfällige Aufgabe reißt die Karte einmal auf, sonst
-  // ist der Zähler ein Wecker hinter einer Tür.
-  const vorhandene = document.getElementById("aufgaben-details");
-  const gemerkt = vorhandene ? vorhandene.open : localStorage.getItem(AUFGABEN_OFFEN_KEY) === "1";
-  const offenAnzeigen = gemerkt || neuesDa || ueberfaellig;
+  // Der Zähler am Kopf-Knopf ist der Ersatz für die frühere Karte auf der
+  // Startseite: ohne ihn merkt man beim Seitenaufruf nicht mehr, dass etwas offen
+  // ist. Rot, sobald etwas überfällig oder neu zugewiesen ist.
+  const zaehler = document.getElementById("aufgaben-kopf-zaehler");
+  if (zaehler) {
+    zaehler.textContent = offen || "";
+    zaehler.style.display = offen ? "" : "none";
+    zaehler.classList.toggle("warn", ueberfaellig || neuesDa);
+  }
 
   const zeile = (a) => {
     const klassen = ["aufgabe-item"];
@@ -2107,12 +2116,10 @@ function renderAufgabenWidget() {
         : ""}
     </details>` : "";
 
+  // Ohne aufklappbare Karte: im Fenster ist Platz, und wer es öffnet, will die
+  // Liste sehen. Der frühere Zugeklappt-Zustand samt localStorage-Merker ist mit
+  // der Dashboard-Karte weggefallen.
   ziel.innerHTML = `
-    <details class="card aufgaben-card" id="aufgaben-details"${offenAnzeigen ? " open" : ""}>
-      <summary class="aufgaben-summary">
-        <span>✅ Meine Aufgaben</span>
-        <span class="aufgaben-zaehler${ueberfaellig ? " warn" : ""}">${offen} offen</span>
-      </summary>
       <form class="aufgaben-neu" id="aufgaben-neu-form">
         <input type="text" id="aufgabe-neu-text" maxlength="200" placeholder="Neue Aufgabe …" autocomplete="off" />
         <input type="date" id="aufgabe-neu-faellig" aria-label="Fällig bis" />
@@ -2121,18 +2128,15 @@ function renderAufgabenWidget() {
       <div class="aufgaben-liste">${
         liste.length ? liste.map(zeile).join("") : '<p class="muted" style="padding:4px 0;">Noch nichts zu tun.</p>'
       }</div>
-      <!-- Zuweisen und Dokumente sind ins Fenster "Meine Aufgaben" gewandert
-           (Kopf-Knopf) -- hier bleibt nur, was die eigene Liste betrifft. Das
-           Widget soll klein bleiben. -->
       <div class="aufgaben-aktionen">
         ${wegraeumbar ? '<button type="button" class="aufgaben-aufraeumen">Erledigte aufräumen</button>' : ""}
       </div>
       <p class="aufgaben-fehler" id="aufgaben-fehler"></p>
-      ${zugewiesenHtml}
-    </details>`;
+      ${zugewiesenHtml}`;
 
-  updateSidebarSichtbarkeit();
-  if (offenAnzeigen) markiereAufgabenGesehen();
+  // Gesehen wird nur gemeldet, wenn die Liste wirklich vor Augen steht -- das
+  // Rendern allein passiert auch bei geschlossenem Fenster (Zähler-Aktualisierung).
+  if (dokumenteFensterOffen()) markiereAufgabenGesehen();
 }
 
 function aufgabenFehler(text) {
@@ -2169,7 +2173,6 @@ function setupAufgabenWidget() {
   // Ein Handler am Container: die Karte wird bei jeder Änderung neu gebaut, ein
   // Listener an den Zeilen selbst wäre nach dem ersten Klick verwaist.
   container.addEventListener("click", async (e) => {
-    const details = document.getElementById("aufgaben-details");
     if (e.target.closest(".aufgabe-check")) return; // hat einen eigenen change-Handler
 
     const delBtn = e.target.closest(".aufgabe-del");
@@ -2215,12 +2218,6 @@ function setupAufgabenWidget() {
     if (e.target.closest(".aufgaben-zug-aufraeumen")) {
       await zuweisungEntfernen();
       return;
-    }
-    if (details && e.target.closest("summary")) {
-      // Der Toggle passiert erst nach diesem Klick -- der gemerkte Zustand ist
-      // deshalb der invertierte aktuelle.
-      localStorage.setItem(AUFGABEN_OFFEN_KEY, details.open ? "0" : "1");
-      if (!details.open) markiereAufgabenGesehen();
     }
   });
 
@@ -3076,7 +3073,11 @@ async function oeffneDokumenteFenster() {
   if (!overlay) return;
   dokumenteFehler("");
   overlay.style.display = "flex";
-  await loadDokumente();
+  // Beide Bereiche frisch holen: seit die Dashboard-Karte weg ist, ist das hier
+  // der einzige Ort, an dem die eigene Liste steht -- ein veralteter Stand aus
+  // dem Seitenaufruf wäre der Normalfall statt der Ausnahme.
+  await Promise.all([loadDokumente(), loadAufgaben()]);
+  markiereAufgabenGesehen();
 }
 
 function schliesseDokumenteFenster() {
