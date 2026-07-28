@@ -2343,20 +2343,35 @@ async function aufgabeZurueckziehen(id, empfaenger) {
 
 // ---- Aufgabe zuweisen (Dialog) ----
 
-async function oeffneAufgabeZuweisen() {
+// Zwei Vorgänge, ein Dialog: "aufgabe" verteilt eine Aufgabe, "unterschrift"
+// fordert eine Unterschrift auf einem PDF an. Bewusst getrennt (Michel-Vorgabe) --
+// sie hängen an verschiedenen Rechten und meinen verschiedene Dinge. Gemeinsam
+// bleiben nur Empfängerauswahl und Fälligkeit, deshalb dieselbe Maske.
+let zuweisenModus = "aufgabe";
+
+async function oeffneAufgabeZuweisen(modus) {
   const overlay = document.getElementById("aufgaben-zuweisen-overlay");
   if (!overlay) return;
-  document.getElementById("aufgabe-zuweisen-text").value = "";
+  zuweisenModus = modus === "unterschrift" ? "unterschrift" : "aufgabe";
+  const istDok = zuweisenModus === "unterschrift";
+
+  document.getElementById("aufgaben-zuweisen-titel").textContent =
+    istDok ? "✍️ Unterschrift anfordern" : "📋 Aufgabe zuweisen";
+  document.getElementById("aufgabe-zuweisen-text-label").textContent =
+    istDok ? "Bezeichnung des Dokuments" : "Aufgabe";
+  const textFeld = document.getElementById("aufgabe-zuweisen-text");
+  textFeld.placeholder = istDok ? "z. B. Trainervertrag 2026/27" : "z. B. Trikots zählen";
+  textFeld.value = "";
+  document.getElementById("btn-aufgabe-zuweisen-senden").textContent =
+    istDok ? "Anfordern" : "Zuweisen";
+
   document.getElementById("aufgabe-zuweisen-faellig").value = "";
   document.getElementById("aufgabe-zuweisen-suche").value = "";
   document.getElementById("aufgabe-zuweisen-error").style.display = "none";
 
   // Dokument-Teil in den Ausgangszustand: eine offene Datei aus einem früheren
-  // Aufruf darf nicht versehentlich an der nächsten Zuweisung hängen.
-  const dokBlock = document.getElementById("aufgabe-zuweisen-dok-block");
-  dokBlock.style.display = aufgabenState.canAssignDocs ? "" : "none";
-  document.getElementById("aufgabe-zuweisen-dok-an").checked = false;
-  document.getElementById("aufgabe-zuweisen-dok-felder").style.display = "none";
+  // Aufruf darf nicht versehentlich an der nächsten Anforderung hängen.
+  document.getElementById("aufgabe-zuweisen-dok-block").style.display = istDok ? "" : "none";
   document.getElementById("aufgabe-zuweisen-dok-datei").value = "";
   document.getElementById("aufgabe-zuweisen-dok-status").textContent = "";
   document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "none";
@@ -2365,7 +2380,7 @@ async function oeffneAufgabeZuweisen() {
   zuweisenPdfBytes = null;
 
   overlay.style.display = "flex";
-  document.getElementById("aufgabe-zuweisen-text").focus();
+  textFeld.focus();
 
   const listeEl = document.getElementById("aufgabe-zuweisen-empfaenger");
   listeEl.innerHTML = '<p class="muted">Namen werden geladen …</p>';
@@ -2433,10 +2448,7 @@ function setupAufgabenZuweisenDialog() {
   });
   document.getElementById("btn-aufgabe-zuweisen-senden").addEventListener("click", aufgabeZuweisenSenden);
 
-  // ---- Dokument anhängen ----
-  document.getElementById("aufgabe-zuweisen-dok-an").addEventListener("change", (e) => {
-    document.getElementById("aufgabe-zuweisen-dok-felder").style.display = e.target.checked ? "" : "none";
-  });
+  // ---- Zu unterschreibendes PDF (nur im Modus "Unterschrift anfordern") ----
   document.getElementById("aufgabe-zuweisen-dok-datei").addEventListener("change", async (e) => {
     const datei = e.target.files && e.target.files[0];
     const statusEl = document.getElementById("aufgabe-zuweisen-dok-status");
@@ -2447,7 +2459,7 @@ function setupAufgabenZuweisenDialog() {
     }
     statusEl.textContent = "Vorschau wird erzeugt …";
     try {
-      zuweisenPdfBytes = new Uint8Array(await datei.arrayBuffer());
+      zuweisenPdfBytes = await dateiAlsBytes(datei);
       vorschauZuweisen.feld = null;
       document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "";
       await vorschauLaden(vorschauZuweisen, zuweisenPdfBytes);
@@ -2480,10 +2492,12 @@ async function aufgabeZuweisenSenden() {
   const zeige = (msg) => { fehlerEl.textContent = msg; fehlerEl.style.display = "block"; };
 
   fehlerEl.style.display = "none";
-  if (!text) return zeige("Bitte eine Aufgabe eintragen.");
+  if (!text) return zeige(zuweisenModus === "unterschrift"
+    ? "Bitte eine Bezeichnung für das Dokument eintragen."
+    : "Bitte eine Aufgabe eintragen.");
   if (!empfaenger.length) return zeige("Bitte mindestens eine Person auswählen.");
 
-  const mitDokument = document.getElementById("aufgabe-zuweisen-dok-an").checked;
+  const mitDokument = zuweisenModus === "unterschrift";
   if (mitDokument && !zuweisenPdfBytes) return zeige("Bitte eine PDF-Datei auswählen.");
 
   btn.disabled = true;
@@ -2688,11 +2702,13 @@ function renderDokumente() {
     vonMirKarte.style.display = (dokumenteState.vonMir.length || dokumenteState.canAssignDocs) ? "" : "none";
   }
 
-  // Zuweisen sitzt seit dem Umzug hier im Fenster. Das Recht dafür ist ein anderes
-  // als das für Dokumente (assignGroupIds vs. dokumentGroupIds) und kommt aus dem
-  // Aufgaben-Load, der beim Seitenstart ohnehin läuft.
+  // Zwei getrennte Vorgänge, zwei getrennte Rechte: Aufgaben verteilen hängt an
+  // assignGroupIds, Unterschriften einfordern an dokumentGroupIds. Beide kommen
+  // aus dem Aufgaben-Load, der beim Seitenstart ohnehin läuft.
   const zuweisenBtn = document.getElementById("btn-fenster-zuweisen");
   if (zuweisenBtn) zuweisenBtn.style.display = aufgabenState.canAssign ? "" : "none";
+  const unterschriftBtn = document.getElementById("btn-fenster-unterschrift");
+  if (unterschriftBtn) unterschriftBtn.style.display = aufgabenState.canAssignDocs ? "" : "none";
 }
 
 // PDF-Bytes einer Datei holen. Der Worker löst die Datei-Id selbst aus dem
@@ -2909,6 +2925,21 @@ function bytesZuBase64(bytes) {
   return btoa(s);
 }
 
+// Blob.arrayBuffer() gibt es erst ab iOS 14 -- auf den älteren Geräten in der
+// Flotte schlüge das Auswählen einer PDF sonst stumm fehl. FileReader kann das
+// seit jeher.
+function dateiAlsBytes(datei) {
+  if (typeof datei.arrayBuffer === "function") {
+    return datei.arrayBuffer().then((b) => new Uint8Array(b));
+  }
+  return new Promise((resolve, reject) => {
+    const leser = new FileReader();
+    leser.onload = () => resolve(new Uint8Array(leser.result));
+    leser.onerror = () => reject(new Error("Die Datei konnte nicht gelesen werden."));
+    leser.readAsArrayBuffer(datei);
+  });
+}
+
 function neueDateiId() {
   // Der Worker verlangt echtes UUID-Format; ältere iOS-Geräte in der Flotte haben
   // kein crypto.randomUUID, deshalb der Rückfallweg.
@@ -3098,7 +3129,8 @@ function setupDokumenteTab() {
   document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
   document.getElementById("btn-dokumente-oeffnen").addEventListener("click", oeffneDokumenteFenster);
   document.getElementById("btn-dokumente-close").addEventListener("click", schliesseDokumenteFenster);
-  document.getElementById("btn-fenster-zuweisen").addEventListener("click", oeffneAufgabeZuweisen);
+  document.getElementById("btn-fenster-zuweisen").addEventListener("click", () => oeffneAufgabeZuweisen("aufgabe"));
+  document.getElementById("btn-fenster-unterschrift").addEventListener("click", () => oeffneAufgabeZuweisen("unterschrift"));
   tab.addEventListener("click", (e) => { if (e.target === tab) schliesseDokumenteFenster(); });
   document.addEventListener("keydown", (e) => {
     // Nur schließen, wenn KEIN Dialog darüber liegt -- die haben ihre eigenen
@@ -3173,7 +3205,7 @@ function setupDokumenteTab() {
     dokSigFehler("");
     if (datei.size > 10 * 1024 * 1024) return dokSigFehler("Die Datei ist größer als 10 MB.");
     try {
-      dokSigOriginalBytes = new Uint8Array(await datei.arrayBuffer());
+      dokSigOriginalBytes = await dateiAlsBytes(datei);
       vorschauSignieren.feld = null;
       await vorschauLaden(vorschauSignieren, dokSigOriginalBytes);
       dokSigStatusZeigen();

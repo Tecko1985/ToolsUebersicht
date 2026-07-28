@@ -622,11 +622,12 @@
 <div class="code-overlay" id="aufgaben-zuweisen-overlay" style="display:none;">
   <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="aufgaben-zuweisen-titel">
     <div class="code-dialog-head">
+      <!-- Beschriftungen wechseln mit dem Modus (oeffneAufgabeZuweisen). -->
       <h2 id="aufgaben-zuweisen-titel">📋 Aufgabe zuweisen</h2>
       <button type="button" class="code-dialog-close" id="btn-aufgaben-zuweisen-close" title="Schließen" aria-label="Schließen">✕</button>
     </div>
     <div class="form-field">
-      <label for="aufgabe-zuweisen-text">Aufgabe</label>
+      <label for="aufgabe-zuweisen-text" id="aufgabe-zuweisen-text-label">Aufgabe</label>
       <input type="text" id="aufgabe-zuweisen-text" maxlength="200" placeholder="z. B. Trikots zählen" autocomplete="off" />
     </div>
     <div class="form-field" style="margin-top:10px;">
@@ -639,15 +640,13 @@
     </div>
     <div id="aufgabe-zuweisen-empfaenger" class="aufgaben-empfaenger-liste"></div>
 
-    <!-- Nur für Gruppen aus aufgaben.dokumentGroupIds -- eine eigene, engere Stufe
-         als das Zuweisen selbst: eine Unterschrift einzufordern ist etwas anderes,
-         als jemandem eine Aufgabe in die Liste zu legen. -->
+    <!-- Nur im Modus "Unterschrift anfordern" sichtbar. Das Recht dafür ist eine
+         eigene, engere Stufe (aufgaben.dokumentGroupIds): eine Unterschrift
+         einzufordern ist etwas anderes, als jemandem eine Aufgabe in die Liste
+         zu legen. Deshalb auch zwei getrennte Knöpfe statt eines Häkchens. -->
     <div id="aufgabe-zuweisen-dok-block" style="display:none; margin-top:14px; border-top:1px solid var(--border, #e3e6ec); padding-top:12px;">
-      <label class="check-inline">
-        <input type="checkbox" id="aufgabe-zuweisen-dok-an" />
-        <span>Dokument zum Unterschreiben anhängen (PDF)</span>
-      </label>
-      <div id="aufgabe-zuweisen-dok-felder" style="display:none; margin-top:10px;">
+      <div id="aufgabe-zuweisen-dok-felder" style="margin-top:10px;">
+        <label class="form-label" for="aufgabe-zuweisen-dok-datei">Zu unterschreibendes PDF</label>
         <input type="file" id="aufgabe-zuweisen-dok-datei" accept="application/pdf,.pdf" />
         <p class="muted" id="aufgabe-zuweisen-dok-status" style="margin-top:8px;"></p>
         <div id="aufgabe-zuweisen-dok-vorschau" class="dok-vorschau" style="display:none;">
@@ -685,12 +684,18 @@
       <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
     </div>
     <p class="muted">Aufgaben zuweisen, Dokumente unterschreiben — und sehen, was zurückgekommen ist.</p>
+    <!-- Drei getrennte Vorgänge, drei Knöpfe (Michel-Vorgabe): eine Aufgabe
+         verteilen, eine Unterschrift einfordern und selbst unterschreiben sind
+         verschiedene Dinge — und hängen an verschiedenen Rechten
+         (assignGroupIds bzw. dokumentGroupIds). -->
     <div class="btn-row" style="margin-top:10px;">
-      <!-- Nur für Gruppen aus aufgaben.assignGroupIds (renderDokumente). -->
       <button type="button" class="btn small" id="btn-fenster-zuweisen" style="display:none;">
         <span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen
       </button>
-      <button type="button" class="btn small" id="btn-dokument-selbst">Selbst unterschreiben</button>
+      <button type="button" class="btn small" id="btn-fenster-unterschrift" style="display:none;">
+        <span class="chip-icon" aria-hidden="true">✍</span>Unterschrift anfordern
+      </button>
+      <button type="button" class="btn small secondary" id="btn-dokument-selbst">Selbst unterschreiben</button>
       <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
     </div>
     <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
@@ -770,7 +775,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.28"></script>
-<script src="app.js?v=1.27"></script>
+<script src="config.js?v=1.29"></script>
+<script src="app.js?v=1.28"></script>
 </body>
 </html>
