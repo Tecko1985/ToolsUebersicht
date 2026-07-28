@@ -280,16 +280,6 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["desktop"]
-  },
-  {
-    id: "api-dashboard",
-    name: "API & Guthaben",
-    description: "Guthaben und Verbrauch der externen Dienste, an denen die Vereins-Tools hängen: verbleibende Brevo-Credits, Kosten bei Anthropic, Worker-Anfragen bei Cloudflare und die Speicherbelegung in der Nextcloud — dazu pro Tag, wie viele E-Mails wirklich zugestellt wurden und wie viele nicht.",
-    url: "https://tecko1985.github.io/api-dashboard/",
-    icon: "🔑",
-    category: "Verein",
-    version: "1.0",
-    devices: ["mobile", "desktop"]
   }
 ];
 
@@ -302,7 +292,7 @@ const TOOLS = [
 const KRITISCHE_TOOLS = [
   "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
   "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
-  "personalakte", "dokumentenvorlagen", "api-dashboard"
+  "personalakte", "dokumentenvorlagen"
 ];
 
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
