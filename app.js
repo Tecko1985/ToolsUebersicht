@@ -1540,8 +1540,40 @@ function calendarTerminVisibleFor(t, user) {
   return false;
 }
 
-function calendarSortKey(t) {
-  return `${t.datum}T${(t.ganztags ? "" : t.startZeit) || "00:00"}`;
+// Ein Termin ergibt normalerweise genau eine Widget-Zeile. Bei einer aktiven
+// Umfrage (Vereinskalender 1.6: t.umfrage.termine = mehrere Terminvorschläge)
+// bekommt JEDER noch nicht vergangene Vorschlag eine eigene Zeile -- vorher
+// stand hier nur t.datum, das beim Speichern automatisch auf den FRÜHESTEN
+// Vorschlag gesetzt wird, sodass alle weiteren Möglichkeiten im Dashboard
+// komplett fehlten. Bleibt kein gültiger künftiger Vorschlag übrig (leere oder
+// fehlerhafte Liste), fällt die Funktion auf die eine t.datum-Zeile zurück --
+// damit ist sie nie schlechter als der Stand vor der Erweiterung.
+function calendarWidgetRows(t, today) {
+  const rows = [];
+  const u = t.umfrage;
+  if (u && u.aktiv && Array.isArray(u.termine)) {
+    const gesehen = [];
+    for (let i = 0; i < u.termine.length; i++) {
+      const d = u.termine[i] && u.termine[i].datum;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d || "") || d < today) continue;
+      const zeit = u.termine[i].startZeit || "";
+      const key = d + "|" + zeit;
+      if (gesehen.indexOf(key) !== -1) continue;
+      gesehen.push(key);
+      rows.push({ termin: t, datum: d, zeit: zeit });
+    }
+  }
+  return rows.length ? rows : [{ termin: t, datum: t.datum, zeit: "" }];
+}
+
+// Sortiert nach dem Datum DER ZEILE. Die Uhrzeit kommt bei Umfrage-Vorschlägen
+// aus dem Vorschlag selbst (Vereinskalender 1.2: startZeit je Terminvorschlag) --
+// der Termin darüber ist bei Umfragen immer ganztags, seine startZeit wäre also
+// nutzlos. Zwei Vorschläge am selben Tag zu verschiedenen Zeiten stehen dadurch
+// in der richtigen Reihenfolge.
+function calendarSortKey(row) {
+  const t = row.termin;
+  return `${row.datum}T${row.zeit || (t.ganztags ? "" : t.startZeit) || "00:00"}`;
 }
 
 function formatCalendarDate(iso) {
@@ -1643,12 +1675,18 @@ async function loadSidebarWidget() {
           const termine = Array.isArray(data.termine) ? data.termine : [];
           kategorien = Array.isArray(data.kategorien) ? data.kategorien : [];
           const today = new Date().toISOString().slice(0, 10);
-          const upcoming = termine
+          // Ab hier wird in ZEILEN gerechnet, nicht mehr in Terminen: ein Termin
+          // mit aktiver Umfrage liefert eine Zeile je künftigem Terminvorschlag
+          // (siehe calendarWidgetRows). CALENDAR_WIDGET_COUNT begrenzt daher die
+          // Zeilen, nicht die Termine.
+          const upcoming = [];
+          termine
             .filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.datum || "") && calendarTerminEndIso(t) >= today)
             .filter((t) => calendarTerminVisibleFor(t, currentUser))
-            .sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
-          oeffentlich = upcoming.filter((t) => !t.privat).slice(0, CALENDAR_WIDGET_COUNT);
-          privat = upcoming.filter((t) => t.privat).slice(0, CALENDAR_WIDGET_COUNT);
+            .forEach((t) => { calendarWidgetRows(t, today).forEach((row) => upcoming.push(row)); });
+          upcoming.sort((a, b) => calendarSortKey(a).localeCompare(calendarSortKey(b)));
+          oeffentlich = upcoming.filter((row) => !row.termin.privat).slice(0, CALENDAR_WIDGET_COUNT);
+          privat = upcoming.filter((row) => row.termin.privat).slice(0, CALENDAR_WIDGET_COUNT);
           geburtstage = namen;
         })
         .catch((e) => { console.warn("Vereinskalender-Widget nicht ladbar:", e); calendarFailed = true; })
@@ -1694,11 +1732,14 @@ function renderSidebarWidget(widget, opts) {
     const k = kategorien.find((k2) => k2.id === id);
     return k ? k.farbe : "#6b7280";
   };
-  const rowHtml = (t) => `
+  // row = { termin, datum } (siehe calendarWidgetRows) -- das Datum kommt aus der
+  // Zeile, nicht aus dem Termin, damit jeder Umfrage-Vorschlag sein eigenes Datum
+  // zeigt statt dreimal dem frühesten.
+  const rowHtml = (row) => `
         <a class="calendar-widget-item" href="${escapeHtml(url)}">
-          <span class="cw-date">${escapeHtml(formatCalendarDate(t.datum))}</span>
-          <span class="cw-dot" style="background:${escapeHtml(katFarbe(t.kategorie))}"></span>
-          <span class="cw-title">${escapeHtml(t.titel || "")}</span>
+          <span class="cw-date">${escapeHtml(formatCalendarDate(row.datum))}</span>
+          <span class="cw-dot" style="background:${escapeHtml(katFarbe(row.termin.kategorie))}"></span>
+          <span class="cw-title">${escapeHtml(row.termin.titel || "")}</span>
         </a>
       `;
   // Geburtstage (immer nur die von HEUTE, siehe list-birthdays-today) stehen

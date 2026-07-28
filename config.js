@@ -323,6 +323,18 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Dashboard: Nächste Termine",
+        items: [
+          "Bei einem Termin mit mehreren Terminmöglichkeiten (Umfrage aus dem Vereinskalender) zeigt das Widget jetzt jede Möglichkeit als eigene Zeile — bisher erschien nur die früheste, alle weiteren fehlten.",
+          "Bereits vergangene Möglichkeiten einer noch laufenden Umfrage werden dabei ausgeblendet; die Zeilen stehen chronologisch zwischen den übrigen Terminen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {
