@@ -2121,12 +2121,11 @@ function renderAufgabenWidget() {
       <div class="aufgaben-liste">${
         liste.length ? liste.map(zeile).join("") : '<p class="muted" style="padding:4px 0;">Noch nichts zu tun.</p>'
       }</div>
+      <!-- Zuweisen und Dokumente sind ins Fenster "Meine Aufgaben" gewandert
+           (Kopf-Knopf) -- hier bleibt nur, was die eigene Liste betrifft. Das
+           Widget soll klein bleiben. -->
       <div class="aufgaben-aktionen">
         ${wegraeumbar ? '<button type="button" class="aufgaben-aufraeumen">Erledigte aufräumen</button>' : ""}
-        ${aufgabenState.canAssign
-          ? '<button type="button" class="aufgaben-zuweisen-oeffnen"><span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen</button>'
-          : ""}
-        <button type="button" class="aufgaben-dokumente-oeffnen"><span class="chip-icon" aria-hidden="true">📄</span>Dokumente</button>
       </div>
       <p class="aufgaben-fehler" id="aufgaben-fehler"></p>
       ${zugewiesenHtml}
@@ -2183,15 +2182,7 @@ function setupAufgabenWidget() {
       await aufgabenAufraeumen();
       return;
     }
-    if (e.target.closest(".aufgaben-zuweisen-oeffnen")) {
-      oeffneAufgabeZuweisen();
-      return;
-    }
-    if (e.target.closest(".aufgaben-dokumente-oeffnen")) {
-      await oeffneDokumenteFenster();
-      return;
-    }
-    // Eine Unterschriftsaufgabe führt ins Dokumente-Fenster -- unterschrieben wird
+    // Eine Unterschriftsaufgabe führt ins Aufgaben-Fenster -- unterschrieben wird
     // nicht im Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
     const dokLink = e.target.closest(".aufgabe-dok-link");
     if (dokLink) {
@@ -2432,7 +2423,13 @@ function setupAufgabenZuweisenDialog() {
   document.getElementById("btn-aufgabe-zuweisen-abbrechen").addEventListener("click", schliesseAufgabeZuweisen);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) schliesseAufgabeZuweisen(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && overlay.style.display === "flex") schliesseAufgabeZuweisen();
+    if (e.key === "Escape" && overlay.style.display === "flex") {
+      // Markieren, damit das darunterliegende Aufgaben-Fenster nicht im selben
+      // Tastendruck mitschließt -- es prüft sonst einen bereits zugeklappten
+      // Dialog und hielte sich für die oberste Ebene.
+      e.escapeVerbraucht = true;
+      schliesseAufgabeZuweisen();
+    }
   });
   document.getElementById("aufgabe-zuweisen-suche").addEventListener("input", (e) => {
     renderAufgabenEmpfaenger(e.target.value);
@@ -2693,6 +2690,12 @@ function renderDokumente() {
   if (vonMirKarte) {
     vonMirKarte.style.display = (dokumenteState.vonMir.length || dokumenteState.canAssignDocs) ? "" : "none";
   }
+
+  // Zuweisen sitzt seit dem Umzug hier im Fenster. Das Recht dafür ist ein anderes
+  // als das für Dokumente (assignGroupIds vs. dokumentGroupIds) und kommt aus dem
+  // Aufgaben-Load, der beim Seitenstart ohnehin läuft.
+  const zuweisenBtn = document.getElementById("btn-fenster-zuweisen");
+  if (zuweisenBtn) zuweisenBtn.style.display = aufgabenState.canAssign ? "" : "none";
 }
 
 // PDF-Bytes einer Datei holen. Der Worker löst die Datei-Id selbst aus dem
@@ -3094,14 +3097,21 @@ function setupDokumenteTab() {
   document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
   document.getElementById("btn-dokumente-oeffnen").addEventListener("click", oeffneDokumenteFenster);
   document.getElementById("btn-dokumente-close").addEventListener("click", schliesseDokumenteFenster);
+  document.getElementById("btn-fenster-zuweisen").addEventListener("click", oeffneAufgabeZuweisen);
   tab.addEventListener("click", (e) => { if (e.target === tab) schliesseDokumenteFenster(); });
   document.addEventListener("keydown", (e) => {
-    // Nur schließen, wenn der Signier-Dialog NICHT offen ist -- der liegt darüber
-    // und hat seinen eigenen Escape-Handler; sonst gingen beide auf einmal zu.
-    if (e.key === "Escape" && dokumenteFensterOffen() &&
-        document.getElementById("dokument-signieren-overlay").style.display !== "flex") {
-      schliesseDokumenteFenster();
-    }
+    // Nur schließen, wenn KEIN Dialog darüber liegt -- die haben ihre eigenen
+    // Escape-Handler; sonst gingen zwei Ebenen auf einen Druck zu.
+    //
+    // ZWEI Prüfungen, weil beide Reihenfolgen vorkommen: der Zuweisen-Dialog
+    // hängt seinen Handler FRÜHER an document als dieser hier, hat beim Eintreffen
+    // also schon geschlossen -- da hilft nur die Markierung am Event. Der
+    // Signier-Dialog hängt seinen SPÄTER an, ist hier also noch offen -- da greift
+    // die Sichtprüfung. Eine allein liesse jeweils die andere Reihenfolge durch.
+    if (e.key !== "Escape" || !dokumenteFensterOffen() || e.escapeVerbraucht) return;
+    const darueber = ["dokument-signieren-overlay", "aufgaben-zuweisen-overlay"]
+      .some((id) => { const el = document.getElementById(id); return el && el.style.display === "flex"; });
+    if (!darueber) schliesseDokumenteFenster();
   });
 
   tab.addEventListener("click", async (e) => {
@@ -3176,7 +3186,10 @@ function setupDokumenteTab() {
   const overlay = document.getElementById("dokument-signieren-overlay");
   overlay.addEventListener("click", (e) => { if (e.target === overlay) schliesseDokSigOverlay(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && overlay.style.display === "flex") schliesseDokSigOverlay();
+    if (e.key === "Escape" && overlay.style.display === "flex") {
+      e.escapeVerbraucht = true; // siehe Kommentar am Fenster-Handler
+      schliesseDokSigOverlay();
+    }
   });
 }
 

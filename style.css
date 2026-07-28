@@ -112,6 +112,10 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   margin-right: auto;
   margin-left: 10px;
   min-width: 0;
+  /* Am Handy passen "Materialcontainercode" und "Meine Aufgaben" nicht mehr
+     nebeneinander -- ohne Umbruch schiebt der zweite Knopf die ganze Seite
+     seitlich raus (gemessen: 387 px bei 375 px Fenster). */
+  flex-wrap: wrap;
 }
 .header-code-btn {
   align-items: center;
@@ -141,6 +145,12 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   padding: 20px;
   z-index: 1000;
 }
+/* Zwei Dialoge koennen ueber dem Aufgaben-Fenster aufgehen: Zuweisen und
+   Unterschreiben. Bei gleichem z-index entscheidet die DOM-Reihenfolge -- und
+   #aufgaben-zuweisen-overlay steht im Markup VOR dem Fenster, waere also
+   dahinter verschwunden. Deshalb hier ausdruecklich hoeher. */
+#aufgaben-zuweisen-overlay,
+#dokument-signieren-overlay { z-index: 1010; }
 .code-dialog {
   background: var(--white);
   border-radius: 12px;
@@ -562,15 +572,16 @@ main { flex: 1; min-width: 0; }
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .aufgaben-aktionen button:hover { background: var(--gray); }
-.aufgaben-aktionen .aufgaben-zuweisen-oeffnen { color: var(--blue); border-color: #bfd4ee; }
-.aufgaben-zuweisen-oeffnen:hover { background: var(--blue-light); border-color: var(--blue); }
 /* Das Plus sitzt in einem eigenen Kreis, damit der Knopf auch ohne Farbe als
-   "hier kommt etwas Neues dazu" lesbar bleibt. */
-.aufgaben-zuweisen-oeffnen .chip-icon {
+   "hier kommt etwas Neues dazu" lesbar bleibt. Seit dem Umzug des Zuweisen-Knopfs
+   ins Aufgaben-Fenster sitzt er auf blauem Grund -- dort muss der Kreis hell sein,
+   ein blauer Kreis auf blauem Knopf waere unsichtbar. */
+.chip-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%;
+  width: 16px; height: 16px; border-radius: 50%; margin-right: 4px;
   background: var(--blue); color: #fff; font-size: 11px; line-height: 1; font-weight: 700;
 }
+.btn .chip-icon { background: rgba(255, 255, 255, 0.9); color: var(--blue); }
 .aufgaben-fehler { color: #b91c1c; font-size: 12px; margin-top: 8px; }
 .aufgaben-fehler:empty { display: none; }
 
@@ -681,6 +692,9 @@ main { flex: 1; min-width: 0; }
 
 @media (max-width: 860px) {
   .page-body { flex-direction: column; }
+  /* Kompakter, damit die beiden Kopf-Knoepfe moeglichst lange in eine Zeile
+     passen; reicht der Platz trotzdem nicht, bricht .header-btns um. */
+  .header-code-btn { padding: 6px 10px; font-size: 12px; }
   /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen
      Neuigkeiten und Kacheln. Den seitlichen Rand liefert dort schon <main>, hier
      bleibt nur der Abstand nach unten — derselbe wie unter dem Neuigkeiten-Banner. */

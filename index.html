@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.19" />
+<link rel="stylesheet" href="style.css?v=1.20" />
 </head>
 <body>
 
@@ -18,7 +18,7 @@
        Auto-Margin landete die Gruppe mittig unter ihm. -->
   <div class="header-btns">
     <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
-    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Dokumente zum Unterschreiben">📄 Dokumente</button>
+    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Aufgaben zuweisen und Dokumente unterschreiben">✅ Meine Aufgaben</button>
   </div>
   <button type="button" class="header-admin-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
   <div class="header-right">
@@ -680,11 +680,15 @@
 <div class="code-overlay" id="dokumente-overlay" style="display:none;">
   <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="dokumente-titel">
     <div class="code-dialog-head">
-      <h2 id="dokumente-titel">📄 Dokumente</h2>
+      <h2 id="dokumente-titel">✅ Meine Aufgaben</h2>
       <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
     </div>
-    <p class="muted">Dokumente, die du unterschreiben sollst — und die, die du selbst verschickt hast.</p>
+    <p class="muted">Aufgaben zuweisen, Dokumente unterschreiben — und sehen, was zurückgekommen ist.</p>
     <div class="btn-row" style="margin-top:10px;">
+      <!-- Nur für Gruppen aus aufgaben.assignGroupIds (renderDokumente). -->
+      <button type="button" class="btn small" id="btn-fenster-zuweisen" style="display:none;">
+        <span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen
+      </button>
       <button type="button" class="btn small" id="btn-dokument-selbst">Selbst unterschreiben</button>
       <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
     </div>
@@ -759,7 +763,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.26"></script>
-<script src="app.js?v=1.25"></script>
+<script src="config.js?v=1.27"></script>
+<script src="app.js?v=1.26"></script>
 </body>
 </html>
