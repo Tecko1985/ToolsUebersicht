@@ -8,10 +8,12 @@ Jede Tool-Karte zeigt Version und geeignetes Endgerät (📱/💻) des verlinkte
 - `app.js` — rendert die Kartenübersicht, das Login und den Admin-Tab.
 - `admin-worker.js` — Cloudflare Worker: Login/Sessions, Sichtbarkeits-Konfiguration und das WebDAV-Login-Gateway für andere Apps (siehe unten), beides in Nextcloud gespeichert. Wird **nicht** über GitHub Pages ausgeliefert, sondern separat bei Cloudflare deployed (Anleitung im Datei-Kopf).
 
-## Dashboard: Neuigkeiten & Termine
+## Dashboard: Neuigkeiten, Termine & Aufgaben
 
-- **Neuigkeiten** über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. "2 / 5"), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten im Einstellungen-Tab (Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Verknüpfung zu einem Tool) — zentral in Nextcloud gespeichert und sofort für alle sichtbar, kein Code-Update nötig.
+- **Neuigkeiten** über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. "2 / 5"). **Nur für Angemeldete** (seit 2026-07-25): der öffentliche GET liefert ohne gültigen Token `news: null`, statt einen Fehler zu werfen. Darunter eine Emoji-Reaktionsleiste (eine Reaktion pro Person und Meldung). Admins pflegen Neuigkeiten im Einstellungen-Tab (Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Verknüpfung zu einem Tool) — zentral in Nextcloud gespeichert und sofort für alle sichtbar, kein Code-Update nötig.
 - **Nächste Termine** — Widget mit bis zu 8 anstehenden Vereinsterminen aus dem Vereinskalender. Private Termine erscheinen in einem eigenen Bereich darunter und nur für den jeweiligen Ersteller bzw. die damit geteilten Personen/Gruppen.
+- **Meine Aufgaben** (seit 2026-07-28) — persönliche Aufgabenliste unter den Terminen, für jedes Mitarbeiterkonto automatisch; Spielerkonten bekommen sie serverseitig nicht. Text + optionales Fälligkeitsdatum, überfällige oben und rot. Die Karte startet zugeklappt und zeigt nur die Zahl der offenen Aufgaben — außer es ist etwas überfällig oder neu zugewiesen, dann klappt sie einmal von allein auf. Erledigte bleiben durchgestrichen stehen, bis sie weggeräumt werden.
+  **Zuweisen an andere** hängt an den Gruppen in `aufgaben.assignGroupIds` (Einstellungen → Aufgaben); eine **leere Liste heißt hier NIEMAND**, nicht "alle eingeloggten" — Zuweisen schreibt in fremde Listen, deshalb fällt der unkonfigurierte Zustand in die geschlossene Richtung. Jeder Empfänger bekommt eine eigene Kopie, kann abhaken, aber weder löschen noch umschreiben; zurückziehen kann nur der Zuweiser (der Eintrag bleibt dann als durchgestrichener Hinweis stehen). Der Rückkanal "Von mir zugewiesen" liefert streng nur die selbst erzeugten Einträge, nie die übrige Liste des Empfängers. Ablage in eigener Nextcloud-Datei `aufgaben.json`; Details in `CLAUDE.md`.
 
 ## Login & Nutzerverwaltung
 
