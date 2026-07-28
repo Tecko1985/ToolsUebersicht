@@ -323,6 +323,17 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.4",
+    groups: [
+      {
+        title: "Bedienung am Handy",
+        items: [
+          "Am Handy stehen die Neuigkeiten jetzt über den Terminen. Vorher schob sich die Terminliste beim Umbruch auf eine Spalte über die Meldungen, sodass beim Öffnen der Seite zuerst der Kalender im Bild war."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.3",
     groups: [
       {

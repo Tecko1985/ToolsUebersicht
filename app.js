@@ -1613,6 +1613,41 @@ function isUebersichtTabActive() {
   return !!(section && section.classList.contains("active"));
 }
 
+// Am Handy stapelt sich .page-body zu einer Spalte — das Widget stünde dort als
+// erstes Kind ÜBER den Neuigkeiten. Gewollt ist Neuigkeiten → Termine → Kacheln.
+// Per CSS allein geht das nicht: das Neuigkeiten-Banner steckt in <main>, das
+// Widget daneben, und `order` greift nur unter Geschwistern. Deshalb wandert das
+// Widget unterhalb der Umbruchbreite in den Übersicht-Tab zwischen Banner und
+// Kacheln und oberhalb zurück an seinen Platz links neben <main>. Der Umzug ist
+// gefahrlos: alle Zugriffe laufen über getElementById, und der Klick-Handler für
+// die Umfrage-Knöpfe hängt am Element selbst, überlebt also das Verschieben.
+const SIDEBAR_MOBILE_BREAKPOINT = "(max-width: 860px)";
+
+function placeSidebarWidget() {
+  const widget = document.getElementById("calendar-widget");
+  const pageBody = document.querySelector(".page-body");
+  const mainEl = pageBody ? pageBody.querySelector("main") : null;
+  const toolGroups = document.getElementById("tool-groups");
+  if (!widget || !pageBody || !mainEl || !toolGroups) return;
+  const mobil = window.matchMedia(SIDEBAR_MOBILE_BREAKPOINT).matches;
+  const ziel = mobil ? toolGroups.parentNode : pageBody;
+  const davor = mobil ? toolGroups : mainEl;
+  // Nur umhängen, wenn es nicht ohnehin schon richtig steht — ein insertBefore auf
+  // die eigene Position nimmt das Element aus dem DOM und fügt es neu ein.
+  if (widget.parentNode === ziel && widget.nextElementSibling === davor) return;
+  ziel.insertBefore(widget, davor);
+}
+
+function setupSidebarWidgetPlacement() {
+  placeSidebarWidget();
+  // Bewusst am resize-Event statt am change-Event der MediaQueryList: letzteres
+  // gibt es als addEventListener erst ab iOS 14, und im Test ist es beim
+  // Umschalten der Fenstergröße nicht zuverlässig gefeuert. placeSidebarWidget()
+  // steigt früh aus, wenn das Widget schon richtig steht — häufige resize-Events
+  // (Ausklappen der Adressleiste am Handy, Drehen) kosten deshalb nichts.
+  window.addEventListener("resize", placeSidebarWidget);
+}
+
 // Liefert die Namen aller Trainer, die laut Trainerdaten HEUTE Geburtstag haben
 // (list-birthdays-today, siehe admin-worker.js) -- kein Geburtsjahr, keine
 // anderen Felder. Scheitert die Abfrage, wird das Widget dadurch NICHT
@@ -3558,6 +3593,7 @@ async function init() {
   document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
   setupTabs();
+  setupSidebarWidgetPlacement();
   setupAuthForms();
   setupWhatsappLink();
   setupWikiFrage();

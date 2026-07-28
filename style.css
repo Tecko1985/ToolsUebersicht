@@ -487,7 +487,10 @@ main { flex: 1; min-width: 0; }
 
 @media (max-width: 860px) {
   .page-body { flex-direction: column; }
-  .calendar-widget { flex-basis: auto; width: 100%; padding: 24px 16px 0; }
+  /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen
+     Neuigkeiten und Kacheln. Den seitlichen Rand liefert dort schon <main>, hier
+     bleibt nur der Abstand nach unten — derselbe wie unter dem Neuigkeiten-Banner. */
+  .calendar-widget { flex-basis: auto; width: 100%; padding: 0; margin-bottom: 26px; }
 }
 
 /* ---------- Kategorie-Gruppen ---------- */
