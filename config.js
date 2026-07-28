@@ -21,6 +21,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    id: "vereinsaufgaben",
+    name: "Vereinsaufgaben",
+    description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
+    url: "https://tecko1985.github.io/Vereinsaufgaben/",
+    icon: "🗂️",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "trainercheckliste",
     name: "TrainerCheckliste",
     description: "Digitale Checkliste für Trainerzu- und -abgang im Nachwuchsbereich.",
@@ -312,6 +322,20 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Aufgaben für andere ziehen um",
+        items: [
+          "Es gibt ein neues Werkzeug „Vereinsaufgaben“: dort werden Aufgaben vergeben, die jemand anderem aufgetragen werden — mit verbindlicher Frist, Zuständigkeit über Ressorts und einer Historie, die dauerhaft bestehen bleibt.",
+          "„Aufgabe zuweisen“ ist deshalb aus dem Fenster „Meine Aufgaben“ verschwunden. Die Liste hier ist ab jetzt ausschließlich das, was du dir selbst notierst — so ist immer klar, wo eine Aufgabe zu suchen ist.",
+          "Unterschriften anfordern bleibt unverändert an dieser Stelle: das ist ein eigenes Recht und von der Trennung nicht betroffen.",
+          "Bereits zugewiesene Aufgaben aus der bisherigen Liste bleiben sichtbar und lassen sich weiterhin abhaken und zurückziehen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.6",
     groups: [

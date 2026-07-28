@@ -692,12 +692,22 @@
 
     <!-- ===== Teil 1: Aufgaben ===== -->
     <!-- Jeder Knopf steht bei dem Teil, zu dem er gehört (Michel-Vorgabe): oben
-         nur die eigene Liste und das Zuweisen, unten alles rund um Unterschriften. -->
-    <div class="btn-row" style="margin-top:12px;">
-      <button type="button" class="btn small" id="btn-fenster-zuweisen" style="display:none;">
-        <span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen
-      </button>
-    </div>
+         nur die eigene Liste, unten alles rund um Unterschriften.
+
+         Der Knopf "Aufgabe zuweisen" ist am 2026-07-28 ERSATZLOS entfernt worden
+         (Michel-Entscheidung): diese Liste ist ab jetzt ausschließlich das, was
+         man sich SELBST notiert. Was einem anderen aufgetragen wird, gehört in
+         die eigene App "Vereinsaufgaben" — mit Ressorts, Fristenkontrolle und
+         dauerhafter Historie. Zwei Orte, an denen eine Zuweisung entstehen kann,
+         wären genau die Doppelung, die vermieden werden soll.
+
+         Der Unterschriften-Weg bleibt hier: er hängt an dokumentGroupIds, nicht
+         an assignGroupIds, und ist von dieser Trennung nicht betroffen. -->
+    <p class="muted" style="margin-top:12px;">
+      Aufgaben für andere werden in den
+      <a href="https://tecko1985.github.io/Vereinsaufgaben/">Vereinsaufgaben</a> vergeben.
+      Hier steht nur, was du dir selbst notierst.
+    </p>
 
     <!-- Die persönliche Liste. Stand bis 2026-07-28 als Karte unten links im
          Dashboard und ist mit ihr hierher gezogen -- ohne sie gäbe es keinen Ort
@@ -784,7 +794,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.30"></script>
-<script src="app.js?v=1.29"></script>
+<script src="config.js?v=1.31"></script>
+<script src="app.js?v=1.30"></script>
 </body>
 </html>

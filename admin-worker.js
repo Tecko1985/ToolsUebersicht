@@ -406,6 +406,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8787", // Abwesenheitskalender (Dev-Server)
   "http://localhost:8788", // Besprechung (Dev-Server)
   "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
+  "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -600,6 +601,39 @@ const DOKUMENT_MAX_ABLEHNGRUND = 500;
 // Deckel für die gemeinsame Datei. Anders als bei den Aufgaben zählt hier nicht pro
 // Nutzer, sondern insgesamt: ein Dokument gehört zwei Leuten.
 const DOKUMENTE_MAX_GESAMT = 2000;
+
+// ---------- Vereinsaufgaben (eigene App) ----------
+//
+// Aufgaben, die Funktionären aufgetragen werden — mit Ressorts als dauerhafte
+// Zuständigkeiten. BEWUSST getrennt von den persönlichen Aufgaben oben: dort steht,
+// was jemand sich selbst notiert, hier ausschließlich, was einer einem anderen
+// aufträgt. Deshalb auch eine eigene Datei und ein eigener Rechte-Rahmen.
+//
+// "vereinsaufgaben" steht mit Absicht NICHT in DAV_APPS. Es gibt damit keinen
+// generischen dav-load/dav-save-Weg auf diese Datei — jeder Zugriff läuft über die
+// Aktionen unten, die Rolle, Beteiligung und Statusübergang selbst prüfen. Ein
+// generisches dav-save wäre die offene Hintertür an allen drei Regeln vorbei:
+// vertrauliche Texte, "Empfänger darf nur abhaken" und das Protokoll.
+const VEREINSAUFGABEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinsaufgaben/vereinsaufgaben.json";
+
+// Anhänge liegen in einem eigenen Unterordner, den dav-file-get nicht erreicht
+// (davFileDir() zeigt fest auf "dateien", und ohne DAV_APPS-Eintrag gibt es keine
+// App-Id, über die man den Ordner adressieren könnte). Gleiches Prinzip wie
+// UNTERSCHRIFTEN_DIR: eine vertrauliche Aufgabe wäre wertlos, wenn ihr Anhang
+// über eine geratene Datei-Id abrufbar bliebe.
+const VA_ANHANG_DIR = VEREINSAUFGABEN_URL.slice(0, VEREINSAUFGABEN_URL.lastIndexOf("/")) + "/anhaenge";
+
+const VA_MAX_AUFGABEN = 5000;      // Deckel für die gemeinsame Datei
+const VA_MAX_TITEL = 200;
+const VA_MAX_BESCHREIBUNG = 4000;
+const VA_MAX_GRUND = 1000;
+const VA_MAX_KOMMENTAR = 1000;
+const VA_MAX_KOMMENTARE = 100;     // je Aufgabe
+const VA_MAX_ANHAENGE = 10;        // je Aufgabe
+const VA_MAX_EMPFAENGER = 30;      // je Zuweisungsvorgang
+const VA_MAX_ANHANG_BYTES = 8 * 1024 * 1024;
+const VA_MAX_PROTOKOLL = 2000;
+const VA_PRIORITAETEN = ["hoch", "normal", "niedrig"];
 
 // Apps mit serverseitig abgeschottetem Datei-Bereich: Dateien in diesem Unterordner
 // (statt "dateien") liefert/löscht das Gateway NUR für den Eigentümer, Admins und
@@ -889,6 +923,36 @@ export default {
         return handleDokumentAblehnen(request, body, env, authHeader, corsHeaders);
       case "dokument-loeschen":
         return handleDokumentLoeschen(request, body, env, authHeader, corsHeaders);
+      // Vereinsaufgaben (eigene App, Port 8809) -- bewusst eigene Aktionen statt
+      // dav-load/dav-save: die Regeln dieser App (Empfaenger darf nur abhaken,
+      // vertrauliche Texte verlassen den Worker nicht, Protokoll ist nicht
+      // faelschbar) brauchen einen Server, der die Aenderung selbst ausfuehrt.
+      case "vereinsaufgaben-load":
+        return handleVaLoad(request, env, authHeader, corsHeaders);
+      case "vereinsaufgaben-ressort-speichern":
+        return handleVaRessortSpeichern(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgaben-ressort-loeschen":
+        return handleVaRessortLoeschen(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-anlegen":
+        return handleVaAnlegen(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-aendern":
+        return handleVaAendern(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-status":
+        return handleVaStatus(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-zurueckziehen":
+        return handleVaZurueckziehen(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-loeschen":
+        return handleVaLoeschen(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-kommentar":
+        return handleVaKommentar(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-datei-put":
+        return handleVaDateiPut(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-datei-get":
+        return handleVaDateiGet(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgabe-datei-loeschen":
+        return handleVaDateiLoeschen(request, body, env, authHeader, corsHeaders);
+      case "vereinsaufgaben-uebergabe":
+        return handleVaUebergabe(request, body, env, authHeader, corsHeaders);
       case "get-materialcontainer-code":
         return handleGetMaterialcontainerCode(request, env, authHeader, corsHeaders);
       case "set-materialcontainer-code":
@@ -3855,6 +3919,654 @@ async function handleSetAufgabenGruppen(request, body, env, authHeader, corsHead
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
   return json({ ok: true, ...config.aufgaben }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: Vereinsaufgaben ----------
+
+// Regelverstoß mit eigenem HTTP-Status. Gebraucht, weil die eigentliche Prüfung
+// tief in der read-modify-write-Schleife steckt und von dort einen sprechenden
+// Fehler bis zur Antwort durchreichen muss.
+class VaFehler extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "VaFehler";
+    this.status = status || 400;
+  }
+}
+
+function vaAntwortFehler(e, corsHeaders) {
+  if (e instanceof VaFehler) return json({ error: e.message }, e.status, corsHeaders);
+  if (e instanceof ConflictError) return json({ error: "Gleichzeitige Änderung — bitte erneut versuchen" }, 409, corsHeaders);
+  return json({ error: "Speicherfehler: " + (e && e.message ? e.message : "unbekannt") }, 502, corsHeaders);
+}
+
+// Jede Aktion verlangt eingeloggtes Personal MIT Sichtbarkeit auf das Tool.
+// Spielerkonten sind wie überall in diesem Worker ausgeschlossen.
+async function vaSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (session.art === USER_ART_SPIELER) {
+    return { fehler: json({ error: "Kein Zugriff auf die Vereinsaufgaben" }, 403, corsHeaders) };
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  if (!(await userMayAccessTool("vereinsaufgaben", session, env, authHeader, Promise.resolve(config)))) {
+    return { fehler: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  const canEdit = await resolveEditPermission("vereinsaufgaben", session, env, authHeader, Promise.resolve(config));
+  const canAdmin = await resolveAdminPermission("vereinsaufgaben", session, env, authHeader, Promise.resolve(config));
+  return { session, config, canEdit, canAdmin, fehler: null };
+}
+
+// Schreibende Aktionen zusätzlich hinter dem Bearbeiten-Recht. "Sehen" heißt in
+// dieser App wirklich nur sehen — auch das Abhaken der eigenen Aufgabe ist ein
+// Schreibvorgang und braucht die Stufe.
+function vaVerlangeEdit(ctx) {
+  if (!ctx.canEdit) throw new VaFehler("Dafür fehlt dir das Bearbeiten-Recht", 403);
+}
+
+function vaVerlangeAdmin(ctx) {
+  if (!ctx.canAdmin) throw new VaFehler("Dafür fehlt dir das Administrieren-Recht", 403);
+}
+
+function vaLeer() {
+  return { version: 1, ressorts: [], aufgaben: [], protokoll: [] };
+}
+
+function vaNormalisiere(doc) {
+  doc.version = doc.version || 1;
+  if (!Array.isArray(doc.ressorts)) doc.ressorts = [];
+  if (!Array.isArray(doc.aufgaben)) doc.aufgaben = [];
+  if (!Array.isArray(doc.protokoll)) doc.protokoll = [];
+  return doc;
+}
+
+// Read-modify-write mit If-Match und drei Versuchen — dasselbe Muster wie bei den
+// persönlichen Aufgaben. fn bekommt das Dokument, ändert es an Ort und Stelle und
+// gibt zurück, was der Client als Antwort sehen soll.
+async function vaMutiere(authHeader, fn) {
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(VEREINSAUFGABEN_URL, authHeader, vaLeer());
+    vaNormalisiere(doc);
+    const ergebnis = fn(doc) || {};
+    try {
+      await writeJson(VEREINSAUFGABEN_URL, authHeader, doc, rev || undefined);
+      return { ok: true, ...ergebnis };
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+  throw new VaFehler("Speichern nach drei Versuchen fehlgeschlagen", 502);
+}
+
+function vaAufgabeHolen(doc, id) {
+  const a = doc.aufgaben.find((x) => x && x.id === String(id || ""));
+  if (!a) throw new VaFehler("Aufgabe nicht gefunden", 404);
+  return a;
+}
+
+function vaRessortHolen(doc, id) {
+  return doc.ressorts.find((r) => r && r.id === String(id || "")) || null;
+}
+
+// Verantwortlicher und Stellvertreter zählen immer als Mitglieder — sonst könnte
+// ein Verantwortlicher sich selbst nichts eintragen und stünde nicht in der
+// eigenen Mannschaft.
+function vaRessortMitglieder(r) {
+  const raus = [];
+  [r.verantwortlich, r.stellvertreter].concat(Array.isArray(r.mitglieder) ? r.mitglieder : []).forEach((u) => {
+    if (u && !raus.includes(u)) raus.push(u);
+  });
+  return raus;
+}
+
+// Das Zuweisungsrecht folgt der Vereinsstruktur, nicht einer zweiten Rechteliste:
+// wer ein Ressort verantwortet oder vertritt, darf dessen Mitgliedern etwas
+// auftragen. Administrieren darf jedem. Alles andere ist ein Schreibzugriff in
+// eine fremde Liste und fällt zu.
+function vaDarfZuweisenAn(doc, ctx, username) {
+  if (ctx.canAdmin) return true;
+  return doc.ressorts.some((r) =>
+    (r.verantwortlich === ctx.session.username || r.stellvertreter === ctx.session.username) &&
+    vaRessortMitglieder(r).includes(username));
+}
+
+// Wer den Text einer vertraulichen Aufgabe sehen darf. Bewusst eng: die beiden
+// Beteiligten und wer die App administriert. Ein Ressort-Mitglied gehört NICHT
+// dazu — sonst wäre "vertraulich" nur ein anderes Wort für "fast alle".
+function vaDarfInhaltSehen(a, ctx) {
+  if (!a.vertraulich) return true;
+  if (ctx.canAdmin) return true;
+  return a.von === ctx.session.username || a.empfaenger === ctx.session.username;
+}
+
+// Der entscheidende Punkt an der Vertraulichkeit: der Text wird hier ENTFERNT,
+// nicht clientseitig ausgeblendet. Was der Unbeteiligte nie bekommt, kann er auch
+// im Netzwerk-Tab nicht nachlesen. Empfänger, Frist und Status bleiben stehen,
+// damit die Auslastungsübersicht nicht still lügt.
+function vaFuerAnzeige(a, ctx) {
+  if (vaDarfInhaltSehen(a, ctx)) return a;
+  return {
+    id: a.id, empfaenger: a.empfaenger, von: a.von, ressortId: a.ressortId,
+    faellig: a.faellig, prioritaet: a.prioritaet, status: a.status,
+    erstelltAm: a.erstelltAm, erledigtAm: a.erledigtAm,
+    abnahme: !!a.abnahme, vertraulich: true, verdeckt: true,
+    anhaenge: [], kommentare: [], verlauf: []
+  };
+}
+
+function vaVerlauf(a, von, was, alt, neu) {
+  if (!Array.isArray(a.verlauf)) a.verlauf = [];
+  a.verlauf.push({ am: new Date().toISOString(), von, was, alt: alt == null ? "" : String(alt), neu: neu == null ? "" : String(neu) });
+  if (a.verlauf.length > 200) a.verlauf.splice(0, a.verlauf.length - 200);
+}
+
+function vaProtokoll(doc, eintrag) {
+  doc.protokoll.push({ am: new Date().toISOString(), ...eintrag });
+  if (doc.protokoll.length > VA_MAX_PROTOKOLL) doc.protokoll.splice(0, doc.protokoll.length - VA_MAX_PROTOKOLL);
+}
+
+function vaDatum(roh) {
+  const s = capStr(roh, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function vaPrioritaet(roh) {
+  const p = capStr(roh, 20);
+  return VA_PRIORITAETEN.includes(p) ? p : "normal";
+}
+
+// Empfänger müssen existieren, Personal sein UND die App bearbeiten dürfen. Der
+// letzte Punkt ist keine Förmlichkeit: wer nur Sehen hat, könnte die Aufgabe nie
+// abhaken — sie wäre eine stille Sackgasse, die erst bei der Frist auffällt.
+function vaPruefeEmpfaenger(username, ctx, usersDoc) {
+  const u = normalizeUsername(username);
+  const user = getOwn((usersDoc && usersDoc.users) || {}, u);
+  if (!user || !istPersonal(user)) throw new VaFehler("Unbekannter Empfänger: " + u, 400);
+  const entry = getOwn((ctx.config && ctx.config.tools) || {}, "vereinsaufgaben") || {};
+  const erlaubt = (Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [])
+    .concat(Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : []);
+  const eigene = getUserGroupIds(usersDoc, u);
+  if (!user.isAdmin && !erlaubt.some((g) => eigene.includes(g))) {
+    throw new VaFehler(
+      `${aufgabenAnzeigeName(usersDoc, u)} darf die Vereinsaufgaben nicht bearbeiten und könnte die Aufgabe nie abhaken. ` +
+      `Bitte zuerst in der Tools-Übersicht das Bearbeiten-Recht für dieses Tool vergeben.`, 400);
+  }
+  return u;
+}
+
+async function handleVaLoad(request, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+
+  const doc = vaNormalisiere(await readJson(VEREINSAUFGABEN_URL, authHeader, vaLeer()));
+  const usersDoc = ctx.session.usersDoc;
+
+  // Anzeigenamen kommen aus nutzer.json, nicht aus der Aufgabe: ein alter Eintrag
+  // soll nach einer Umbenennung nicht den früheren Namen weiterzeigen. Ausgeschiedene
+  // bleiben mit ihrem Nutzernamen sichtbar, damit ihre Historie lesbar bleibt.
+  const namen = {};
+  const merke = (u) => { if (u && !namen[u]) namen[u] = aufgabenAnzeigeName(usersDoc, u); };
+  doc.aufgaben.forEach((a) => { merke(a.empfaenger); merke(a.von); (a.kommentare || []).forEach((k) => merke(k.von)); });
+  doc.ressorts.forEach((r) => vaRessortMitglieder(r).forEach(merke));
+  doc.protokoll.forEach((p) => { merke(p.von); merke(p.vonUser); merke(p.aufUser); });
+
+  return json({
+    ressorts: doc.ressorts,
+    aufgaben: doc.aufgaben.map((a) => vaFuerAnzeige(a, ctx)),
+    // Das Protokoll ist das Gegengewicht dazu, dass der Ersteller löschen darf.
+    // Es gehört deshalb ausschließlich der Administrieren-Stufe.
+    protokoll: ctx.canAdmin ? doc.protokoll : [],
+    namen,
+    me: { username: ctx.session.username, isAdmin: !!ctx.session.isAdmin, canEdit: ctx.canEdit, canAdmin: ctx.canAdmin }
+  }, 200, corsHeaders);
+}
+
+async function handleVaRessortSpeichern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeAdmin(ctx);
+    const roh = (body && body.ressort) || {};
+    const name = capStr(roh.name, 120).trim();
+    if (!name) throw new VaFehler("Ein Ressort braucht einen Namen", 400);
+    const verantwortlich = vaPruefeEmpfaenger(roh.verantwortlich, ctx, ctx.session.usersDoc);
+    const stellvertreter = roh.stellvertreter ? vaPruefeEmpfaenger(roh.stellvertreter, ctx, ctx.session.usersDoc) : "";
+    const mitglieder = [];
+    for (const m of (Array.isArray(roh.mitglieder) ? roh.mitglieder : []).slice(0, VA_MAX_EMPFAENGER)) {
+      const u = vaPruefeEmpfaenger(m, ctx, ctx.session.usersDoc);
+      if (!mitglieder.includes(u)) mitglieder.push(u);
+    }
+
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const id = capStr(roh.id, 64);
+      const jetzt = new Date().toISOString();
+      let r = id ? vaRessortHolen(doc, id) : null;
+      if (id && !r) throw new VaFehler("Ressort nicht gefunden", 404);
+      if (!r) {
+        r = { id: crypto.randomUUID(), erstelltAm: jetzt, erstelltVon: ctx.session.username };
+        doc.ressorts.push(r);
+      }
+      r.name = name;
+      r.beschreibung = capStr(roh.beschreibung, 2000);
+      r.verantwortlich = verantwortlich;
+      r.stellvertreter = stellvertreter;
+      r.mitglieder = mitglieder;
+      r.geaendertAm = jetzt;
+      r.geaendertVon = ctx.session.username;
+      return { id: r.id };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleVaRessortLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeAdmin(ctx);
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const id = capStr(body && body.id, 64);
+      const idx = doc.ressorts.findIndex((r) => r && r.id === id);
+      if (idx < 0) throw new VaFehler("Ressort nicht gefunden", 404);
+      // Aufgaben bleiben stehen und verlieren nur die Zuordnung. Ein gelöschtes
+      // Ressort darf keine Aufträge mitreißen — die Person bleibt zuständig.
+      doc.aufgaben.forEach((a) => { if (a.ressortId === id) a.ressortId = ""; });
+      const [weg] = doc.ressorts.splice(idx, 1);
+      vaProtokoll(doc, { art: "ressort-geloescht", von: ctx.session.username, titel: weg.name });
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const titel = capStr(body && body.titel, VA_MAX_TITEL).trim();
+    if (!titel) throw new VaFehler("Ein Titel muss angegeben werden", 400);
+    // Die Frist ist Pflicht — ohne sie wäre jede Sortierung, jeder Zähler und die
+    // ganze Überfälligkeitsrechnung ein Sonderfall. Dauerhaftes gehört ins Ressort.
+    const faellig = vaDatum(body && body.faellig);
+    if (!faellig) throw new VaFehler("Eine Frist im Format JJJJ-MM-TT ist Pflicht", 400);
+
+    const modus = capStr(body && body.modus, 20);
+    const beschreibung = capStr(body && body.beschreibung, VA_MAX_BESCHREIBUNG);
+    const prioritaet = vaPrioritaet(body && body.prioritaet);
+    const abnahme = !!(body && body.abnahme);
+    const vertraulich = !!(body && body.vertraulich);
+
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      let empfaenger = [];
+      let ressortId = "";
+
+      if (modus === "person") {
+        const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
+        if (!roh.length) throw new VaFehler("Kein Empfänger gewählt", 400);
+        if (roh.length > VA_MAX_EMPFAENGER) throw new VaFehler(`Höchstens ${VA_MAX_EMPFAENGER} Empfänger auf einmal`, 400);
+        for (const r of roh) {
+          const u = vaPruefeEmpfaenger(r, ctx, ctx.session.usersDoc);
+          if (!empfaenger.includes(u)) empfaenger.push(u);
+        }
+      } else if (modus === "ressort" || modus === "ressort-einzeln") {
+        const r = vaRessortHolen(doc, body && body.ressortId);
+        if (!r) throw new VaFehler("Ressort nicht gefunden", 404);
+        ressortId = r.id;
+        // "An das Ressort" heißt: der Verantwortliche hakt ab und haftet, die
+        // Mitglieder sehen mit. "Einzeln" fächert beim Anlegen auf, damit jeder
+        // selbst abhaken muss — beides kommt im Vereinsalltag vor.
+        empfaenger = modus === "ressort" ? [r.verantwortlich] : vaRessortMitglieder(r);
+        if (!empfaenger.length) throw new VaFehler("Dieses Ressort hat niemanden hinterlegt", 400);
+      } else {
+        throw new VaFehler("Unbekannter Zuweisungs-Modus", 400);
+      }
+
+      for (const u of empfaenger) {
+        if (!vaDarfZuweisenAn(doc, ctx, u)) {
+          throw new VaFehler(
+            `Du darfst ${aufgabenAnzeigeName(ctx.session.usersDoc, u)} keine Aufgabe zuweisen. ` +
+            `Zuweisen darf, wer ein Ressort verantwortet oder vertritt — an dessen Mitglieder.`, 403);
+        }
+      }
+      if (doc.aufgaben.length + empfaenger.length > VA_MAX_AUFGABEN) {
+        throw new VaFehler("Die Aufgabenliste ist voll", 400);
+      }
+
+      const jetzt = new Date().toISOString();
+      empfaenger.forEach((u) => {
+        doc.aufgaben.push({
+          id: crypto.randomUUID(),
+          titel, beschreibung, faellig, prioritaet, ressortId,
+          empfaenger: u, von: ctx.session.username,
+          status: "offen", abnahme, vertraulich,
+          erstelltAm: jetzt,
+          erledigtAm: "", gemeldetAm: "", abgenommenAm: "", abgenommenVon: "",
+          abgelehntAm: "", ablehnGrund: "", rueckgabeGrund: "",
+          zurueckgezogenAm: "", zurueckgezogenVon: "", zurueckgezogenGrund: "",
+          anhaenge: [], kommentare: [], verlauf: []
+        });
+      });
+      return { angelegt: empfaenger.length };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Ändern darf nur der Zuweiser (und Administrieren) — der Empfänger nie. Sonst
+// könnte er sich den Auftrag passend umschreiben und danach "erledigt" melden.
+// Jede Änderung landet im Verlauf, mit altem und neuem Wert: eine stillschweigend
+// verschobene Frist würde "überfällig" sonst wertlos machen.
+async function handleVaAendern(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann sie ändern", 403);
+      }
+      if (["erledigt", "abgelehnt", "zurueckgezogen"].includes(a.status)) {
+        throw new VaFehler("Ein abgeschlossener Vorgang wird nicht mehr geändert", 400);
+      }
+      const f = (body && body.felder) || {};
+      const neuTitel = capStr(f.titel, VA_MAX_TITEL).trim();
+      const neuFaellig = vaDatum(f.faellig);
+      if (!neuTitel) throw new VaFehler("Der Titel darf nicht leer werden", 400);
+      if (!neuFaellig) throw new VaFehler("Die Frist darf nicht leer werden", 400);
+      const neuBeschreibung = capStr(f.beschreibung, VA_MAX_BESCHREIBUNG);
+      const neuPrio = vaPrioritaet(f.prioritaet);
+
+      if (neuTitel !== a.titel) { vaVerlauf(a, ctx.session.username, "titel", a.titel, neuTitel); a.titel = neuTitel; }
+      if (neuFaellig !== a.faellig) { vaVerlauf(a, ctx.session.username, "faellig", a.faellig, neuFaellig); a.faellig = neuFaellig; }
+      if (neuBeschreibung !== a.beschreibung) { vaVerlauf(a, ctx.session.username, "beschreibung", "", ""); a.beschreibung = neuBeschreibung; }
+      if (neuPrio !== a.prioritaet) { vaVerlauf(a, ctx.session.username, "prioritaet", a.prioritaet, neuPrio); a.prioritaet = neuPrio; }
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Die Statusübergänge sind einzeln aufgezählt statt über einen generischen Setter
+// abgebildet — so ist ein ungültiger Sprung (etwa "abgelehnt" -> "erledigt" durch
+// den Empfänger) strukturell ausgeschlossen und nicht nur nicht vorgesehen.
+async function handleVaStatus(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const aktion = capStr(body && body.aktion, 20);
+    const grund = capStr(body && body.grund, VA_MAX_GRUND).trim();
+
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      const jetzt = new Date().toISOString();
+      const binEmpfaenger = a.empfaenger === ctx.session.username;
+      const binZuweiser = a.von === ctx.session.username || ctx.canAdmin;
+      const alt = a.status;
+
+      if (aktion === "erledigt" || aktion === "gemeldet") {
+        if (!binEmpfaenger) throw new VaFehler("Nur der Empfänger kann die Aufgabe abhaken", 403);
+        if (a.status !== "offen") throw new VaFehler("Die Aufgabe ist nicht mehr offen", 400);
+        // Verlangt der Zuweiser eine Abnahme, endet der Weg des Empfängers bei
+        // "gemeldet" — er kann den Vorgang nicht selbst schließen.
+        if (a.abnahme) { a.status = "gemeldet"; a.gemeldetAm = jetzt; }
+        else { a.status = "erledigt"; a.erledigtAm = jetzt; }
+      } else if (aktion === "abgelehnt") {
+        if (!binEmpfaenger) throw new VaFehler("Nur der Empfänger kann ablehnen", 403);
+        if (a.status !== "offen") throw new VaFehler("Die Aufgabe ist nicht mehr offen", 400);
+        if (!grund) throw new VaFehler("Eine Ablehnung braucht eine Begründung", 400);
+        a.status = "abgelehnt"; a.abgelehntAm = jetzt; a.ablehnGrund = grund;
+      } else if (aktion === "abgenommen") {
+        if (!binZuweiser) throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann abnehmen", 403);
+        if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
+        a.status = "erledigt"; a.erledigtAm = jetzt;
+        a.abgenommenAm = jetzt; a.abgenommenVon = ctx.session.username;
+      } else if (aktion === "zurueckgegeben") {
+        if (!binZuweiser) throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann zurückgeben", 403);
+        if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
+        if (!grund) throw new VaFehler("Eine Rückgabe braucht eine Begründung", 400);
+        a.status = "offen"; a.gemeldetAm = ""; a.rueckgabeGrund = grund;
+      } else {
+        throw new VaFehler("Unbekannte Aktion", 400);
+      }
+
+      vaVerlauf(a, ctx.session.username, "status", alt, a.status);
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Zurückziehen kann nur der Zuweiser und nur solange nichts abgeschlossen ist.
+// Der Eintrag bleibt als "zurueckgezogen" stehen statt zu verschwinden — sonst
+// wäre nicht mehr erkennbar, dass es den Auftrag je gab.
+async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const grund = capStr(body && body.grund, VA_MAX_GRUND).trim();
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann sie zurückziehen", 403);
+      }
+      if (a.status !== "offen" && a.status !== "gemeldet") {
+        throw new VaFehler("Dieser Vorgang ist bereits abgeschlossen", 400);
+      }
+      const alt = a.status;
+      a.status = "zurueckgezogen";
+      a.zurueckgezogenAm = new Date().toISOString();
+      a.zurueckgezogenVon = ctx.session.username;
+      a.zurueckgezogenGrund = grund;
+      vaVerlauf(a, ctx.session.username, "status", alt, a.status);
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Löschen darf der Ersteller (und Administrieren) — aber es hinterlässt eine Spur.
+// Ohne das Protokoll könnte jeder, der zuweisen darf, seine eigene Bilanz
+// bereinigen, und in der Übersicht wäre nicht einmal die Lücke sichtbar.
+async function handleVaLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    let dateien = [];
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann sie löschen", 403);
+      }
+      dateien = (a.anhaenge || []).map((f) => f.fileId).filter(Boolean);
+      vaProtokoll(doc, {
+        art: "geloescht", von: ctx.session.username,
+        titel: a.titel, empfaenger: a.empfaenger, status: a.status, faellig: a.faellig
+      });
+      doc.aufgaben.splice(doc.aufgaben.findIndex((x) => x.id === a.id), 1);
+      return {};
+    });
+    // Erst der Eintrag, dann die Bytes: bricht das Löschen der Datei ab, bleibt
+    // eine verwaiste Datei liegen — harmloser als ein Verweis ins Leere.
+    for (const fid of dateien) {
+      if (!FILE_ID_RE.test(String(fid))) continue;
+      try { await fetch(VA_ANHANG_DIR + "/" + fid, { method: "DELETE", headers: { Authorization: authHeader } }); }
+      catch (_) { /* verwaiste Datei ist hinnehmbar */ }
+    }
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleVaKommentar(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const text = capStr(body && body.text, VA_MAX_KOMMENTAR).trim();
+    if (!text) throw new VaFehler("Der Kommentar ist leer", 400);
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      // An einer vertraulichen Aufgabe kommentiert nur, wer sie auch lesen darf —
+      // sonst schriebe jemand in einen Strang, den er nicht sieht.
+      if (!vaDarfInhaltSehen(a, ctx)) throw new VaFehler("Kein Zugriff auf diesen Vorgang", 403);
+      if (!Array.isArray(a.kommentare)) a.kommentare = [];
+      if (a.kommentare.length >= VA_MAX_KOMMENTARE) throw new VaFehler("Zu viele Rückfragen an diesem Vorgang", 400);
+      a.kommentare.push({ id: crypto.randomUUID(), von: ctx.session.username, text, am: new Date().toISOString() });
+      return {};
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// ---------- Vereinsaufgaben: Anhänge ----------
+
+// Die Datei-Id wird IMMER aus der Aufgabe aufgelöst, nie aus dem Body — sonst käme
+// man mit einer geratenen Id an der Beteiligtenprüfung vorbei. Dieselbe Regel wie
+// bei dokument-datei-get.
+function vaDarfDateiSehen(a, ctx) {
+  return vaDarfInhaltSehen(a, ctx);
+}
+
+async function handleVaDateiPut(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const rohDaten = String((body && body.daten) || "");
+    const komma = rohDaten.indexOf(",");
+    if (!rohDaten.startsWith("data:") || komma < 0) throw new VaFehler("Datei-Inhalt fehlt oder ist unlesbar", 400);
+    const mime = capStr(rohDaten.slice(5, rohDaten.indexOf(";")), 120) || "application/octet-stream";
+    let bytes;
+    try { bytes = base64ToBytes(rohDaten.slice(komma + 1)); }
+    catch (_) { throw new VaFehler("Datei-Inhalt ist kein gültiges base64", 400); }
+    if (!bytes.length) throw new VaFehler("Leere Datei", 400);
+    if (bytes.length > VA_MAX_ANHANG_BYTES) throw new VaFehler("Datei zu groß (höchstens 8 MB)", 413);
+
+    const name = capStr(body && body.name, 200).replace(/[\r\n]/g, "").trim() || "anhang";
+    const art = capStr(body && body.art, 20) === "nachweis" ? "nachweis" : "auftrag";
+    const fileId = crypto.randomUUID();
+
+    // Erst prüfen und die Bytes ablegen, dann verbuchen: ein Eintrag, der auf eine
+    // nicht vorhandene Datei zeigt, wäre schlimmer als eine verwaiste Datei.
+    await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (!vaDarfDateiSehen(a, ctx)) throw new VaFehler("Kein Zugriff auf diesen Vorgang", 403);
+      if (a.empfaenger !== ctx.session.username && a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur die Beteiligten können einen Anhang hinzufügen", 403);
+      }
+      if ((a.anhaenge || []).length >= VA_MAX_ANHAENGE) throw new VaFehler("Zu viele Anhänge an diesem Vorgang", 400);
+      return {};
+    });
+
+    const fileUrl = VA_ANHANG_DIR + "/" + fileId;
+    const headers = { Authorization: authHeader, "Content-Type": mime };
+    let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    // Gleicher MKCOL-Autofix wie überall: 409 = eine Ebene fehlt, 404 = mehrere
+    // (der Fall beim allerersten Upload dieser App).
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(VA_ANHANG_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+    if (!resp.ok) throw new VaFehler(`Upload fehlgeschlagen (Nextcloud ${resp.status})`, 502);
+
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (!Array.isArray(a.anhaenge)) a.anhaenge = [];
+      a.anhaenge.push({ fileId, name, mime, art, von: ctx.session.username, hochgeladenAm: new Date().toISOString(), groesse: bytes.length });
+      return { fileId };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleVaDateiGet(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    const doc = vaNormalisiere(await readJson(VEREINSAUFGABEN_URL, authHeader, vaLeer()));
+    const a = vaAufgabeHolen(doc, body && body.id);
+    if (!vaDarfDateiSehen(a, ctx)) throw new VaFehler("Kein Zugriff auf diesen Vorgang", 403);
+    const gesucht = String((body && body.fileId) || "");
+    const meta = (a.anhaenge || []).find((f) => f && f.fileId === gesucht);
+    if (!meta) throw new VaFehler("Anhang nicht gefunden", 404);
+    if (!FILE_ID_RE.test(meta.fileId)) throw new VaFehler("Ungültige Datei-Id", 400);
+
+    let resp;
+    try { resp = await fetch(VA_ANHANG_DIR + "/" + meta.fileId, { method: "GET", headers: { Authorization: authHeader } }); }
+    catch (_) { throw new VaFehler("Nextcloud nicht erreichbar", 502); }
+    if (resp.status === 404) throw new VaFehler("Datei nicht gefunden", 404);
+    if (!resp.ok) throw new VaFehler(`Nextcloud GET ${resp.status}`, 502);
+
+    // Die Bytes werden durchgereicht, NICHT als base64 in eine JSON gepackt:
+    // bytesToBase64 baut den String zeichenweise auf und würde bei mehreren
+    // Megabyte das CPU-Limit des Workers reißen. Den Dateinamen hat der Client
+    // ohnehin schon aus den Metadaten der Aufgabe — es braucht dafür keinen
+    // eigenen Header und damit auch kein Access-Control-Expose-Headers.
+    return new Response(resp.body, {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": meta.mime || "application/octet-stream", "Cache-Control": "private, no-store" }
+    });
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+async function handleVaDateiLoeschen(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    let fileId = "";
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      const gesucht = String((body && body.fileId) || "");
+      const idx = (a.anhaenge || []).findIndex((f) => f && f.fileId === gesucht);
+      if (idx < 0) throw new VaFehler("Anhang nicht gefunden", 404);
+      const meta = a.anhaenge[idx];
+      if (meta.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer den Anhang hochgeladen hat, kann ihn entfernen", 403);
+      }
+      fileId = meta.fileId;
+      a.anhaenge.splice(idx, 1);
+      return {};
+    });
+    if (FILE_ID_RE.test(fileId)) {
+      try { await fetch(VA_ANHANG_DIR + "/" + fileId, { method: "DELETE", headers: { Authorization: authHeader } }); }
+      catch (_) { /* verwaiste Datei ist hinnehmbar */ }
+    }
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Amtsübergabe: NUR offene Vorgänge wechseln den Empfänger. Erledigtes bleibt beim
+// ursprünglichen Bearbeiter stehen — sonst schriebe ein Personalwechsel die
+// Vergangenheit um und die Bilanz des Nachfolgers wäre falsch.
+async function handleVaUebergabe(request, body, env, authHeader, corsHeaders) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeAdmin(ctx);
+    const vonUser = normalizeUsername(body && body.vonUser);
+    const aufUser = vaPruefeEmpfaenger(body && body.aufUser, ctx, ctx.session.usersDoc);
+    if (!vonUser) throw new VaFehler("Von wem übertragen werden soll, fehlt", 400);
+    if (vonUser === aufUser) throw new VaFehler("Das ist dieselbe Person", 400);
+
+    const ergebnis = await vaMutiere(authHeader, (doc) => {
+      const betroffen = doc.aufgaben.filter((a) =>
+        a.empfaenger === vonUser && (a.status === "offen" || a.status === "gemeldet"));
+      if (!betroffen.length) throw new VaFehler("Diese Person hat gerade keine offene Aufgabe", 400);
+      betroffen.forEach((a) => {
+        vaVerlauf(a, ctx.session.username, "empfaenger", a.empfaenger, aufUser);
+        a.empfaenger = aufUser;
+      });
+      vaProtokoll(doc, { art: "uebergabe", von: ctx.session.username, vonUser, aufUser, anzahl: betroffen.length });
+      return { uebertragen: betroffen.length };
+    });
+    return json(ergebnis, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
 // Speichert die Neuigkeiten (Array) im news-Key von sichtbarkeit.json. Admin-only,

@@ -1977,12 +1977,48 @@ function aufgabeSortKey(a, heute) {
   return `${gruppe}|${a.faellig || "9999-99-99"}|${a.erstelltAm || ""}`;
 }
 
+// Überfällig heißt seit 2026-07-28 wirklich "der Termin ist vorbei" (< heute).
+// Vorher lief "heute fällig" unter derselben roten Kennzeichnung mit; damit sah
+// eine Aufgabe, für die noch der ganze Tag Zeit ist, genauso alarmierend aus wie
+// eine, die seit einer Woche liegt. Michel nennt die beiden Fälle getrennt, also
+// werden sie auch getrennt gezeigt.
 function aufgabeIstUeberfaellig(a, heute) {
-  return !a.erledigt && !a.zurueckgezogenAm && !!a.faellig && a.faellig <= heute;
+  return !a.erledigt && !a.zurueckgezogenAm && !!a.faellig && a.faellig < heute;
+}
+
+function aufgabeIstHeuteFaellig(a, heute) {
+  return !a.erledigt && !a.zurueckgezogenAm && a.faellig === heute;
 }
 
 function aufgabeIstNeu(a) {
   return !!a.von && !a.gesehenAm && !a.erledigt && !a.zurueckgezogenAm;
+}
+
+// Was am Kopf-Knopf ein Signal auslöst: neu zugewiesen, heute fällig, überfällig.
+// Eine Aufgabe kann mehreres gleichzeitig sein (neu UND heute fällig), deshalb
+// zählt die Gesamtzahl über eine Menge und nicht über die Summe der drei Zahlen.
+function aufgabenSignal(liste, heute) {
+  const neu = liste.filter(aufgabeIstNeu);
+  const heuteFaellig = liste.filter((a) => aufgabeIstHeuteFaellig(a, heute));
+  const ueberfaellig = liste.filter((a) => aufgabeIstUeberfaellig(a, heute));
+  const ids = new Set();
+  [neu, heuteFaellig, ueberfaellig].forEach((gruppe) => gruppe.forEach((a) => ids.add(a.id)));
+  return {
+    neu: neu.length,
+    heuteFaellig: heuteFaellig.length,
+    ueberfaellig: ueberfaellig.length,
+    gesamt: ids.size
+  };
+}
+
+// Ein Satz je Fall, in der Reihenfolge der Dringlichkeit. Wird sowohl für den
+// Tooltip am Kopf-Knopf als auch für den Hinweis im Fenster gebraucht.
+function aufgabenSignalTexte(sig) {
+  const t = [];
+  if (sig.neu) t.push(sig.neu === 1 ? "1 neue Aufgabe für dich" : `${sig.neu} neue Aufgaben für dich`);
+  if (sig.ueberfaellig) t.push(sig.ueberfaellig === 1 ? "1 Aufgabe ist überfällig" : `${sig.ueberfaellig} Aufgaben sind überfällig`);
+  if (sig.heuteFaellig) t.push(sig.heuteFaellig === 1 ? "1 Aufgabe ist heute fällig" : `${sig.heuteFaellig} Aufgaben sind heute fällig`);
+  return t;
 }
 
 async function loadAufgaben() {
@@ -2034,18 +2070,33 @@ function renderAufgabenWidget() {
   const heute = heuteIso();
   const liste = aufgabenState.meine.slice().sort((a, b) => aufgabeSortKey(a, heute).localeCompare(aufgabeSortKey(b, heute)));
   const offen = liste.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
-  const ueberfaellig = liste.some((a) => aufgabeIstUeberfaellig(a, heute));
-  const neuesDa = liste.some(aufgabeIstNeu);
+  const sig = aufgabenSignal(liste, heute);
   const wegraeumbar = liste.some((a) => (a.erledigt && !a.von) || a.zurueckgezogenAm);
 
   // Der Zähler am Kopf-Knopf ist der Ersatz für die frühere Karte auf der
   // Startseite: ohne ihn merkt man beim Seitenaufruf nicht mehr, dass etwas offen
-  // ist. Rot, sobald etwas überfällig oder neu zugewiesen ist.
+  // ist. Die Zahl bleibt die Gesamtzahl der offenen Aufgaben -- sie darf nicht
+  // schrumpfen, nur weil gerade nichts dringend ist.
+  //
+  // Rot allein hat sich als zu leise erwiesen: "3" sagt nicht, ob eine neue
+  // Zuweisung dabei ist oder heute etwas fällig wird. Der Knopf trägt die
+  // Aufschlüsselung deshalb im Tooltip, und der Punkt daneben zeigt schon vor dem
+  // Öffnen, DASS es etwas gibt. Der Punkt sitzt absolut über der Ecke des Knopfes
+  // und kostet keine Layoutbreite -- am Handy endet die Kopfzeile sonst jenseits
+  // der Fensterbreite (bei 375px zuletzt bei 341px gemessen, der Puffer ist dünn).
   const zaehler = document.getElementById("aufgaben-kopf-zaehler");
   if (zaehler) {
     zaehler.textContent = offen || "";
     zaehler.style.display = offen ? "" : "none";
-    zaehler.classList.toggle("warn", ueberfaellig || neuesDa);
+    zaehler.classList.toggle("warn", sig.gesamt > 0);
+  }
+  const knopf = document.getElementById("btn-dokumente-oeffnen");
+  if (knopf) {
+    const texte = aufgabenSignalTexte(sig);
+    knopf.classList.toggle("hat-signal", sig.gesamt > 0);
+    knopf.title = texte.length
+      ? texte.join(" · ")
+      : (offen ? `${offen} offene ${offen === 1 ? "Aufgabe" : "Aufgaben"}` : "Eigene Aufgaben, Zuweisungen und Dokumente");
   }
 
   const zeile = (a) => {
@@ -2715,11 +2766,13 @@ function renderDokumente() {
     vonMirKarte.style.display = (dokumenteState.vonMir.length || dokumenteState.canAssignDocs) ? "" : "none";
   }
 
-  // Zwei getrennte Vorgänge, zwei getrennte Rechte: Aufgaben verteilen hängt an
-  // assignGroupIds, Unterschriften einfordern an dokumentGroupIds. Beide kommen
-  // aus dem Aufgaben-Load, der beim Seitenstart ohnehin läuft.
-  const zuweisenBtn = document.getElementById("btn-fenster-zuweisen");
-  if (zuweisenBtn) zuweisenBtn.style.display = aufgabenState.canAssign ? "" : "none";
+  // Seit 2026-07-28 gibt es hier nur noch EINEN Vorgang: Unterschriften einfordern
+  // (dokumentGroupIds). Das Zuweisen von Aufgaben ist in die App "Vereinsaufgaben"
+  // gewandert, der zugehörige Knopf ist aus dem Markup entfernt. aufgabenState.canAssign
+  // wird vom Worker weiterhin geliefert und bleibt hier bewusst ungenutzt — die
+  // Aktion aufgabe-zuweisen existiert serverseitig noch (Altbestand an Zuweisungen
+  // muss weiter abhakbar und zurückziehbar bleiben), sie hat nur keinen Einstieg
+  // mehr in dieser Oberfläche.
   const unterschriftBtn = document.getElementById("btn-fenster-unterschrift");
   if (unterschriftBtn) unterschriftBtn.style.display = aufgabenState.canAssignDocs ? "" : "none";
 }
@@ -3142,7 +3195,11 @@ function setupDokumenteTab() {
   document.getElementById("btn-dokument-selbst").addEventListener("click", oeffneSelbstUnterschreiben);
   document.getElementById("btn-dokumente-oeffnen").addEventListener("click", oeffneDokumenteFenster);
   document.getElementById("btn-dokumente-close").addEventListener("click", schliesseDokumenteFenster);
-  document.getElementById("btn-fenster-zuweisen").addEventListener("click", () => oeffneAufgabeZuweisen("aufgabe"));
+  // btn-fenster-zuweisen gibt es seit 2026-07-28 nicht mehr (Aufgaben zuweisen ist
+  // in die App "Vereinsaufgaben" gewandert). Der Handler MUSS mit dem Knopf weg:
+  // getElementById liefert sonst null und der TypeError bricht setupDokumenteTab()
+  // mitten in der Registrierung ab -- alle danach folgenden Handler (Escape,
+  // Unterschrift) wären tot, und zwar lautlos.
   document.getElementById("btn-fenster-unterschrift").addEventListener("click", () => oeffneAufgabeZuweisen("unterschrift"));
   tab.addEventListener("click", (e) => { if (e.target === tab) schliesseDokumenteFenster(); });
   document.addEventListener("keydown", (e) => {
