@@ -1605,12 +1605,23 @@ async function handleListToolEditors(request, body, env, authHeader, corsHeaders
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
   const app = String(body.app || "");
-  if (!getOwn(DAV_APPS, app)) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  // Existenz gegen die TOOL-Konfiguration prüfen, nicht gegen DAV_APPS. Diese
+  // Aktion fasst kein WebDAV an -- sie liest nur config.tools und die Gruppen,
+  // beides eine Zeile weiter unten. Die DAV_APPS-Abfrage war hier die falsche
+  // Frage und hat Apps ausgesperrt, die bewusst OHNE DAV_APPS-Eintrag laufen:
+  // vereinsaufgaben verzichtet darauf, weil ein dav-load dort vertrauliche
+  // Aufgaben im Klartext ausliefern würde. Folge war 400 "Unbekannte App" ->
+  // der Client fängt das ab und zeigt eine leere Personenliste, wodurch
+  // Verantwortlich, Stellvertretung, Mitglieder UND der Empfängerpicker alle
+  // leer blieben. Das Gate bleibt `userMayAccessTool` direkt darunter.
+  // Geprüft am 2026-07-28: alle 20 DAV_APPS stehen auch in config.tools, für
+  // sie ändert sich dadurch nichts.
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, app);
+  if (!entry) return json({ error: "Unbekannte App" }, 400, corsHeaders);
   if (!(await userMayAccessTool(app, session, env, authHeader))) {
     return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
   }
-  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
-  const entry = getOwn(config.tools || {}, app);
   // Administrieren-Gruppen zählen mit -- deren Mitglieder SIND Bearbeiter
   // (resolveEditPermission wertet adminGroupIds genauso), also gehören sie
   // auch in jeden "Bearbeiter"-Picker.
