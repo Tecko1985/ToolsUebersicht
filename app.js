@@ -1494,8 +1494,10 @@ function flashNewsReactionHint(msg) {
 
 // ---- Sidebar-Widget: nächste Termine + Abwesenheiten links neben den Kacheln ----
 // Nutzt dieselbe Sichtbarkeitsregel wie die Tool-Karte (isVisibleToUser) und
-// dieselbe Gateway-Aktion (dav-load) wie die jeweilige App selbst — rein
-// lesend, kein eigener Worker-Code nötig. Kalender- und Abwesenheiten-Teil sind
+// dieselbe Gateway-Aktion (dav-load) wie die jeweilige App selbst. Einziger
+// Schreibweg ist das Abstimmen bei Umfrage-Terminen -- dafür wird die BESTEHENDE
+// Aktion `vereinskalender-vote` mitbenutzt (siehe calendarWidgetVote), kein
+// eigener Worker-Code. Kalender- und Abwesenheiten-Teil sind
 // UNABHÄNGIG voneinander sichtbar (unterschiedliche Apps, unterschiedliche
 // Sichtbarkeits-Gruppen) — ein Nutzer mit nur einer der beiden Berechtigungen
 // sieht trotzdem den für ihn zutreffenden Teil, siehe loadSidebarWidget.
@@ -1503,6 +1505,9 @@ const CALENDAR_WIDGET_APP_ID = "vereinskalender";
 const CALENDAR_WIDGET_COUNT = 8;
 const ABSENCE_WIDGET_APP_ID = "abwesenheitskalender";
 const ABSENCE_WIDGET_COUNT = 4;
+// Zuletzt gerenderter Widget-Zustand -- Grundlage fürs Neu-Rendern nach einer
+// abgegebenen Stimme (siehe onCalendarWidgetClick).
+let calendarWidgetOpts = null;
 
 function absenceSortKey(a) { return `${a.von}_${a.bis}`; }
 
@@ -1560,10 +1565,25 @@ function calendarWidgetRows(t, today) {
       const key = d + "|" + zeit;
       if (gesehen.indexOf(key) !== -1) continue;
       gesehen.push(key);
-      rows.push({ termin: t, datum: d, zeit: zeit });
+      rows.push({ termin: t, datum: d, zeit: zeit, candId: u.termine[i].id || "" });
     }
   }
-  return rows.length ? rows : [{ termin: t, datum: t.datum, zeit: "" }];
+  return rows.length ? rows : [{ termin: t, datum: t.datum, zeit: "", candId: "" }];
+}
+
+// Zählt Zu-/Absagen für einen Terminvorschlag und findet die eigene Stimme --
+// spiegelt umfrageHtml() aus der Vereinskalender-App. Wer das hier ändert,
+// sollte dort nachsehen, damit Widget und App dieselben Zahlen zeigen.
+function calendarVoteCounts(t, candId, username) {
+  const stimmen = (t.umfrage && t.umfrage.stimmen && typeof t.umfrage.stimmen === "object") ? t.umfrage.stimmen : {};
+  let ja = 0, nein = 0, meins = null;
+  Object.keys(stimmen).forEach((user) => {
+    const votes = stimmen[user];
+    const v = (votes && typeof votes === "object") ? votes[candId] : null;
+    if (v === "ja") ja++; else if (v === "nein") nein++;
+    if (user === username) meins = (v === "ja" || v === "nein") ? v : null;
+  });
+  return { ja: ja, nein: nein, meins: meins };
 }
 
 // Sortiert nach dem Datum DER ZEILE. Die Uhrzeit kommt bei Umfrage-Vorschlägen
@@ -1732,16 +1752,37 @@ function renderSidebarWidget(widget, opts) {
     const k = kategorien.find((k2) => k2.id === id);
     return k ? k.farbe : "#6b7280";
   };
-  // row = { termin, datum } (siehe calendarWidgetRows) -- das Datum kommt aus der
-  // Zeile, nicht aus dem Termin, damit jeder Umfrage-Vorschlag sein eigenes Datum
-  // zeigt statt dreimal dem frühesten.
-  const rowHtml = (row) => `
-        <a class="calendar-widget-item" href="${escapeHtml(url)}">
-          <span class="cw-date">${escapeHtml(formatCalendarDate(row.datum))}</span>
-          <span class="cw-dot" style="background:${escapeHtml(katFarbe(row.termin.kategorie))}"></span>
-          <span class="cw-title">${escapeHtml(row.termin.titel || "")}</span>
-        </a>
+  // row = { termin, datum, zeit, candId } (siehe calendarWidgetRows) -- das Datum
+  // kommt aus der Zeile, nicht aus dem Termin, damit jeder Umfrage-Vorschlag sein
+  // eigenes Datum zeigt statt dreimal dem frühesten.
+  const rowHtml = (row) => {
+    const inner =
+      `<span class="cw-date">${escapeHtml(formatCalendarDate(row.datum))}</span>` +
+      `<span class="cw-dot" style="background:${escapeHtml(katFarbe(row.termin.kategorie))}"></span>` +
+      `<span class="cw-title">${escapeHtml(row.termin.titel || "")}</span>`;
+    if (!row.candId || !row.termin.id) {
+      return `<a class="calendar-widget-item" href="${escapeHtml(url)}">${inner}</a>`;
+    }
+    // Umfrage-Vorschlag: Zeile führt weiter in die App, bekommt darunter aber die
+    // Zu-/Absage-Knöpfe. Die Buttons dürfen NICHT im <a> stecken -- verschachtelte
+    // interaktive Elemente sind ungültiges HTML, und der Klick würde zusätzlich
+    // der Verlinkung folgen und das Dashboard verlassen.
+    const c = calendarVoteCounts(row.termin, row.candId, currentUser ? currentUser.username : null);
+    const knopf = (val, zeichen, anzahl, titel) => `
+            <button type="button" class="cw-vote cw-vote-${val}${c.meins === val ? " active" : ""}"
+              data-termin-id="${escapeHtml(row.termin.id)}" data-cand-id="${escapeHtml(row.candId)}"
+              data-val="${val}" title="${titel}">${zeichen} ${anzahl}</button>`;
+    return `
+        <div class="calendar-widget-item calendar-widget-poll">
+          <a class="cw-main" href="${escapeHtml(url)}">${inner}</a>
+          <div class="cw-votes">
+            ${knopf("ja", "✓", c.ja, "Zusagen (nochmal klicken = zurückziehen)")}
+            ${knopf("nein", "✗", c.nein, "Absagen (nochmal klicken = zurückziehen)")}
+            <span class="cw-vote-msg"></span>
+          </div>
+        </div>
       `;
+  };
   // Geburtstage (immer nur die von HEUTE, siehe list-birthdays-today) stehen
   // als eigene, nicht verlinkte Zeilen ganz oben -- kein Termin-Objekt aus dem
   // Vereinskalender, daher kein href dorthin.
@@ -1807,6 +1848,59 @@ function renderSidebarWidget(widget, opts) {
   widget.innerHTML = `<div class="card">${calendarHtml}${absenceHtml}</div>`;
   widget.dataset.hasContent = "1";
   widget.style.display = isUebersichtTabActive() ? "block" : "none";
+
+  // Für das Neu-Rendern nach einer abgegebenen Stimme merken; der Klick-Handler
+  // hängt am Container (überlebt das innerHTML-Ersetzen) und wird nur einmal
+  // gebunden.
+  calendarWidgetOpts = opts;
+  if (!widget.dataset.voteBound) {
+    widget.addEventListener("click", onCalendarWidgetClick);
+    widget.dataset.voteBound = "1";
+  }
+}
+
+function calendarWidgetTerminById(id) {
+  if (!calendarWidgetOpts) return null;
+  const alle = (calendarWidgetOpts.oeffentlich || []).concat(calendarWidgetOpts.privat || []);
+  const row = alle.find((r) => r && r.termin && r.termin.id === id);
+  return row ? row.termin : null;
+}
+
+// Abstimmen direkt aus dem Dashboard. Läuft über die BESTEHENDE Worker-Aktion
+// `vereinskalender-vote` -- nicht über dav-save: vereinskalender steht in
+// WRITE_REQUIRES_EDIT_PERMISSION, ein generisches Speichern liefe für genau die
+// eingeladenen Nicht-Bearbeiter ins 403 (derselbe Bug wie 2026-07-23 in der App).
+// Bewusst KEIN optimistisches Update: die Knöpfe sperren bis der Server geantwortet
+// hat und zeigen dann dessen Zahlen -- so steht im Widget nie ein Stand, den der
+// Server nicht bestätigt hat.
+async function onCalendarWidgetClick(e) {
+  const btn = e.target.closest(".cw-vote");
+  if (!btn || btn.disabled) return;
+  e.preventDefault();
+
+  const zeile = btn.closest(".calendar-widget-poll");
+  const knoepfe = Array.from(zeile.querySelectorAll(".cw-vote"));
+  const msgEl = zeile.querySelector(".cw-vote-msg");
+  knoepfe.forEach((b) => { b.disabled = true; });
+  if (msgEl) msgEl.textContent = "";
+
+  // Zweiter Klick auf denselben Knopf zieht die eigene Stimme zurück (wie in der App).
+  const wert = btn.classList.contains("active") ? "" : btn.dataset.val;
+  try {
+    const res = await callWorker("vereinskalender-vote", {
+      terminId: btn.dataset.terminId, candId: btn.dataset.candId, wert: wert
+    });
+    const t = calendarWidgetTerminById(btn.dataset.terminId);
+    if (t && t.umfrage) {
+      t.umfrage.stimmen = (res && res.stimmen && typeof res.stimmen === "object") ? res.stimmen : {};
+    }
+    const widget = document.getElementById("calendar-widget");
+    if (widget && calendarWidgetOpts) renderSidebarWidget(widget, calendarWidgetOpts);
+  } catch (err) {
+    console.warn("Abstimmen im Termine-Widget fehlgeschlagen:", err);
+    knoepfe.forEach((b) => { b.disabled = false; });
+    if (msgEl) msgEl.textContent = err && err.message ? err.message : "Abstimmen fehlgeschlagen.";
+  }
 }
 
 // ---- Admin: Neuigkeiten verwalten (Einstellungen-Tab) ----

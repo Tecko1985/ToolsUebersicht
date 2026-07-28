@@ -323,6 +323,19 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.2",
+    groups: [
+      {
+        title: "Zusagen direkt im Dashboard",
+        items: [
+          "Bei einem Termin mit mehreren Terminmöglichkeiten stehen die Zu- und Absagen jetzt direkt im Widget „Nächste Termine“ — mit Anzahl je Möglichkeit.",
+          "Zu- und absagen geht von dort aus mit einem Klick auf den Haken bzw. das Kreuz, ohne den Vereinskalender zu öffnen. Ein zweiter Klick auf denselben Knopf zieht die eigene Stimme wieder zurück; die eigene Wahl ist farbig hervorgehoben.",
+          "Abstimmen darf wie im Vereinskalender jeder, der den Termin sehen kann — nicht nur Bearbeiter."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.1",
     groups: [
       {

@@ -450,6 +450,25 @@ main { flex: 1; min-width: 0; }
 .calendar-widget-birthday { cursor: default; }
 .calendar-widget-birthday:hover { background: none; }
 .calendar-widget-birthday .cw-title { color: #b8860b; }
+/* Umfrage-Vorschlag: Datum/Titel bleiben eine verlinkte Zeile, die Zu-/Absage-
+   Knöpfe stehen darunter. In der 260px schmalen Spalte ist nebeneinander kein
+   Platz -- der Titel würde auf ~80px zusammenschrumpfen. */
+.calendar-widget-poll { flex-direction: column; align-items: stretch; gap: 6px; }
+.calendar-widget-poll .cw-main {
+  display: flex; align-items: center; gap: 8px;
+  text-decoration: none; color: var(--text); min-width: 0;
+}
+.calendar-widget-poll .cw-votes { display: flex; align-items: center; gap: 6px; padding-left: 48px; }
+.cw-vote {
+  border: 1px solid var(--border); background: var(--white); border-radius: 6px;
+  padding: 2px 8px; font-size: 12px; font-weight: 700; font-family: inherit;
+  cursor: pointer; color: var(--muted); line-height: 1.6;
+}
+.cw-vote:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+.cw-vote:disabled { opacity: 0.5; cursor: default; }
+.cw-vote-ja.active { background: #16a34a; border-color: #16a34a; color: #fff; }
+.cw-vote-nein.active { background: #dc2626; border-color: #dc2626; color: #fff; }
+.cw-vote-msg { font-size: 11px; color: #dc2626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-widget-sub-heading {
   font-size: 13px;
   font-weight: 700;
