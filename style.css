@@ -541,10 +541,27 @@ main { flex: 1; min-width: 0; }
 }
 .aufgabe-del:hover { color: #b91c1c; }
 
-.aufgaben-aktionen { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+/* Beide Aktionen sind Knöpfe im gleichen Chip-Format, aber unterschiedlich
+   gewichtet: Zuweisen ist die eigentliche Aktion und trägt die Akzentfarbe,
+   Aufräumen bleibt grau im Hintergrund. Vorher waren es unterstrichene
+   Textlinks -- die sahen in der Karte wie ein Fremdkörper aus. */
+.aufgaben-aktionen { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .aufgaben-aktionen button {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-family: inherit; font-size: 12px; color: var(--blue); text-decoration: underline;
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); background: var(--white);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 600; color: var(--muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.aufgaben-aktionen button:hover { background: var(--gray); }
+.aufgaben-aktionen .aufgaben-zuweisen-oeffnen { color: var(--blue); border-color: #bfd4ee; }
+.aufgaben-zuweisen-oeffnen:hover { background: var(--blue-light); border-color: var(--blue); }
+/* Das Plus sitzt in einem eigenen Kreis, damit der Knopf auch ohne Farbe als
+   "hier kommt etwas Neues dazu" lesbar bleibt. */
+.aufgaben-zuweisen-oeffnen .chip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--blue); color: #fff; font-size: 11px; line-height: 1; font-weight: 700;
 }
 .aufgaben-fehler { color: #b91c1c; font-size: 12px; margin-top: 8px; }
 .aufgaben-fehler:empty { display: none; }

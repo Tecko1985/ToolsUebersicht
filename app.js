@@ -2086,7 +2086,9 @@ function renderAufgabenWidget() {
       }</div>
       <div class="aufgaben-aktionen">
         ${wegraeumbar ? '<button type="button" class="aufgaben-aufraeumen">Erledigte aufräumen</button>' : ""}
-        ${aufgabenState.canAssign ? '<button type="button" class="aufgaben-zuweisen-oeffnen">Aufgabe zuweisen …</button>' : ""}
+        ${aufgabenState.canAssign
+          ? '<button type="button" class="aufgaben-zuweisen-oeffnen"><span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen</button>'
+          : ""}
       </div>
       <p class="aufgaben-fehler" id="aufgaben-fehler"></p>
       ${zugewiesenHtml}
