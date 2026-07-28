@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.21" />
+<link rel="stylesheet" href="style.css?v=1.22" />
 </head>
 <body>
 
@@ -640,11 +640,15 @@
     </div>
     <div id="aufgabe-zuweisen-empfaenger" class="aufgaben-empfaenger-liste"></div>
 
-    <!-- Nur im Modus "Unterschrift anfordern" sichtbar. Das Recht dafür ist eine
-         eigene, engere Stufe (aufgaben.dokumentGroupIds): eine Unterschrift
-         einzufordern ist etwas anderes, als jemandem eine Aufgabe in die Liste
-         zu legen. Deshalb auch zwei getrennte Knöpfe statt eines Häkchens. -->
+    <!-- Braucht in beiden Modi das Recht aus aufgaben.dokumentGroupIds -- eine eigene,
+         engere Stufe als das Zuweisen. Unterschied: beim "Aufgabe zuweisen" ist das
+         Dokument OPTIONAL (Häkchen), beim "Unterschrift anfordern" ist es der Zweck
+         und damit Pflicht; dort entfällt das Häkchen. -->
     <div id="aufgabe-zuweisen-dok-block" style="display:none; margin-top:14px; border-top:1px solid var(--border, #e3e6ec); padding-top:12px;">
+      <label class="check-inline" id="aufgabe-zuweisen-dok-an-zeile" style="display:none;">
+        <input type="checkbox" id="aufgabe-zuweisen-dok-an" />
+        <span>Dazu ein PDF zum Unterschreiben mitschicken</span>
+      </label>
       <div id="aufgabe-zuweisen-dok-felder" style="margin-top:10px;">
         <label class="form-label" for="aufgabe-zuweisen-dok-datei">Zu unterschreibendes PDF</label>
         <input type="file" id="aufgabe-zuweisen-dok-datei" accept="application/pdf,.pdf" />
@@ -683,22 +687,17 @@
       <h2 id="dokumente-titel">✅ Meine Aufgaben</h2>
       <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
     </div>
-    <p class="muted">Aufgaben zuweisen, Dokumente unterschreiben — und sehen, was zurückgekommen ist.</p>
-    <!-- Drei getrennte Vorgänge, drei Knöpfe (Michel-Vorgabe): eine Aufgabe
-         verteilen, eine Unterschrift einfordern und selbst unterschreiben sind
-         verschiedene Dinge — und hängen an verschiedenen Rechten
-         (assignGroupIds bzw. dokumentGroupIds). -->
-    <div class="btn-row" style="margin-top:10px;">
+    <p class="muted">Deine Aufgaben — und die Dokumente, die unterschrieben werden sollen.</p>
+    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <!-- ===== Teil 1: Aufgaben ===== -->
+    <!-- Jeder Knopf steht bei dem Teil, zu dem er gehört (Michel-Vorgabe): oben
+         nur die eigene Liste und das Zuweisen, unten alles rund um Unterschriften. -->
+    <div class="btn-row" style="margin-top:12px;">
       <button type="button" class="btn small" id="btn-fenster-zuweisen" style="display:none;">
         <span class="chip-icon" aria-hidden="true">+</span>Aufgabe zuweisen
       </button>
-      <button type="button" class="btn small" id="btn-fenster-unterschrift" style="display:none;">
-        <span class="chip-icon" aria-hidden="true">✍</span>Unterschrift anfordern
-      </button>
-      <button type="button" class="btn small secondary" id="btn-dokument-selbst">Selbst unterschreiben</button>
-      <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
     </div>
-    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
 
     <!-- Die persönliche Liste. Stand bis 2026-07-28 als Karte unten links im
          Dashboard und ist mit ihr hierher gezogen -- ohne sie gäbe es keinen Ort
@@ -706,11 +705,21 @@
     <h3 class="dok-abschnitt">Meine Liste</h3>
     <div id="aufgaben-widget-inhalt"></div>
 
-    <h3 class="dok-abschnitt">Zu unterschreiben</h3>
+    <!-- ===== Teil 2: Unterschriften ===== -->
+    <h3 class="dok-abschnitt dok-trenner">Unterschriften</h3>
+    <div class="btn-row" style="margin-bottom:4px;">
+      <button type="button" class="btn small" id="btn-fenster-unterschrift" style="display:none;">
+        <span class="chip-icon" aria-hidden="true">✍</span>Unterschrift anfordern
+      </button>
+      <button type="button" class="btn small secondary" id="btn-dokument-selbst">Selbst unterschreiben</button>
+      <button type="button" class="btn small secondary" id="btn-dokumente-neuladen">Neu laden</button>
+    </div>
+
+    <h4 class="dok-unterabschnitt">Zu unterschreiben</h4>
     <div id="dokumente-an-mich"><p class="muted">Wird geladen …</p></div>
 
     <div id="dokumente-von-mir-karte">
-      <h3 class="dok-abschnitt">Von mir verschickt</h3>
+      <h4 class="dok-unterabschnitt">Von mir verschickt</h4>
       <div id="dokumente-von-mir"><p class="muted">Wird geladen …</p></div>
     </div>
   </div>
@@ -775,7 +784,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.29"></script>
-<script src="app.js?v=1.28"></script>
+<script src="config.js?v=1.30"></script>
+<script src="app.js?v=1.29"></script>
 </body>
 </html>

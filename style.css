@@ -637,6 +637,16 @@ main { flex: 1; min-width: 0; }
   font-size: 14px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
   margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
 }
+/* Trennt die beiden Haelften des Fensters (Aufgaben oben, Unterschriften unten)
+   deutlicher als die Abschnitte innerhalb einer Haelfte. */
+.dok-abschnitt.dok-trenner {
+  margin-top: 26px; padding-top: 18px; border-top: 2px solid var(--border);
+  color: var(--text); font-size: 15px;
+}
+.dok-unterabschnitt {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
+  margin: 18px 0 8px; font-weight: 700;
+}
 .dok-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
 .dok-item.status-unterschrieben { border-left: 3px solid #2d8c4e; }
 .dok-item.status-abgelehnt { border-left: 3px solid #c0392b; }

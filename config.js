@@ -318,7 +318,8 @@ const APP_CHANGELOG = [
       {
         title: "Dokumente zum Unterschreiben",
         items: [
-          "Zwei getrennte Knöpfe für zwei verschiedene Dinge: „Aufgabe zuweisen“ verteilt eine Aufgabe, „Unterschrift anfordern“ schickt ein PDF zum Unterschreiben. Beides hat eigene Rechte — wer Aufgaben verteilen darf, kann deshalb nicht automatisch Unterschriften einfordern.",
+          "Das Fenster ist in zwei Hälften geteilt: oben deine eigene Liste samt „Aufgabe zuweisen“, unten alles rund um Unterschriften — anfordern, selbst unterschreiben und der Rücklauf. Jeder Knopf steht bei dem Teil, zu dem er gehört.",
+          "„Unterschrift anfordern“ schickt ein PDF direkt zum Unterschreiben. Beim „Aufgabe zuweisen“ lässt sich zusätzlich ein PDF mitschicken, wenn beides zusammengehört. Beides braucht ein eigenes Recht — wer Aufgaben verteilen darf, kann deshalb nicht automatisch Unterschriften einfordern.",
           "Beim Anfordern wählst du das PDF aus und ziehst direkt in der Seitenvorschau ein Rechteck auf die Stelle, an der unterschrieben werden soll.",
           "Alles rund um Aufgaben steckt jetzt hinter dem Knopf „Meine Aufgaben“ oben in der Kopfzeile neben dem Materialcontainercode: die eigene Liste, das Zuweisen an andere, die Dokumente und der Rücklauf. Die Karte unten links auf der Startseite ist dafür ganz entfallen — dort stehen nur noch die Termine.",
           "Am Knopf zeigt ein Zähler, wie viele Aufgaben offen sind; er wird rot, sobald etwas überfällig oder neu zugewiesen ist. So sieht man es beim Aufrufen der Seite, ohne das Fenster zu öffnen.",

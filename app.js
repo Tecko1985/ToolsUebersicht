@@ -2370,8 +2370,16 @@ async function oeffneAufgabeZuweisen(modus) {
   document.getElementById("aufgabe-zuweisen-error").style.display = "none";
 
   // Dokument-Teil in den Ausgangszustand: eine offene Datei aus einem früheren
-  // Aufruf darf nicht versehentlich an der nächsten Anforderung hängen.
-  document.getElementById("aufgabe-zuweisen-dok-block").style.display = istDok ? "" : "none";
+  // Aufruf darf nicht versehentlich an der nächsten Zuweisung hängen.
+  //
+  // Beim Zuweisen ist das Dokument optional und liegt hinter einem Häkchen; beim
+  // Anfordern ist es der Zweck der Sache und damit Pflicht, dort entfällt das
+  // Häkchen. In beiden Fällen braucht es das Dokument-Recht.
+  document.getElementById("aufgabe-zuweisen-dok-block").style.display =
+    (istDok || aufgabenState.canAssignDocs) ? "" : "none";
+  document.getElementById("aufgabe-zuweisen-dok-an-zeile").style.display = istDok ? "none" : "";
+  document.getElementById("aufgabe-zuweisen-dok-an").checked = false;
+  document.getElementById("aufgabe-zuweisen-dok-felder").style.display = istDok ? "" : "none";
   document.getElementById("aufgabe-zuweisen-dok-datei").value = "";
   document.getElementById("aufgabe-zuweisen-dok-status").textContent = "";
   document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "none";
@@ -2448,7 +2456,10 @@ function setupAufgabenZuweisenDialog() {
   });
   document.getElementById("btn-aufgabe-zuweisen-senden").addEventListener("click", aufgabeZuweisenSenden);
 
-  // ---- Zu unterschreibendes PDF (nur im Modus "Unterschrift anfordern") ----
+  // ---- Zu unterschreibendes PDF ----
+  document.getElementById("aufgabe-zuweisen-dok-an").addEventListener("change", (e) => {
+    document.getElementById("aufgabe-zuweisen-dok-felder").style.display = e.target.checked ? "" : "none";
+  });
   document.getElementById("aufgabe-zuweisen-dok-datei").addEventListener("change", async (e) => {
     const datei = e.target.files && e.target.files[0];
     const statusEl = document.getElementById("aufgabe-zuweisen-dok-status");
@@ -2497,7 +2508,9 @@ async function aufgabeZuweisenSenden() {
     : "Bitte eine Aufgabe eintragen.");
   if (!empfaenger.length) return zeige("Bitte mindestens eine Person auswählen.");
 
-  const mitDokument = zuweisenModus === "unterschrift";
+  // Im Anfordern-Modus immer, im Zuweisen-Modus nur wenn angehakt.
+  const hakenEl = document.getElementById("aufgabe-zuweisen-dok-an");
+  const mitDokument = zuweisenModus === "unterschrift" || (hakenEl && hakenEl.checked);
   if (mitDokument && !zuweisenPdfBytes) return zeige("Bitte eine PDF-Datei auswählen.");
 
   btn.disabled = true;
