@@ -323,6 +323,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.13",
+    groups: [
+      {
+        title: "ToDos und Unterschriften sind getrennt",
+        items: [
+          "Der Knopf „Meine Aufgaben“ oben heißt jetzt „Unterschriften anfordern“ und enthält auch nur noch das: die Dokumente, die du unterschreiben sollst, die du selbst verschickt hast, und den Weg zum eigenen Unterschreiben.",
+          "Deine persönliche ToDo-Liste hat einen eigenen Knopf „Meine ToDos“ bekommen — er steht auf der rechten Seite der Kopfzeile, neben deinem Namen. Anlegen, Fälligkeit setzen, abhaken und aufräumen funktionieren dort unverändert.",
+          "Beide Knöpfe zählen jetzt getrennt: links steht, wie viele Dokumente auf deine Unterschrift warten, rechts, wie viele eigene ToDos offen sind. Rot wird die Zahl weiterhin, sobald etwas neu, heute fällig oder überfällig ist — und der Mauszeiger verrät, was genau.",
+          "Ein Dokument, das du unterschreiben sollst, steht damit nur noch an einer Stelle statt an zweien. Vorher tauchte es zusätzlich in der ToDo-Liste auf, ließ sich dort aber nicht abhaken."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.12",
     groups: [
       {

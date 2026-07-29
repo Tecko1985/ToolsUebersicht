@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.24" />
+<link rel="stylesheet" href="style.css?v=1.25" />
 </head>
 <body>
 
@@ -19,11 +19,18 @@
   <div class="header-btns">
     <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
     <!-- Der Zähler ersetzt die Karte auf der Startseite: ohne ihn sähe man beim
-         Aufrufen der Seite gar nicht mehr, dass etwas offen ist. -->
-    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Eigene Aufgaben, Zuweisungen und Dokumente">✅ Meine Aufgaben<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
+         Aufrufen der Seite gar nicht mehr, dass etwas offen ist. Er zählt hier
+         ausschließlich die Dokumente, die auf die eigene Unterschrift warten --
+         die persönlichen ToDos haben ihren eigenen Knopf rechts. -->
+    <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Unterschriften anfordern und selbst unterschreiben">✍ Unterschriften<span class="btn-lang"> anfordern</span><span class="header-zaehler" id="dokumente-kopf-zaehler" style="display:none;"></span></button>
   </div>
   <button type="button" class="header-admin-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
   <div class="header-right">
+    <!-- Die persönliche Liste steht bewusst auf der ANDEREN Seite der Kopfzeile
+         (Michel-Vorgabe 2026-07-29): sie hat mit den Unterschriften nichts zu tun,
+         und zwei benachbarte Knöpfe hätten genau die Vermischung fortgeschrieben,
+         die das Aufteilen beenden soll. -->
+    <button type="button" class="header-code-btn" id="btn-todos-oeffnen" style="display:none;" title="Eigene ToDos anlegen und abhaken">📝 <span class="btn-lang">Meine </span>ToDos<span class="header-zaehler" id="aufgaben-kopf-zaehler" style="display:none;"></span></button>
     <select class="view-as-select" id="view-as-select" style="display:none;" title="Testansicht: Dashboard und alle verlinkten Apps als Mitglied einer anderen Gruppe ansehen (nur für Admins)"></select>
     <div class="header-user" id="header-user" style="display:none;"></div>
     <button type="button" class="header-logout-btn" id="btn-logout" style="display:none;">Abmelden</button>
@@ -325,7 +332,7 @@
     <details class="card collapsible" id="admin-aufgaben-panel" style="display:none;">
       <summary>Unterschriften anfordern</summary>
       <p class="muted" style="margin-bottom:14px;">
-        Wer darf über „Meine Aufgaben“ ein PDF verschicken, das unterschrieben werden muss? Ohne Häkchen kann das
+        Wer darf über „Unterschriften anfordern“ ein PDF verschicken, das unterschrieben werden muss? Ohne Häkchen kann das
         niemand außer den Administratoren — die Auswahl ist bewusst leer statt „alle“. Aufgaben, die jemand
         <strong>anderem</strong> aufgetragen werden, laufen dagegen über das Werkzeug „Vereinsaufgaben“ und
         richten sich dort nach den Ressorts, nicht nach dieser Liste.
@@ -682,33 +689,25 @@
   </div>
 </div>
 
-<!-- Dokumente zum Unterschreiben. Eigenes Fenster über dem Dashboard statt eines
-     Tabs (Michel-Vorgabe 2026-07-28): der Zugang sitzt als Knopf oben im Header
-     neben dem Materialcontainercode. Der Inhalt wird erst beim Öffnen geholt --
-     die meisten Seitenaufrufe gehen nie hier hinein. -->
-<div class="code-overlay" id="dokumente-overlay" style="display:none;">
-  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="dokumente-titel">
+<!-- Persönliche ToDos. Eigenes Fenster mit eigenem Kopf-Knopf RECHTS in der
+     Kopfzeile (Michel-Vorgabe 2026-07-29). Bis dahin steckte diese Liste in der
+     oberen Hälfte des Unterschriften-Fensters; zwei Dinge, die nichts miteinander
+     zu tun haben, teilten sich einen Knopf und eine Überschrift.
+     ⚠️ Der Container heißt weiter #aufgaben-widget-inhalt -- daran hängen
+     renderAufgabenWidget() und alle Handler aus setupAufgabenWidget(). -->
+<div class="code-overlay" id="todos-overlay" style="display:none;">
+  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="todos-titel">
     <div class="code-dialog-head">
-      <h2 id="dokumente-titel">✅ Meine Aufgaben</h2>
-      <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
+      <h2 id="todos-titel">📝 Meine ToDos</h2>
+      <button type="button" class="code-dialog-close" id="btn-todos-close" title="Schließen" aria-label="Schließen">✕</button>
     </div>
-    <p class="muted">Deine Aufgaben — und die Dokumente, die unterschrieben werden sollen.</p>
-    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
-
-    <!-- ===== Teil 1: Aufgaben ===== -->
-    <!-- Jeder Knopf steht bei dem Teil, zu dem er gehört (Michel-Vorgabe): oben
-         nur die eigene Liste, unten alles rund um Unterschriften.
-
-         Der Knopf "Aufgabe zuweisen" ist am 2026-07-28 ERSATZLOS entfernt worden
-         (Michel-Entscheidung): diese Liste ist ab jetzt ausschließlich das, was
-         man sich SELBST notiert. Was einem anderen aufgetragen wird, gehört in
-         die eigene App "Vereinsaufgaben" — mit Ressorts, Fristenkontrolle und
-         dauerhafter Historie. Zwei Orte, an denen eine Zuweisung entstehen kann,
-         wären genau die Doppelung, die vermieden werden soll.
-
-         Der Unterschriften-Weg bleibt hier: er hängt an dokumentGroupIds, nicht
-         an assignGroupIds, und ist von dieser Trennung nicht betroffen. -->
-    <p class="muted" style="margin-top:12px;">
+    <!-- Der Knopf "Aufgabe zuweisen" ist am 2026-07-28 ERSATZLOS entfernt worden
+         (Michel-Entscheidung): diese Liste ist ausschließlich das, was man sich
+         SELBST notiert. Was einem anderen aufgetragen wird, gehört in die eigene
+         App "Vereinsaufgaben" -- mit Ressorts, Fristenkontrolle und dauerhafter
+         Historie. Zwei Orte, an denen eine Zuweisung entstehen kann, wären genau
+         die Doppelung, die vermieden werden soll. -->
+    <p class="muted">
       Hier steht nur, was du dir selbst notierst. Aufgaben für andere werden in den
       Vereinsaufgaben vergeben.
     </p>
@@ -719,15 +718,26 @@
          eines der beiden das andere mitziehen, sonst laufen sie auseinander. -->
     <a class="btn-link" href="https://tecko1985.github.io/Vereinsaufgaben/">📋 Zu den Vereinsaufgaben</a>
 
-    <!-- Die persönliche Liste. Stand bis 2026-07-28 als Karte unten links im
-         Dashboard und ist mit ihr hierher gezogen -- ohne sie gäbe es keinen Ort
-         mehr, an dem man eigene Aufgaben anlegt und abhakt. -->
-    <h3 class="dok-abschnitt">Meine Liste</h3>
     <div id="aufgaben-widget-inhalt"></div>
+  </div>
+</div>
 
-    <!-- ===== Teil 2: Unterschriften ===== -->
-    <h3 class="dok-abschnitt dok-trenner">Unterschriften</h3>
-    <div class="btn-row" style="margin-bottom:4px;">
+<!-- Unterschriften. Eigenes Fenster über dem Dashboard statt eines Tabs
+     (Michel-Vorgabe 2026-07-28): der Zugang sitzt als Knopf oben im Header
+     neben dem Materialcontainercode. Der Inhalt wird erst beim Öffnen geholt --
+     die meisten Seitenaufrufe gehen nie hier hinein.
+     Seit 2026-07-29 steht hier NUR noch der Unterschriften-Weg; die persönliche
+     Liste hat ihr eigenes Fenster (siehe oben). -->
+<div class="code-overlay" id="dokumente-overlay" style="display:none;">
+  <div class="code-dialog dok-liste-dialog" role="dialog" aria-modal="true" aria-labelledby="dokumente-titel">
+    <div class="code-dialog-head">
+      <h2 id="dokumente-titel">✍ Unterschriften anfordern</h2>
+      <button type="button" class="code-dialog-close" id="btn-dokumente-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted">Dokumente, die unterschrieben werden sollen — angefordert und selbst geleistet.</p>
+    <p class="muted" id="dokumente-fehler" style="display:none; color:#c0392b; margin-top:10px;"></p>
+
+    <div class="btn-row" style="margin: 12px 0 4px;">
       <button type="button" class="btn small" id="btn-fenster-unterschrift" style="display:none;">
         <span class="chip-icon" aria-hidden="true">✍</span>Unterschrift anfordern
       </button>
@@ -807,7 +817,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.36"></script>
-<script src="app.js?v=1.34"></script>
+<script src="config.js?v=1.37"></script>
+<script src="app.js?v=1.35"></script>
 </body>
 </html>

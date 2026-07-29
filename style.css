@@ -78,11 +78,20 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
 .header-logout-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .view-as-select option { color: #111; }
 .badge-view-as { background: rgba(255, 170, 0, 0.35); border-color: rgba(255, 190, 60, 0.7); }
+/* Steht mittig zwischen den Kopf-Knoepfen links und dem Nutzerbereich rechts.
+   ⚠️ Bis 2026-07-29 war das eine ABSOLUTE Positionierung auf die Fenstermitte --
+   die zaehlt im Flex-Fluss nicht mit und ueberlappte deshalb, sobald die Knoepfe
+   links weit genug nach rechts wuchsen: mit "✅ Meine Aufgaben" um 70px, mit der
+   laengeren Beschriftung "✍ Unterschriften anfordern" um 145px (bei 1280px
+   gemessen, sichtbar nur fuer globale Admins -- nur die haben diesen Knopf).
+   Jetzt laeuft er im Fluss und kann dadurch grundsaetzlich nicht mehr kollidieren.
+   ⚠️ Das margin-right:auto hier gehoert mit dem an .header-btns zusammen: zwei
+   auto-Margins teilen den Freiraum haelftig, also klebt die Knopfgruppe am Titel
+   und dieser Knopf sitzt mittig zwischen ihr und dem Nutzerbereich. Nimmt man
+   eines von beiden weg, rutscht entweder die Gruppe in die Mitte (ohne das an
+   .header-btns) oder dieser Knopf an den Nutzerbereich (ohne das hier). */
 .header-admin-btn {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  margin-right: auto;
   align-items: center;
   gap: 6px;
   font: inherit;
@@ -98,10 +107,12 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
 }
 .header-admin-btn:hover { opacity: 0.9; }
 
-/* Kopf-Knoepfe (Materialcontainercode, Dokumente) sitzen links neben dem Titel.
-   margin-right:auto schiebt die Gruppe dorthin -- der Header ist space-between,
-   ohne das Auto-Margin landete sie mittig unter dem (absolut positionierten)
-   Admin-Dashboard-Button.
+/* Kopf-Knoepfe (Materialcontainercode, Unterschriften) sitzen links neben dem
+   Titel. Der ToDo-Knopf steht bewusst NICHT hier, sondern in .header-right --
+   die persoenliche Liste hat mit den Unterschriften nichts zu tun.
+   margin-right:auto schiebt die Gruppe an den Titel -- der Header ist
+   space-between, ohne das Auto-Margin landete sie mittig. Es wirkt zusammen mit
+   dem gleichnamigen am .header-admin-btn (siehe dort).
    ⚠️ Der Anker sitzt am WRAPPER, nicht an den Knoepfen: beide werden je nach Konto
    einzeln aus- und eingeblendet, und ein Anker an einem versteckten Element traegt
    nicht. Der Wrapper bleibt immer im Fluss, auch wenn beide Knoepfe weg sind. */
@@ -112,9 +123,10 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   margin-right: auto;
   margin-left: 10px;
   min-width: 0;
-  /* Am Handy passen "Materialcontainercode" und "Meine Aufgaben" nicht mehr
-     nebeneinander -- ohne Umbruch schiebt der zweite Knopf die ganze Seite
-     seitlich raus (gemessen: 387 px bei 375 px Fenster). */
+  /* Am Handy passen "Materialcontainercode" und "Unterschriften anfordern" nicht
+     mehr nebeneinander -- ohne Umbruch schiebt der zweite Knopf die ganze Seite
+     seitlich raus (gemessen: 387 px bei 375 px Fenster, damals noch mit der
+     kuerzeren Beschriftung "Meine Aufgaben"). */
   flex-wrap: wrap;
 }
 .header-code-btn {
@@ -521,7 +533,7 @@ main { flex: 1; min-width: 0; }
   border-top: 1px solid var(--border);
 }
 
-/* ---------- Aufgaben (im Fenster "Meine Aufgaben") ---------- */
+/* ---------- Aufgaben (im Fenster "Meine ToDos") ---------- */
 
 /* Bis 2026-07-28 eine aufklappbare Karte unten links im Dashboard; auf Michels
    Wunsch komplett ins Fenster gezogen. Der Zähler sitzt seither am Kopf-Knopf --
@@ -667,19 +679,12 @@ main { flex: 1; min-width: 0; }
 }
 .aufgabe-dok-link:hover { color: #1b3fa0; }
 
-/* Das Dokumente-Fenster traegt eine Liste, kein Einzelfeld -- deshalb breiter als
-   der Materialcontainer-Dialog und innen scrollbar. */
+/* Beide Kopf-Fenster (Unterschriften, ToDos) tragen eine Liste, kein Einzelfeld --
+   deshalb breiter als der Materialcontainer-Dialog und innen scrollbar. */
 .dok-liste-dialog { max-width: 720px; width: 100%; max-height: 88vh; overflow-y: auto; }
-.dok-abschnitt {
-  font-size: 14px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
-  margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
-}
-/* Trennt die beiden Haelften des Fensters (Aufgaben oben, Unterschriften unten)
-   deutlicher als die Abschnitte innerhalb einer Haelfte. */
-.dok-abschnitt.dok-trenner {
-  margin-top: 26px; padding-top: 18px; border-top: 2px solid var(--border);
-  color: var(--text); font-size: 15px;
-}
+/* .dok-abschnitt/.dok-trenner sind mit der Aufteilung in zwei Fenster
+   (2026-07-29) weggefallen: es gibt in keinem der beiden mehr zwei Haelften,
+   die voneinander abgesetzt werden muessten. */
 .dok-unterabschnitt {
   font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
   margin: 18px 0 8px; font-weight: 700;
@@ -742,6 +747,12 @@ main { flex: 1; min-width: 0; }
   /* Kompakter, damit die beiden Kopf-Knoepfe moeglichst lange in eine Zeile
      passen; reicht der Platz trotzdem nicht, bricht .header-btns um. */
   .header-code-btn { padding: 6px 10px; font-size: 12px; }
+  /* Und ab hier faellt der entbehrliche Teil der Beschriftung weg: "✍
+     Unterschriften anfordern" + "📝 Meine ToDos" zwangen die Kopfzeile bei 375px
+     auf 243px Hoehe (fast ein Drittel des Bildschirms), weil jede Gruppe eine
+     eigene Zeile brauchte. Gekuerzt bleibt der Sinn erhalten -- der volle Text
+     steht weiterhin im title und in der Ueberschrift des Fensters. */
+  .btn-lang { display: none; }
   /* Am Handy hängt das Widget per placeSidebarWidget() im Übersicht-Tab zwischen
      Neuigkeiten und Kacheln. Den seitlichen Rand liefert dort schon <main>, hier
      bleibt nur der Abstand nach unten — derselbe wie unter dem Neuigkeiten-Banner. */

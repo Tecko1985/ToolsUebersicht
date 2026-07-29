@@ -1615,8 +1615,8 @@ function isUebersichtTabActive() {
 }
 
 // Die linke Spalte trägt nur noch die Termine — die Aufgabenkarte ist am
-// 2026-07-28 auf Michels Wunsch ins Fenster "Meine Aufgaben" gezogen. Sichtbar
-// ist die Spalte also genau dann, wenn Termine geladen sind.
+// 2026-07-28 auf Michels Wunsch in ein Kopf-Fenster gezogen (seit 2026-07-29
+// "Meine ToDos"). Sichtbar ist die Spalte also genau dann, wenn Termine da sind.
 function updateSidebarSichtbarkeit() {
   const widget = document.getElementById("calendar-widget");
   if (!widget) return;
@@ -2063,14 +2063,49 @@ async function loadAufgaben() {
   }
 }
 
-// Der Zähler am Kopf-Knopf hängt nicht am Fenster, sondern am geladenen Stand --
-// er muss deshalb auch dann verschwinden, wenn gar nichts gerendert wird.
+// Ein Satz je Fall wie aufgabenSignalTexte, nur für die andere Kopfzeilen-Hälfte.
+// Bewusst eigene Sätze statt eines Wort-Parameters: "1 neue Aufgabe für dich"
+// ließe sich nicht sinnvoll auf Unterschriften umbiegen.
+function dokumentSignalTexte(sig) {
+  const t = [];
+  if (sig.neu) t.push(sig.neu === 1 ? "1 neue Unterschrift angefragt" : `${sig.neu} neue Unterschriften angefragt`);
+  if (sig.ueberfaellig) t.push(sig.ueberfaellig === 1 ? "1 Unterschrift ist überfällig" : `${sig.ueberfaellig} Unterschriften sind überfällig`);
+  if (sig.heuteFaellig) t.push(sig.heuteFaellig === 1 ? "1 Unterschrift ist heute fällig" : `${sig.heuteFaellig} Unterschriften sind heute fällig`);
+  return t;
+}
+
+// Zähler und Signal sitzen seit 2026-07-29 an ZWEI Kopf-Knöpfen (ToDos rechts,
+// Unterschriften links) und funktionieren an beiden gleich -- deshalb einmal hier.
+// Die Zahl bleibt die Gesamtzahl der offenen Einträge; rot wird sie nur bei einem
+// echten Signal (neu, heute fällig, überfällig).
+function kopfKnopfSignal(knopfId, zaehlerId, offen, sig, texte, ruheTitel) {
+  const zaehler = document.getElementById(zaehlerId);
+  if (zaehler) {
+    zaehler.textContent = offen || "";
+    zaehler.style.display = offen ? "" : "none";
+    zaehler.classList.toggle("warn", sig.gesamt > 0);
+  }
+  const knopf = document.getElementById(knopfId);
+  if (!knopf) return;
+  knopf.classList.toggle("hat-signal", sig.gesamt > 0);
+  knopf.title = texte.length ? texte.join(" · ") : ruheTitel;
+}
+
+// Die Zähler an den Kopf-Knöpfen hängen nicht am Fenster, sondern am geladenen
+// Stand -- sie müssen deshalb auch dann verschwinden, wenn gar nichts gerendert
+// wird. Beide zusammen: sie werden aus derselben Quelle gespeist.
 function aufgabenKopfZaehlerLeeren() {
-  const z = document.getElementById("aufgaben-kopf-zaehler");
-  if (!z) return;
-  z.textContent = "";
-  z.style.display = "none";
-  z.classList.remove("warn");
+  ["aufgaben-kopf-zaehler", "dokumente-kopf-zaehler"].forEach((id) => {
+    const z = document.getElementById(id);
+    if (!z) return;
+    z.textContent = "";
+    z.style.display = "none";
+    z.classList.remove("warn");
+  });
+  ["btn-todos-oeffnen", "btn-dokumente-oeffnen"].forEach((id) => {
+    const k = document.getElementById(id);
+    if (k) k.classList.remove("hat-signal");
+  });
 }
 
 function renderAufgabenWidget() {
@@ -2078,36 +2113,40 @@ function renderAufgabenWidget() {
   if (!ziel || !aufgabenState.geladen) return;
 
   const heute = heuteIso();
-  const liste = aufgabenState.meine.slice().sort((a, b) => aufgabeSortKey(a, heute).localeCompare(aufgabeSortKey(b, heute)));
+  const sortiert = aufgabenState.meine.slice().sort((a, b) => aufgabeSortKey(a, heute).localeCompare(aufgabeSortKey(b, heute)));
+  // Zwei Fenster, zwei Listen (Michel-Vorgabe 2026-07-29): eine Aufgabe mit dokId
+  // steht vollständig im Unterschriften-Fenster -- mit Absender, Status und PDF.
+  // Sie hier ein zweites Mal aufzuführen wäre genau die Vermischung, die das
+  // Aufteilen beenden soll; abhaken ließe sie sich hier ohnehin nie (403).
+  // ⚠️ Sichtbar bleibt sie damit NUR noch drüben: der Zähler am Unterschriften-
+  // Knopf unten ist deshalb Pflicht, nicht Kür.
+  const liste = sortiert.filter((a) => !a.dokId);
+  const mitDok = sortiert.filter((a) => a.dokId);
   const offen = liste.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
   const sig = aufgabenSignal(liste, heute);
   const wegraeumbar = liste.some((a) => (a.erledigt && !a.von) || a.zurueckgezogenAm);
 
-  // Der Zähler am Kopf-Knopf ist der Ersatz für die frühere Karte auf der
-  // Startseite: ohne ihn merkt man beim Seitenaufruf nicht mehr, dass etwas offen
-  // ist. Die Zahl bleibt die Gesamtzahl der offenen Aufgaben -- sie darf nicht
+  // Die Zähler an den Kopf-Knöpfen sind der Ersatz für die frühere Karte auf der
+  // Startseite: ohne sie merkt man beim Seitenaufruf nicht mehr, dass etwas offen
+  // ist. Die Zahl bleibt die Gesamtzahl der offenen Einträge -- sie darf nicht
   // schrumpfen, nur weil gerade nichts dringend ist.
   //
   // Rot allein hat sich als zu leise erwiesen: "3" sagt nicht, ob eine neue
   // Zuweisung dabei ist oder heute etwas fällig wird. Der Knopf trägt die
-  // Aufschlüsselung deshalb im Tooltip, und der Punkt daneben zeigt schon vor dem
-  // Öffnen, DASS es etwas gibt. Der Punkt sitzt absolut über der Ecke des Knopfes
-  // und kostet keine Layoutbreite -- am Handy endet die Kopfzeile sonst jenseits
-  // der Fensterbreite (bei 375px zuletzt bei 341px gemessen, der Puffer ist dünn).
-  const zaehler = document.getElementById("aufgaben-kopf-zaehler");
-  if (zaehler) {
-    zaehler.textContent = offen || "";
-    zaehler.style.display = offen ? "" : "none";
-    zaehler.classList.toggle("warn", sig.gesamt > 0);
-  }
-  const knopf = document.getElementById("btn-dokumente-oeffnen");
-  if (knopf) {
-    const texte = aufgabenSignalTexte(sig);
-    knopf.classList.toggle("hat-signal", sig.gesamt > 0);
-    knopf.title = texte.length
-      ? texte.join(" · ")
-      : (offen ? `${offen} offene ${offen === 1 ? "Aufgabe" : "Aufgaben"}` : "Eigene Aufgaben, Zuweisungen und Dokumente");
-  }
+  // Aufschlüsselung deshalb im Tooltip. Bewusst kein zusätzliches Badge: das
+  // kostet Layoutbreite, und die Kopfzeile hat am Handy keine mehr übrig.
+  //
+  // ⚠️ Beide Zahlen kommen aus aufgabenState, NICHT aus dokumenteState: die
+  // Aufgaben werden beim Seitenstart geladen, die Dokumente erst beim Öffnen des
+  // Fensters. Jede Dokument-Zuweisung legt eine Aufgabe mit dokId an, der Zähler
+  // stimmt also -- eine zweite Quelle würde nur auseinanderlaufen.
+  const offenDok = mitDok.filter((a) => !a.erledigt && !a.zurueckgezogenAm).length;
+  const sigDok = aufgabenSignal(mitDok, heute);
+  kopfKnopfSignal("btn-todos-oeffnen", "aufgaben-kopf-zaehler", offen, sig, aufgabenSignalTexte(sig),
+    offen ? `${offen} offene ${offen === 1 ? "Aufgabe" : "Aufgaben"}` : "Eigene ToDos anlegen und abhaken");
+  kopfKnopfSignal("btn-dokumente-oeffnen", "dokumente-kopf-zaehler", offenDok, sigDok, dokumentSignalTexte(sigDok),
+    offenDok ? `${offenDok} ${offenDok === 1 ? "Dokument wartet" : "Dokumente warten"} auf deine Unterschrift`
+             : "Unterschriften anfordern und selbst unterschreiben");
 
   const zeile = (a) => {
     const klassen = ["aufgabe-item"];
@@ -2162,6 +2201,11 @@ function renderAufgabenWidget() {
 
   // Abgeschlossenes darf der Zuweiser selbst wegräumen -- sonst steht es hier bis
   // zum Ablauf der 14-Tage-Frist und verdeckt, was noch offen ist.
+  // ⚠️ Diese Rückansicht wird bewusst NICHT nach dokId gefiltert (anders als die
+  // eigene Liste oben): "Abgeschlossene aufräumen" wirkt serverseitig auf alle
+  // abgeschlossenen Einträge, ein gefilterter Zähler würde also etwas anderes
+  // versprechen als der Knopf tut. Sie ist ohnehin nur noch Altbestand --
+  // zugewiesen wird in dieser App seit 2026-07-28 nicht mehr.
   const zugAbgeschlossen = aufgabenState.zugewiesenVonMir.filter((z) => z.erledigt || z.zurueckgezogenAm).length;
   const zugewiesenHtml = aufgabenState.zugewiesenVonMir.length ? `
     <details class="aufgaben-zugewiesen">
@@ -2219,7 +2263,9 @@ function renderAufgabenWidget() {
 
   // Gesehen wird nur gemeldet, wenn die Liste wirklich vor Augen steht -- das
   // Rendern allein passiert auch bei geschlossenem Fenster (Zähler-Aktualisierung).
-  if (dokumenteFensterOffen()) markiereAufgabenGesehen();
+  // Und nur die eigenen: wer seine ToDos aufmacht, hat die Unterschriftsanfrage
+  // im anderen Fenster damit nicht gesehen.
+  if (todosFensterOffen()) markiereAufgabenGesehen(false);
 }
 
 function aufgabenFehler(text) {
@@ -2236,14 +2282,19 @@ function aufgabenHinweisMitWeg(text, dokId) {
   const el = document.getElementById("aufgaben-fehler");
   if (!el) return;
   el.innerHTML = escapeHtml(text) +
-    ` <button type="button" class="aufgabe-zu-dokumenten"${dokId ? ` data-dok-id="${escapeHtml(dokId)}"` : ""}>Zu den Dokumenten</button>`;
+    ` <button type="button" class="aufgabe-zu-dokumenten"${dokId ? ` data-dok-id="${escapeHtml(dokId)}"` : ""}>Zu den Unterschriften</button>`;
 }
 
 // Meldet ungesehene Zuweisungen als gesehen. Bewusst nicht awaited und ohne
 // Neu-Rendern: die Markierung ist Nebensache, sie darf den Klick nicht bremsen
 // und die Liste nicht unter dem Finger neu sortieren.
-function markiereAufgabenGesehen() {
-  const ids = aufgabenState.meine.filter(aufgabeIstNeu).map((a) => a.id);
+// Seit der Aufteilung in zwei Fenster (2026-07-29) immer nur die Hälfte, die
+// gerade offen ist -- sonst nähme ein Blick in die ToDos dem Unterschriften-Knopf
+// sein Signal weg, ohne dass jemand die Anfrage gesehen hätte.
+function markiereAufgabenGesehen(mitDokument) {
+  const ids = aufgabenState.meine
+    .filter((a) => aufgabeIstNeu(a) && !!a.dokId === !!mitDokument)
+    .map((a) => a.id);
   if (!ids.length) return;
   aufgabenState.meine.forEach((a) => { if (ids.includes(a.id)) a.gesehenAm = new Date().toISOString(); });
   callWorker("aufgaben-gesehen", { ids }).catch((e) => console.warn("Gesehen-Markierung fehlgeschlagen:", e));
@@ -2252,6 +2303,22 @@ function markiereAufgabenGesehen() {
 function setupAufgabenWidget() {
   const container = document.getElementById("aufgaben-widget-inhalt");
   if (!container) return;
+
+  // Das Fenster, in dem der Container steckt. Eigener Kopf-Knopf rechts, seit die
+  // ToDos nicht mehr im Unterschriften-Fenster wohnen (Michel-Vorgabe 2026-07-29).
+  const overlay = document.getElementById("todos-overlay");
+  document.getElementById("btn-todos-oeffnen").addEventListener("click", oeffneTodosFenster);
+  document.getElementById("btn-todos-close").addEventListener("click", schliesseTodosFenster);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) schliesseTodosFenster(); });
+  document.addEventListener("keydown", (e) => {
+    // Über diesem Fenster geht kein Dialog auf -- die Sichtprüfung, die das
+    // Unterschriften-Fenster braucht, entfällt hier deshalb. Die Markierung wird
+    // trotzdem respektiert UND gesetzt, damit ein später ergänzter Dialog nicht
+    // zwei Ebenen auf einen Tastendruck zuklappt.
+    if (e.key !== "Escape" || !todosFensterOffen() || e.escapeVerbraucht) return;
+    e.escapeVerbraucht = true;
+    schliesseTodosFenster();
+  });
 
   // Ein Handler am Container: die Karte wird bei jeder Änderung neu gebaut, ein
   // Listener an den Zeilen selbst wäre nach dem ersten Klick verwaist.
@@ -2268,11 +2335,15 @@ function setupAufgabenWidget() {
       await aufgabenAufraeumen();
       return;
     }
-    // Eine Unterschriftsaufgabe führt ins Aufgaben-Fenster -- unterschrieben wird
-    // nicht im Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
+    // Eine Unterschriftsaufgabe führt ins Unterschriften-Fenster -- unterschrieben
+    // wird nicht im Widget, dafür ist es zu klein (PDF ansehen braucht Fläche).
+    // Seit der Aufteilung (2026-07-29) stehen Aufgaben mit dokId gar nicht mehr in
+    // dieser Liste; die beiden Sprung-Wege bleiben als Netz und wechseln dann
+    // sauber das Fenster, statt zwei übereinander offen zu lassen.
     const dokLink = e.target.closest(".aufgabe-dok-link");
     if (dokLink) {
       const dokId = dokLink.closest(".aufgabe-item").dataset.dokId;
+      schliesseTodosFenster();
       await oeffneDokumenteFenster();
       oeffneDokumentAnsicht(dokId);
       return;
@@ -2287,6 +2358,7 @@ function setupAufgabenWidget() {
     const wegBtn = e.target.closest(".aufgabe-zu-dokumenten");
     if (wegBtn) {
       const dokId = wegBtn.dataset.dokId;
+      schliesseTodosFenster();
       await oeffneDokumenteFenster();
       if (dokId) oeffneDokumentAnsicht(dokId);
       return;
@@ -3235,18 +3307,18 @@ async function dokumentAblehnenSenden() {
   }
 }
 
-// Öffnet das Dokumente-Fenster und lädt den Inhalt nach. Der Header-Knopf und der
-// Weg aus dem Aufgaben-Widget landen beide hier.
+// Öffnet das Unterschriften-Fenster und lädt den Inhalt nach. Der Header-Knopf und
+// der Weg aus dem Aufgaben-Widget landen beide hier.
 async function oeffneDokumenteFenster() {
   const overlay = document.getElementById("dokumente-overlay");
   if (!overlay) return;
   dokumenteFehler("");
   overlay.style.display = "flex";
-  // Beide Bereiche frisch holen: seit die Dashboard-Karte weg ist, ist das hier
-  // der einzige Ort, an dem die eigene Liste steht -- ein veralteter Stand aus
-  // dem Seitenaufruf wäre der Normalfall statt der Ausnahme.
+  // Die Aufgaben kommen mit, obwohl sie hier nichts rendern: aus ihnen speist sich
+  // der Zähler am Kopf-Knopf, und eine gerade geleistete Unterschrift soll ihn
+  // sofort kleiner machen.
   await Promise.all([loadDokumente(), loadAufgaben()]);
-  markiereAufgabenGesehen();
+  markiereAufgabenGesehen(true);
 }
 
 function schliesseDokumenteFenster() {
@@ -3261,6 +3333,32 @@ function schliesseDokumenteFenster() {
 
 function dokumenteFensterOffen() {
   const overlay = document.getElementById("dokumente-overlay");
+  return !!overlay && overlay.style.display === "flex";
+}
+
+// Persönliche ToDos: eigenes Fenster am rechten Kopf-Knopf (Michel-Vorgabe
+// 2026-07-29). Gleicher Bauplan wie das Unterschriften-Fenster, nur ohne
+// Nachladen von Dokumenten -- hier steht nichts, was von dokumente.json käme.
+async function oeffneTodosFenster() {
+  const overlay = document.getElementById("todos-overlay");
+  if (!overlay) return;
+  overlay.style.display = "flex";
+  // Frisch holen: die Liste kann auf einem anderen Gerät gewachsen sein, und der
+  // Stand aus dem Seitenaufruf ist bei einem lange offenen Tab der Normalfall.
+  // renderAufgabenWidget() meldet danach von selbst "gesehen" (Fenster ist offen).
+  await loadAufgaben();
+}
+
+function schliesseTodosFenster() {
+  const overlay = document.getElementById("todos-overlay");
+  if (overlay) overlay.style.display = "none";
+  // Wie beim Unterschriften-Fenster: die Gesehen-Markierung steht nur im Zustand,
+  // der Kopf-Zähler übernimmt sie erst beim nächsten Rendern.
+  renderAufgabenWidget();
+}
+
+function todosFensterOffen() {
+  const overlay = document.getElementById("todos-overlay");
   return !!overlay && overlay.style.display === "flex";
 }
 
@@ -4439,10 +4537,13 @@ function renderNavTabs() {
   document.getElementById("nav-konto").textContent = currentUser ? "Mein Konto" : "Anmelden";
   document.getElementById("nav-admin").style.display = istAdmin ? "" : "none";
   document.getElementById("nav-info").style.display = infoOffen ? "" : "none";
-  // Dokumente sind Personalsache: Spielerkonten bekommen auf allen zugehoerigen
-  // Aktionen ohnehin 403, das Fenster hat fuer sie also nichts zu zeigen. Der
-  // Zugang sitzt im Header neben dem Materialcontainercode, nicht in der Nav.
-  document.getElementById("btn-dokumente-oeffnen").style.display = dokumenteTabOffen() ? "" : "none";
+  // Unterschriften UND ToDos sind Personalsache: Spielerkonten bekommen auf allen
+  // zugehoerigen Aktionen ohnehin 403, die Fenster haben fuer sie also nichts zu
+  // zeigen. Beide Zugaenge sitzen im Header, nicht in der Nav -- Unterschriften
+  // links neben dem Materialcontainercode, die ToDos rechts.
+  const personalDa = dokumenteTabOffen();
+  document.getElementById("btn-dokumente-oeffnen").style.display = personalDa ? "" : "none";
+  document.getElementById("btn-todos-oeffnen").style.display = personalDa ? "" : "none";
 
   // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
   // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
@@ -4469,11 +4570,18 @@ function renderNavTabs() {
     activateTab("uebersicht");
   }
 
-  // Wer sich bei offenem Dokumente-Fenster abmeldet, stuende sonst weiter vor der
-  // zuletzt geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
-  // Ausblenden allein genuegt hier nicht, der Inhalt muss auch weg.
-  if (!dokumenteTabOffen()) {
+  // Wer sich bei offenem Fenster abmeldet, stuende sonst weiter vor der zuletzt
+  // geladenen Liste -- die Eintraege bleiben im DOM, bis etwas sie ersetzt.
+  // Ausblenden allein genuegt hier nicht, der Inhalt muss auch weg. Gilt fuer
+  // BEIDE Fenster; den Inhalt der ToDo-Liste raeumt loadAufgaben() selbst weg.
+  if (!personalDa) {
     schliesseDokumenteFenster();
+    schliesseTodosFenster();
+    // Die Zahlen im DOM stehen zu lassen genuegt nicht -- beim Wechsel in die
+    // Testansicht eines Spielerkontos laeuft renderNavTabs() ohne ein
+    // anschliessendes loadAufgaben(), und die alten Zaehler kaemen beim naechsten
+    // Einblenden unveraendert zurueck.
+    aufgabenKopfZaehlerLeeren();
     if (dokumenteState.geladen || dokumenteState.anMich.length || dokumenteState.vonMir.length) {
       dokumenteState = { anMich: [], vonMir: [], canAssignDocs: false, geladen: false };
       renderDokumente();
