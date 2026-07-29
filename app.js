@@ -2627,30 +2627,30 @@ async function aufgabeZuweisenSenden() {
   }
 }
 
-// ---- Admin: wer darf Aufgaben zuweisen (Einstellungen-Tab) ----
+// ---- Admin: wer darf Unterschriften anfordern (Einstellungen-Tab) ----
+//
+// Bis 2026-07-29 zeichnete das Panel zwei Listen: assignGroupIds (wer darf anderen
+// eine Aufgabe in die Liste legen) und dokumentGroupIds. Die erste ist ersatzlos
+// weg -- sie schaltete seit dem Umzug des Zuweisens in die App Vereinsaufgaben
+// nichts mehr. aufgabenState.assignGroupIds wird vom Worker weiterhin geliefert
+// und bleibt bewusst ungenutzt; siehe den Kommentar an speichereAufgabenGruppen().
 
 async function renderAufgabenAdminPanel() {
-  const listeEl = document.getElementById("aufgaben-gruppen-liste");
   const dokListeEl = document.getElementById("aufgaben-dok-gruppen-liste");
-  if (!listeEl) return;
-  const zeichne = (el, gesetzt, gruppen) => {
-    if (!el) return;
-    el.innerHTML = gruppen.length
+  if (!dokListeEl) return;
+  const gesetzt = aufgabenState.dokumentGroupIds || [];
+  try {
+    const res = await callWorker("list-groups", {});
+    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
+    dokListeEl.innerHTML = gruppen.length
       ? gruppen.map((g) => `
           <label class="aufgaben-gruppen-zeile">
             <input type="checkbox" value="${escapeHtml(g.id)}" ${gesetzt.includes(g.id) ? "checked" : ""} />
             <span>${escapeHtml(g.name || g.id)}</span>
           </label>`).join("")
       : '<p class="muted">Es sind noch keine Gruppen angelegt.</p>';
-  };
-  try {
-    const res = await callWorker("list-groups", {});
-    const gruppen = Array.isArray(res && res.groups) ? res.groups : [];
-    zeichne(listeEl, aufgabenState.assignGroupIds || [], gruppen);
-    zeichne(dokListeEl, aufgabenState.dokumentGroupIds || [], gruppen);
   } catch (e) {
-    listeEl.innerHTML = '<p class="muted">Gruppen konnten nicht geladen werden.</p>';
-    if (dokListeEl) dokListeEl.innerHTML = "";
+    dokListeEl.innerHTML = '<p class="muted">Gruppen konnten nicht geladen werden.</p>';
   }
 }
 
@@ -2660,14 +2660,16 @@ async function speichereAufgabenGruppen() {
   const metaEl = document.getElementById("aufgaben-admin-meta");
   errorEl.style.display = "none";
   successEl.style.display = "none";
-  const groupIds = Array.from(document.querySelectorAll("#aufgaben-gruppen-liste input[type=checkbox]:checked")).map((c) => c.value);
-  // Beide Listen gehen IMMER gemeinsam raus -- ein Panel, ein Speichern-Knopf, ein
-  // Objekt. Nur die eine zu schicken hiesse, die andere unveraendert zu lassen;
-  // dann wuerde ein Abwaehlen hier serverseitig nicht ankommen.
   const dokumentGroupIds = Array.from(document.querySelectorAll("#aufgaben-dok-gruppen-liste input[type=checkbox]:checked")).map((c) => c.value);
+  // groupIds (assignGroupIds) wird bewusst NICHT mitgeschickt, seit die zugehoerige
+  // Haekchenreihe entfernt ist: der Worker liest ein FEHLENDES Feld als "unveraendert"
+  // und bewahrt den gespeicherten Wert; ein mitgeschicktes [] wuerde ihn leeren. Der
+  // Altbestand bereits zugewiesener Aufgaben bleibt damit zurueckziehbar. Wer die Reihe
+  // je zurueckholt, muss beide Felder wieder gemeinsam schicken -- sonst kaeme ein
+  // Abwaehlen serverseitig nicht an.
   try {
-    const res = await callWorker("set-aufgaben-gruppen", { groupIds, dokumentGroupIds });
-    aufgabenState.assignGroupIds = Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : groupIds;
+    const res = await callWorker("set-aufgaben-gruppen", { dokumentGroupIds });
+    aufgabenState.assignGroupIds = Array.isArray(res && res.assignGroupIds) ? res.assignGroupIds : aufgabenState.assignGroupIds;
     aufgabenState.dokumentGroupIds = Array.isArray(res && res.dokumentGroupIds) ? res.dokumentGroupIds : dokumentGroupIds;
     successEl.style.display = "block";
     if (res && res.geaendertAm) {

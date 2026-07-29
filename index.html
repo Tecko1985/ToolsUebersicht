@@ -313,22 +313,22 @@
       <p class="muted" id="materialcontainer-admin-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
     </details>
 
-    <!-- Aufgaben: wer darf zuweisen (nur Admin) -->
+    <!-- Unterschriften anfordern: wer darf ein PDF zum Unterschreiben verschicken (nur Admin).
+         Hier stand bis 2026-07-29 zusätzlich eine erste Häkchenreihe für assignGroupIds
+         ("wer darf anderen eine Aufgabe in die Liste legen"). Sie ist ersatzlos entfernt,
+         weil sie seit dem Umzug des Zuweisens in die App Vereinsaufgaben (2026-07-28)
+         nichts mehr schaltete: die Aktion aufgabe-zuweisen hat keinen Einstieg mehr,
+         oeffneAufgabeZuweisen() wird nur noch im Modus "unterschrift" gerufen.
+         ⚠️ speichereAufgabenGruppen() schickt seitdem KEIN groupIds mehr mit — der Worker
+         liest ein fehlendes Feld als "unverändert" und bewahrt den gespeicherten Wert für
+         den Altbestand. Ein mitgeschicktes [] würde ihn dagegen leeren. -->
     <details class="card collapsible" id="admin-aufgaben-panel" style="display:none;">
-      <summary>Aufgaben</summary>
+      <summary>Unterschriften anfordern</summary>
       <p class="muted" style="margin-bottom:14px;">
-        Eine eigene Aufgabenliste hat automatisch jedes Mitarbeiterkonto (Spielerkonten nicht). Hier legst du nur
-        fest, wer <strong>anderen</strong> eine Aufgabe in die Liste legen darf. Ohne Häkchen kann das niemand
-        außer den Administratoren — die Auswahl ist bewusst leer statt „alle“.
-      </p>
-      <div id="aufgaben-gruppen-liste" class="aufgaben-gruppen-liste"></div>
-
-      <h3 style="margin:18px 0 6px; font-size:15px;">Dokumente zum Unterschreiben</h3>
-      <p class="muted" style="margin-bottom:14px;">
-        Wer darf an eine Aufgabe ein PDF hängen, das unterschrieben werden muss? Das ist bewusst eine
-        <strong>eigene, engere Stufe</strong> als das Zuweisen oben — eine Unterschrift einzufordern ist etwas
-        anderes, als jemandem eine Aufgabe in die Liste zu legen. Auch hier gilt: ohne Häkchen niemand außer den
-        Administratoren.
+        Wer darf über „Meine Aufgaben“ ein PDF verschicken, das unterschrieben werden muss? Ohne Häkchen kann das
+        niemand außer den Administratoren — die Auswahl ist bewusst leer statt „alle“. Aufgaben, die jemand
+        <strong>anderem</strong> aufgetragen werden, laufen dagegen über das Werkzeug „Vereinsaufgaben“ und
+        richten sich dort nach den Ressorts, nicht nach dieser Liste.
       </p>
       <div id="aufgaben-dok-gruppen-liste" class="aufgaben-gruppen-liste"></div>
 
@@ -799,7 +799,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.33"></script>
-<script src="app.js?v=1.31"></script>
+<script src="config.js?v=1.34"></script>
+<script src="app.js?v=1.32"></script>
 </body>
 </html>

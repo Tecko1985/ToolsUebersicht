@@ -323,6 +323,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.10",
+    groups: [
+      {
+        title: "Einstellungen aufgeräumt",
+        items: [
+          "Das Panel „Aufgaben“ in den Einstellungen heißt jetzt „Unterschriften anfordern“ und enthält nur noch die eine Häkchenreihe, die auch wirklich etwas schaltet.",
+          "Die obere Reihe „wer darf anderen eine Aufgabe in die Liste legen“ ist entfallen: seit die Aufgaben für andere in den Vereinsaufgaben vergeben werden, gab es dafür keinen Knopf mehr, den sie hätte freischalten können. Die Häkchen sahen nach einer Freigabe aus, bewirkten aber nichts.",
+          "Wer in den Vereinsaufgaben zuweisen darf, richtet sich dort nach den Ressorts — wer ein Ressort verantwortet oder vertritt, darf dessen Mitgliedern etwas auftragen. Das war schon immer so und ändert sich nicht.",
+          "Bereits zugewiesene Aufgaben aus der alten Liste bleiben unverändert abhakbar und zurückziehbar."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.9",
     groups: [
       {
