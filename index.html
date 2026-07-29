@@ -763,8 +763,11 @@
     </div>
 
     <p class="muted" id="dok-sig-meta"></p>
-    <!-- Sagt beim eigenen Dokument an, welcher Schritt noch fehlt. Platzieren ist
-         dort Pflicht, damit nie ein zusätzliches Blatt am Ende entsteht. -->
+    <!-- Sagt an, welcher Schritt noch fehlt — in BEIDEN Modi. Beim eigenen Dokument
+         ist das Platzieren Pflicht, damit nie ein zusätzliches Blatt am Ende entsteht.
+         Beim zugewiesenen sagt die Zeile, ob der Absender die Stelle vorgegeben hat
+         (dann ist das Feld gesperrt) oder ob man sie selbst wählen darf. Vorher schwieg
+         sie dort ganz — ein aufgezogenes Rechteck verschwand kommentarlos. -->
     <p class="dok-platz-info" id="dok-sig-platz-info" style="display:none;"></p>
 
     <div class="dok-seiten-leiste">
@@ -799,7 +802,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.34"></script>
-<script src="app.js?v=1.32"></script>
+<script src="config.js?v=1.35"></script>
+<script src="app.js?v=1.33"></script>
 </body>
 </html>

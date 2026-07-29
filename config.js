@@ -323,6 +323,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.11",
+    groups: [
+      {
+        title: "Unterschrift lässt sich wieder platzieren",
+        items: [
+          "Beim Unterschreiben eines Dokuments verschwand das aufgezogene Rechteck, sobald man die Maustaste losließ — behoben.",
+          "Hat der Absender keine Stelle vorgegeben, darfst du sie jetzt selbst wählen: Rechteck aufziehen, fertig. Vorher landete die Unterschrift in diesem Fall zwangsläufig auf einem zusätzlichen Blatt am Ende, obwohl man genau wusste, wohin sie gehört.",
+          "Hat der Absender eine Stelle vorgegeben, gilt sie weiterhin — das steht jetzt aber als Satz über dem Dokument, mit Namen und Seitenzahl. Bisher sprang das Rechteck dabei kommentarlos zurück und sah nach einem Fehler aus.",
+          "Über der Seitenvorschau steht in beiden Fällen, was als Nächstes zu tun ist."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.10",
     groups: [
       {

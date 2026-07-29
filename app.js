@@ -2920,13 +2920,34 @@ function signaturInVorschauSpiegeln(v, dataUrl) {
   dokSigStatusZeigen();
 }
 
-// Sagt im Selbst-Modus an, woran es noch fehlt. Beim zugewiesenen Dokument
-// bestimmt der Absender die Stelle -- da gibt es nichts zu melden.
+// Hat der Absender eine Stelle vorgegeben? Nur dann ist das Feld für den
+// Unterzeichner gesperrt. Eigene Funktion, weil dieselbe Frage an drei Stellen
+// beantwortet werden muss (Anzeige, Ziehen, Text) und sie sonst auseinanderliefe.
+function dokSigStelleVorgegeben() {
+  return !!(dokSigModus === "zugewiesen" && dokSigAktuell && dokSigAktuell.feld);
+}
+
+// Sagt an, woran es noch fehlt -- in BEIDEN Modi. Bis 2026-07-29 schwieg die
+// Zeile beim zugewiesenen Dokument ganz; wer dort ein Rechteck aufzog, sah es
+// beim Loslassen kommentarlos verschwinden und hielt das für einen Fehler.
 function dokSigStatusZeigen() {
   const el = document.getElementById("dok-sig-platz-info");
   if (!el) return;
-  if (dokSigModus !== "selbst") { el.style.display = "none"; return; }
   el.style.display = "";
+
+  if (dokSigModus !== "selbst") {
+    if (dokSigStelleVorgegeben()) {
+      const wer = dokSigAktuell.vonName || dokSigAktuell.von || "der Absender";
+      el.textContent = `Die Stelle für die Unterschrift hat ${wer} auf Seite ${dokSigAktuell.feld.seite} festgelegt — sie lässt sich hier nicht verschieben.`;
+    } else if (vorschauSignieren.feld) {
+      el.textContent = `Unterschrift steht auf Seite ${vorschauSignieren.feld.seite}.` +
+        (vorschauSignieren.signatur ? "" : " — jetzt noch unten unterschreiben.");
+    } else {
+      el.textContent = "Es ist keine Stelle vorgegeben: zieh ein Rechteck dorthin, wo deine Unterschrift stehen soll. Ohne Auswahl kommt sie auf ein zusätzliches Blatt am Ende.";
+    }
+    return;
+  }
+
   if (!dokSigOriginalBytes) {
     el.textContent = "Wähle zuerst eine PDF-Datei aus.";
   } else if (!vorschauSignieren.feld) {
@@ -3298,13 +3319,21 @@ function setupDokumenteTab() {
       bytesAlsBlobOeffnen(await dokumentDateiHolen(dokSigAktuell.id, "original"), (dokSigAktuell.titel || "dokument") + ".pdf");
     } catch (e) { dokSigFehler(e && e.message ? e.message : "Download fehlgeschlagen."); }
   });
-  // Nur im Selbst-Modus darf das Feld hier gesetzt werden -- bei einer Zuweisung
-  // bestimmt der Absender die Stelle, sonst wäre seine Vorgabe wirkungslos.
+  // Gesperrt ist das Feld nur, wenn der Absender eine Stelle VORGEGEBEN hat --
+  // sonst wäre seine Vorgabe wirkungslos. Hat er keine gesetzt, darf der
+  // Unterzeichner selbst platzieren: es gibt dann nichts zu überschreiben, und
+  // die Alternative wäre ein zusätzliches Blatt hinten, obwohl er genau weiß,
+  // wohin die Unterschrift gehört.
+  //
+  // ⚠️ Bis 2026-07-29 setzte dieser Zweig das Feld in JEDEM zugewiesenen Fall auf
+  // dokSigAktuell.feld zurück. Ohne Vorgabe war das null -- das eben aufgezogene
+  // Rechteck verschwand beim Loslassen kommentarlos (von Michel als Fehler
+  // gemeldet, im Preview reproduziert). Das Zurücksetzen bleibt für den Fall MIT
+  // Vorgabe, aber nicht mehr stumm.
   vorschauZiehenAktivieren(vorschauSignieren, () => {
-    if (dokSigModus !== "selbst") {
-      vorschauSignieren.feld = dokSigAktuell ? dokSigAktuell.feld : null;
+    if (dokSigStelleVorgegeben()) {
+      vorschauSignieren.feld = dokSigAktuell.feld;
       markerZeichnen(vorschauSignieren);
-      return;
     }
     dokSigStatusZeigen();
   });
