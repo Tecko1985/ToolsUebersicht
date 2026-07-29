@@ -166,6 +166,16 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   padding: 22px 24px 24px;
   width: 100%;
   max-width: 420px;
+  /* Ohne diese beiden Zeilen waechst ein Dialog mit viel Inhalt ueber den
+     Bildschirmrand hinaus, und die Knoepfe unten (Zuweisen/Anfordern) sind
+     schlicht nicht mehr erreichbar -- der Overlay selbst scrollt nicht.
+     Am 2026-07-29 von Michel gemeldet: nach dem Waehlen einer PDF war der
+     Absenden-Knopf nur noch ueber den Browser-Zoom zu erreichen. Die beiden
+     grossen Dialoge (.dok-dialog, .dok-liste-dialog) hatten das laengst, der
+     Zuweisen-Dialog hing an .code-dialog und ging leer aus. Gehoert deshalb
+     hierher und nicht in eine weitere Sonderklasse. */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
 }
 .code-dialog-head {
   display: flex;
@@ -687,6 +697,12 @@ main { flex: 1; min-width: 0; }
 
 /* Der Signier-Dialog braucht mehr Platz als die uebrigen: er zeigt eine PDF-Seite. */
 .dok-dialog { max-width: 860px; width: 100%; max-height: 92vh; overflow-y: auto; }
+/* Der Zuweisen-Dialog ist normalerweise ein schmales Formular (420px). Sobald
+   eine PDF-Vorschau darin steht, ist das zu eng, um eine Stelle zu treffen --
+   die Klasse setzt JS beim Anzeigen der Vorschau und nimmt sie beim Schliessen
+   wieder weg. Per CSS an der Sichtbarkeit des Kindes zu haengen ginge nur mit
+   :has(), das auf den aelteren iOS-Geraeten der Flotte fehlt. */
+.code-dialog.mit-vorschau { max-width: 860px; }
 .dok-seiten-leiste { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; font-size: 13px; flex-wrap: wrap; }
 .dok-canvas-wrap {
   position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;

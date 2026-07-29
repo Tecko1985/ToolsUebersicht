@@ -2466,6 +2466,10 @@ async function oeffneAufgabeZuweisen(modus) {
   document.getElementById("aufgabe-zuweisen-dok-datei").value = "";
   document.getElementById("aufgabe-zuweisen-dok-status").textContent = "";
   document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "none";
+  // Schmal starten: die Breite kommt erst mit der Vorschau dazu (siehe unten am
+  // Datei-Handler). Ein 860px-Formular ohne PDF darin sieht nur leer aus.
+  overlay.querySelector(".code-dialog").classList.remove("mit-vorschau");
+  zuweisenFeldInfoZeigen();
   vorschauZuweisen.doc = null;
   vorschauZuweisen.feld = null;
   zuweisenPdfBytes = null;
@@ -2556,6 +2560,9 @@ function setupAufgabenZuweisenDialog() {
       zuweisenPdfBytes = await dateiAlsBytes(datei);
       vorschauZuweisen.feld = null;
       document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "";
+      // Erst jetzt breit werden -- vorher ist nichts da, wofür sich die Breite lohnt.
+      document.querySelector("#aufgaben-zuweisen-overlay .code-dialog").classList.add("mit-vorschau");
+      zuweisenFeldInfoZeigen();
       await vorschauLaden(vorschauZuweisen, zuweisenPdfBytes);
       statusEl.textContent = datei.name;
     } catch (err) {
@@ -2569,12 +2576,22 @@ function setupAufgabenZuweisenDialog() {
   document.getElementById("dok-seite-vor").addEventListener("click", async () => {
     if (vorschauZuweisen.seite < vorschauZuweisen.seiten) { vorschauZuweisen.seite++; await vorschauRendern(vorschauZuweisen); }
   });
-  vorschauZiehenAktivieren(vorschauZuweisen, () => {
-    const info = document.getElementById("dok-feld-info");
-    info.textContent = vorschauZuweisen.feld
-      ? `Unterschriftsfeld auf Seite ${vorschauZuweisen.feld.seite} gesetzt.`
-      : "Kein Feld gesetzt — die Unterschrift kommt dann auf eine angehängte Seite.";
-  });
+  vorschauZiehenAktivieren(vorschauZuweisen, zuweisenFeldInfoZeigen);
+}
+
+// Erklärt die Platzierung, statt sie nur zu quittieren (Michel-Rückmeldung
+// 2026-07-29: "ein Hinweis, der diese Funktion erklärt, wäre super"). Vorher stand
+// hier ein reiner Zustandssatz -- wer nicht wusste, dass man überhaupt ein Rechteck
+// aufziehen KANN, erfuhr es nirgends. Der Text nennt jetzt auch, was ohne Rechteck
+// passiert, und das ist seit heute nicht mehr zwingend die angehängte Seite: ohne
+// Vorgabe darf der Empfänger die Stelle selbst wählen.
+function zuweisenFeldInfoZeigen() {
+  const info = document.getElementById("dok-feld-info");
+  if (!info) return;
+  info.className = "dok-platz-info";
+  info.textContent = vorschauZuweisen.feld
+    ? `Unterschrift kommt auf Seite ${vorschauZuweisen.feld.seite} an die markierte Stelle. Zum Ändern einfach ein neues Rechteck aufziehen.`
+    : "Zieh ein Rechteck auf die Stelle im Dokument, an der unterschrieben werden soll (mit der Maus oder dem Finger) — dort wird die Unterschrift später eingesetzt. Lässt du es weg, darf der Empfänger die Stelle selbst wählen; tut auch er es nicht, kommt die Unterschrift auf ein zusätzliches Blatt am Ende.";
 }
 
 async function aufgabeZuweisenSenden() {

@@ -323,6 +323,19 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.12",
+    groups: [
+      {
+        title: "Unterschrift anfordern: Hinweis und erreichbare Knöpfe",
+        items: [
+          "Nach dem Auswählen einer PDF waren die Knöpfe „Abbrechen“ und „Anfordern“ nicht mehr zu erreichen — das Fenster wuchs über den Bildschirmrand hinaus, und man kam nur über den Browser-Zoom heran. Das Fenster scrollt jetzt in sich selbst.",
+          "Mit einer Seitenvorschau wird das Fenster außerdem breiter, damit sich die Stelle im Dokument überhaupt treffen lässt.",
+          "Über der Vorschau steht jetzt ein Hinweis, der die Funktion erklärt: dass man ein Rechteck auf die gewünschte Stelle ziehen kann, dass sich das jederzeit ändern lässt und was passiert, wenn man es weglässt. Bisher stand dort nur ein knapper Satz unter der Seite — also erst nach dem Scrollen sichtbar."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.11",
     groups: [
       {
