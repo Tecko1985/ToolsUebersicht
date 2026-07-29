@@ -13,9 +13,12 @@
   <h1>🧰 Tools-Übersicht <span class="version-badge version-badge-link" id="version-badge" role="button" tabindex="0" title="Versionshistorie ansehen"></span></h1>
   <!-- margin-right:auto (in style.css) sitzt am WRAPPER, nicht an den Knoepfen: beide
        koennen je nach Konto einzeln ausgeblendet sein, und ein Layout-Anker an einem
-       versteckten Element traegt nicht. Der Admin-Dashboard-Button daneben ist absolut
-       in der Mitte positioniert und zaehlt im Flex-Fluss nicht mit -- ohne das
-       Auto-Margin landete die Gruppe mittig unter ihm. -->
+       versteckten Element traegt nicht.
+       ⚠️ Der Admin-Dashboard-Button daneben war bis 2026-07-29 absolut auf die
+       Fenstermitte gesetzt und zaehlte im Flex-Fluss nicht mit -- er ueberlappte
+       diese Gruppe dadurch, sobald sie breit genug wurde (zuletzt 145px). Er laeuft
+       jetzt im Fluss und traegt selbst ein margin-right:auto; die beiden gehoeren
+       zusammen, siehe Kommentar an .header-admin-btn in style.css. -->
   <div class="header-btns">
     <button type="button" class="header-code-btn" id="btn-materialcontainer" style="display:none;" title="Code des Schlosses am Materialcontainer anzeigen">🔐 Materialcontainercode</button>
     <!-- Der Zähler ersetzt die Karte auf der Startseite: ohne ihn sähe man beim
