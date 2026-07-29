@@ -704,10 +704,15 @@
          Der Unterschriften-Weg bleibt hier: er hängt an dokumentGroupIds, nicht
          an assignGroupIds, und ist von dieser Trennung nicht betroffen. -->
     <p class="muted" style="margin-top:12px;">
-      Aufgaben für andere werden in den
-      <a href="https://tecko1985.github.io/Vereinsaufgaben/">Vereinsaufgaben</a> vergeben.
-      Hier steht nur, was du dir selbst notierst.
+      Hier steht nur, was du dir selbst notierst. Aufgaben für andere werden in den
+      Vereinsaufgaben vergeben.
     </p>
+    <!-- Bewusst ein Knopf (a.btn-link) statt eines Links im Fließtext, Michel-Vorgabe
+         2026-07-29: der Weg in die andere App ist der wichtigste Ausgang dieses
+         Fensters und muss so aussehen wie jeder andere Knopf der Flotte. a.btn-link
+         trägt exakt dieselben Maße wie button.btn (10px 18px, 14px) -- beim Ändern
+         eines der beiden das andere mitziehen, sonst laufen sie auseinander. -->
+    <a class="btn-link" href="https://tecko1985.github.io/Vereinsaufgaben/">📋 Zu den Vereinsaufgaben</a>
 
     <!-- Die persönliche Liste. Stand bis 2026-07-28 als Karte unten links im
          Dashboard und ist mit ihr hierher gezogen -- ohne sie gäbe es keinen Ort
@@ -794,7 +799,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.32"></script>
+<script src="config.js?v=1.33"></script>
 <script src="app.js?v=1.31"></script>
 </body>
 </html>

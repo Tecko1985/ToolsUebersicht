@@ -323,6 +323,17 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.9",
+    groups: [
+      {
+        title: "Kleinigkeit",
+        items: [
+          "Im Fenster „Meine Aufgaben“ führt jetzt ein richtiger Knopf zu den Vereinsaufgaben statt eines Wortes im Fließtext — er sieht aus wie die übrigen Knöpfe der Werkzeuge und ist damit als Weg dorthin auch zu erkennen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.8",
     groups: [
       {
