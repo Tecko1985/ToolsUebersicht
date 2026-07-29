@@ -98,6 +98,18 @@ $REGISTRY = [ordered]@{
       @{ name = '405 bei GET'; methode = 'GET'; body = $null; erwartet = 405 }
     )
   }
+  'vereinsverwaltung' = @{
+    datei = 'E:\vereinsverwaltung\vereinsverwaltung-worker.js'
+    url   = 'https://vereinsverwaltung.michel-brunner.workers.dev'
+    hinweis = 'Mitglieder, Beitraege, SEPA. Einziger Worker mit D1 (Binding VV_DB) + Service Binding LANDINGPAGE.'
+    # verifySession() laeuft VOR der Aktions-Weiche -> immer 401, nie "Unbekannte Aktion".
+    # Ein 500 statt 401 heisst: eines der beiden Bindings fehlt (der Worker faellt
+    # bewusst geschlossen aus, statt jemanden ungeprueft durchzulassen).
+    proben = @(
+      @{ name = '405 bei GET';    methode = 'GET';  body = $null; erwartet = 405 }
+      @{ name = '401 ohne Token'; methode = 'POST'; body = '{"action":"zzz-deploy-kontrolle"}'; erwartet = 401 }
+    )
+  }
 }
 
 function Schritt($text) { Write-Host "`n== $text" -ForegroundColor Cyan }

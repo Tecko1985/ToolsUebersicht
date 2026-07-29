@@ -21,6 +21,16 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    id: "vereinsverwaltung",
+    name: "Vereinsverwaltung",
+    description: "Mitglieder, Beiträge und Vereinsfinanzen an einer Stelle — mit Sparten, Haushalten und Beitragsklassen. Löst den GLS Vereinsmeister ab. Abteilungsleitungen sehen ausschließlich ihre eigene Sparte, ohne Bankdaten.",
+    url: "https://tecko1985.github.io/vereinsverwaltung/",
+    icon: "👥",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "vereinsaufgaben",
     name: "Vereinsaufgaben",
     description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
@@ -302,7 +312,7 @@ const TOOLS = [
 const KRITISCHE_TOOLS = [
   "trainercheckliste", "sc1911-anmeldung", "vereinsbudget", "geschaeftsstelle",
   "spielertool-test", "personalkosten", "kadermanager", "digitaler-stempel",
-  "personalakte", "dokumentenvorlagen"
+  "personalakte", "dokumentenvorlagen", "vereinsverwaltung"
 ];
 
 // Neuigkeiten über den Kacheln. Werden ausschließlich vom Admin im Einstellungen-Tab
