@@ -323,6 +323,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.14",
+    groups: [
+      {
+        title: "Unterschriften nur noch dort, wo sie hingehören",
+        items: [
+          "Der Knopf „Unterschriften“ oben erscheint jetzt nur noch, wenn du damit auch etwas zu tun hast: entweder du darfst Unterschriften anfordern, oder es liegt gerade eine für dich an. Wer beides nicht hat, sieht ihn gar nicht mehr.",
+          "Bekommst du ein Dokument zum Unterschreiben, taucht der Knopf mit Zähler auf — am Unterschreiben selbst ändert sich also nichts.",
+          "„Selbst unterschreiben“ — ein eigenes PDF unterschreiben und herunterladen — ist ebenfalls auf die Gruppen beschränkt, die Unterschriften anfordern dürfen. Für alle anderen bleibt dafür der digitale Stempel.",
+          "Wer nicht anfordern darf, liest auf dem Knopf nur noch „Unterschriften“ statt „Unterschriften anfordern“."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.13",
     groups: [
       {

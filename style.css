@@ -144,6 +144,13 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   white-space: nowrap;
 }
 .header-code-btn:hover { background: rgba(255, 255, 255, 0.24); }
+/* Der entbehrliche Teil einer Knopfbeschriftung. Faellt unter 860px per
+   Media-Query weg (Platz) und per .aus, wenn er inhaltlich nicht stimmt --
+   "anfordern" duerfen nur die Gruppen aus dokumentGroupIds, wer bloss
+   unterschreiben soll, liest dort sonst etwas Falsches.
+   ⚠️ Als Klasse und NICHT per inline-style geschaltet: ein inline gesetztes
+   display:"" wuerde die Media-Query aushebeln und den Text am Handy zurueckholen. */
+.btn-lang.aus { display: none; }
 /* Signal am Kopf-Knopf, wenn etwas neu zugewiesen, heute fällig oder überfällig
    ist. Bewusst nur Hintergrund und Rahmen: ein zusätzliches Badge oder ein
    absolut gesetzter Punkt kostet Layoutbreite, und die Kopfzeile hat am Handy

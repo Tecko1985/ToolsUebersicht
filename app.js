@@ -2040,6 +2040,7 @@ async function loadAufgaben() {
     aufgabenState = { meine: [], zugewiesenVonMir: [], canAssign: false, canAssignDocs: false, assignGroupIds: [], dokumentGroupIds: [], geladen: false };
     ziel.innerHTML = "";
     aufgabenKopfZaehlerLeeren();
+    updateKopfKnoepfe();
     return;
   }
   try {
@@ -2060,6 +2061,7 @@ async function loadAufgaben() {
     console.warn("Aufgaben nicht ladbar:", e);
     ziel.innerHTML = "";
     aufgabenKopfZaehlerLeeren();
+    updateKopfKnoepfe();
   }
 }
 
@@ -2147,6 +2149,9 @@ function renderAufgabenWidget() {
   kopfKnopfSignal("btn-dokumente-oeffnen", "dokumente-kopf-zaehler", offenDok, sigDok, dokumentSignalTexte(sigDok),
     offenDok ? `${offenDok} ${offenDok === 1 ? "Dokument wartet" : "Dokumente warten"} auf deine Unterschrift`
              : "Unterschriften anfordern und selbst unterschreiben");
+  // Erst hier steht fest, ob der Unterschriften-Knopf ueberhaupt gezeigt wird:
+  // beim Seitenstart lief renderNavTabs() noch ohne geladene Aufgaben.
+  updateKopfKnoepfe();
 
   const zeile = (a) => {
     const klassen = ["aufgabe-item"];
@@ -2898,6 +2903,14 @@ function renderDokumente() {
   // mehr in dieser Oberfläche.
   const unterschriftBtn = document.getElementById("btn-fenster-unterschrift");
   if (unterschriftBtn) unterschriftBtn.style.display = aufgabenState.canAssignDocs ? "" : "none";
+
+  // "Selbst unterschreiben" haengt seit 2026-07-29 am SELBEN Recht (Michel-Vorgabe).
+  // Es ist zwar kein Vereinsvorgang -- das PDF wird im Browser signiert und direkt
+  // heruntergeladen, der Server sieht es nie --, aber es war der einzige Grund,
+  // aus dem ein Trainer dieses Fenster ueberhaupt oeffnen konnte. Wer ein eigenes
+  // Dokument stempeln will, hat dafuer weiterhin den digitalen Stempel.
+  const selbstBtn = document.getElementById("btn-dokument-selbst");
+  if (selbstBtn) selbstBtn.style.display = aufgabenState.canAssignDocs ? "" : "none";
 }
 
 // PDF-Bytes einer Datei holen. Der Worker löst die Datei-Id selbst aus dem
@@ -4540,10 +4553,10 @@ function renderNavTabs() {
   // Unterschriften UND ToDos sind Personalsache: Spielerkonten bekommen auf allen
   // zugehoerigen Aktionen ohnehin 403, die Fenster haben fuer sie also nichts zu
   // zeigen. Beide Zugaenge sitzen im Header, nicht in der Nav -- Unterschriften
-  // links neben dem Materialcontainercode, die ToDos rechts.
-  const personalDa = dokumenteTabOffen();
-  document.getElementById("btn-dokumente-oeffnen").style.display = personalDa ? "" : "none";
-  document.getElementById("btn-todos-oeffnen").style.display = personalDa ? "" : "none";
+  // links neben dem Materialcontainercode, die ToDos rechts. Die beiden Knoepfe
+  // haben unterschiedliche Bedingungen, siehe todosTabOffen/dokumenteTabOffen.
+  const personalDa = todosTabOffen();
+  updateKopfKnoepfe();
 
   // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
   // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
@@ -4590,9 +4603,44 @@ function renderNavTabs() {
 }
 
 // Gleiche Linie wie im Worker (aufgabenSession): angemeldetes Personal, keine
-// Spielerkonten.
-function dokumenteTabOffen() {
+// Spielerkonten. Gilt unveraendert fuer die persoenlichen ToDos -- die stehen
+// jedem Mitarbeiterkonto zu.
+function todosTabOffen() {
   return !!currentUser && currentUser.art !== "spieler";
+}
+
+// Den Unterschriften-Knopf sieht seit 2026-07-29 NICHT mehr jedes Personalkonto
+// (Michel-Vorgabe): entweder man darf Unterschriften anfordern, oder es liegt
+// gerade eine eigene an. Ein Trainer ohne offenes Dokument hat dort nichts zu
+// tun -- er konnte bisher nur "Selbst unterschreiben" benutzen, und das ist ein
+// reiner Datei-Download ohne Vereinsvorgang.
+// ⚠️ Bewusst KEIN reines Gruppen-Gate: sonst saehe ein Trainer den ihm
+// zugewiesenen Vertrag nie und der ganze Anfordern-Weg liefe ins Leere.
+// Die Daten kommen aus aufgabenState (beim Seitenstart geladen), nicht aus
+// dokumenteState -- das wird erst beim Oeffnen des Fensters gefuellt.
+function dokumenteTabOffen() {
+  if (!todosTabOffen()) return false;
+  if (aufgabenState.canAssignDocs) return true;
+  return aufgabenState.meine.some((a) => a.dokId && !a.erledigt && !a.zurueckgezogenAm);
+}
+
+// Beide Kopf-Knoepfe an den geladenen Stand anpassen. Wird aus renderNavTabs
+// (Anmeldestatus) UND aus renderAufgabenWidget (Datenstand) gerufen: beim
+// Seitenstart laeuft checkSession() vor loadAufgaben(), da steht canAssignDocs
+// noch auf false und der Knopf muss nachtraeglich erscheinen koennen.
+function updateKopfKnoepfe() {
+  const darfAnfordern = !!aufgabenState.canAssignDocs;
+  const dokKnopf = document.getElementById("btn-dokumente-oeffnen");
+  if (dokKnopf) dokKnopf.style.display = dokumenteTabOffen() ? "" : "none";
+  const todoKnopf = document.getElementById("btn-todos-oeffnen");
+  if (todoKnopf) todoKnopf.style.display = todosTabOffen() ? "" : "none";
+  // "anfordern" nur bei denen, die es duerfen -- fuer einen Unterzeichner waere
+  // die Beschriftung schlicht falsch. Als Klasse, NICHT als inline-style: unter
+  // 860px blendet die Media-Query denselben Teil aus, und ein inline gesetztes
+  // display:"" wuerde sie aushebeln.
+  const lang = document.getElementById("dok-btn-lang");
+  if (lang) lang.classList.toggle("aus", !darfAnfordern);
+  // Der Knopf im Fenster hat dasselbe Gate wie das Anfordern (siehe renderDokumente).
 }
 
 // Der Info-Tab enthaelt die komplette Aenderungsliste, und die beschreibt Anmeldewege,
