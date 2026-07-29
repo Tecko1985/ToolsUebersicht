@@ -4191,6 +4191,122 @@ async function handleVaRessortLoeschen(request, body, env, authHeader, corsHeade
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
+// ---------- Benachrichtigung beim Anlegen (seit 2026-07-29) ----------
+//
+// Michel-Entscheidung, und damit die Umkehr der ursprünglichen Festlegung "keine
+// Benachrichtigung". Das frühere Argument — wer wissen will, was ansteht, öffnet die
+// App — trägt bei einer Aufgabe mit Pflicht-Frist nicht: die Frist läuft, ob der
+// Empfänger hineinschaut oder nicht, und die Überfällig-Spalte war das einzige
+// Frühwarnsystem für etwas, das er nie gesehen hat.
+//
+// BEWUSST nur beim Anlegen. Statuswechsel, Kommentare und Abnahmen bleiben stumm:
+// eine Benachrichtigung, die bei jedem Schritt feuert, wird nach zwei Wochen
+// weggefiltert und ist dann auch beim Anlegen wirkungslos.
+//
+// Empfänger sind genau die, die in der Aufgabe stehen — bei "an das Ressort" also
+// der Verantwortliche, bei "einzeln" jeder mit seiner eigenen Aufgabe. Mitlesende
+// Ressort-Mitglieder bekommen nichts; sie müssen nichts tun.
+
+function vaDatumLesbar(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso || "");
+}
+
+// "Vertraulich" heißt hier dasselbe wie in vaFuerAnzeige: Titel UND Beschreibung
+// sind der geschützte Inhalt (vaFuerAnzeige gibt den Titel für Unbeteiligte gar
+// nicht erst heraus), Frist/Ressort/Abnahme sind es nicht. Die Mail nennt deshalb
+// auch im BETREFF keinen Titel — ein Betreff steht in der Handy-Vorschau und im
+// Versandprotokoll des Mailversenders, also an zwei Stellen mehr als die App.
+function vaMailInhalt(info, empfaengerUser, vonName) {
+  const anrede = (empfaengerUser && empfaengerUser.vorname) ? `Hallo ${empfaengerUser.vorname},` : "Hallo,";
+  const z = [anrede, "", `${vonName} hat dir eine Aufgabe zugewiesen.`, ""];
+
+  if (!info.vertraulich) z.push(`Titel:      ${info.titel}`);
+  if (info.ressortName) z.push(`Ressort:    ${info.ressortName}`);
+  z.push(`Frist:      ${vaDatumLesbar(info.faellig)}`);
+  if (info.prioritaet === "hoch") z.push("Priorität:  Hoch");
+
+  if (info.vertraulich) {
+    z.push("", "Diese Aufgabe ist als vertraulich gekennzeichnet. Titel und Einzelheiten",
+      "stehen deshalb nur in der App, nicht in dieser E-Mail.");
+  } else if (info.beschreibung) {
+    z.push("", info.beschreibung);
+  }
+
+  if (info.abnahme) z.push("", `Deine Erledigung muss ${vonName} noch abnehmen.`);
+
+  z.push("", "Zur Aufgabe: https://tecko1985.github.io/Vereinsaufgaben/", "",
+    "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
+
+  return {
+    subject: info.vertraulich ? "Neue vertrauliche Aufgabe für dich" : `Neue Aufgabe: ${info.titel}`,
+    textContent: z.join("\n")
+  };
+}
+
+// Der Versand steht AUSSERHALB von vaMutiere(): dessen Callback läuft bei einem
+// If-Match-Konflikt bis zu dreimal, die Mails gingen sonst mehrfach raus.
+//
+// Nichts hiervon darf das Anlegen kippen — die Aufgabe ist zu diesem Zeitpunkt
+// bereits gespeichert. Ein fehlender API-Key, eine fehlende Adresse oder ein
+// Brevo-Ausfall werden deshalb geschluckt, aber in der Antwort BENANNT: der Client
+// sagt es hin, sonst verlässt sich der Zuweiser auf eine Zustellung, die es nie gab.
+async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
+  const ohneAdresse = [];
+  if (!empfaenger.length) return { benachrichtigt: 0, ohneAdresse, mailAus: false };
+  if (!env.BREVO_API_KEY) {
+    console.warn("vereinsaufgabe-anlegen: BREVO_API_KEY fehlt — keine Benachrichtigung verschickt");
+    return { benachrichtigt: 0, ohneAdresse, mailAus: true };
+  }
+
+  const usersDoc = ctx.session.usersDoc;
+  const vonName = aufgabenAnzeigeName(usersDoc, ctx.session.username);
+  // Die Adressen stehen in Trainerdaten (dieselbe Quelle wie handleNotifyUser).
+  // Ein Read für alle Empfänger, nicht einer pro Person.
+  let trainerdatenDoc;
+  try {
+    trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  } catch (e) {
+    console.error("vereinsaufgabe-anlegen: Trainerdaten nicht lesbar", e && e.message);
+    return { benachrichtigt: 0, ohneAdresse, mailAus: true };
+  }
+
+  let benachrichtigt = 0;
+  for (const username of empfaenger) {
+    const user = getOwn(usersDoc.users, username);
+    // Aus dem vollen Summary wird ausschließlich das email-Feld verwendet und nie
+    // zurückgegeben — PROVISION_ONLY_PATHS.trainerdaten enthält IBAN-Daten und darf
+    // eingeloggten Nutzern nie durchgereicht werden (gleiche Linie wie notify-user).
+    const email = buildTrainerdatenSummary(findTrainerdatenRecord(trainerdatenDoc, user)).email;
+    if (!email) {
+      ohneAdresse.push(aufgabenAnzeigeName(usersDoc, username));
+      continue;
+    }
+    const { subject, textContent } = vaMailInhalt(info, user, vonName);
+    try {
+      const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": env.BREVO_API_KEY,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+          to: [{ email }],
+          subject,
+          textContent
+        })
+      });
+      if (resp.ok) benachrichtigt++;
+      else console.error("vereinsaufgabe-anlegen: Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+    } catch (e) {
+      console.error("vereinsaufgabe-anlegen: Brevo-Versand fehlgeschlagen", e && e.message);
+    }
+  }
+  return { benachrichtigt, ohneAdresse, mailAus: false };
+}
+
 async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
   const ctx = await vaSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
@@ -4212,6 +4328,7 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
     const ergebnis = await vaMutiere(authHeader, (doc) => {
       let empfaenger = [];
       let ressortId = "";
+      let ressortName = "";
 
       if (modus === "person") {
         const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
@@ -4225,6 +4342,7 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
         const r = vaRessortHolen(doc, body && body.ressortId);
         if (!r) throw new VaFehler("Ressort nicht gefunden", 404);
         ressortId = r.id;
+        ressortName = r.name || "";
         // "An das Ressort" heißt: der Verantwortliche hakt ab und haftet, die
         // Mitglieder sehen mit. "Einzeln" fächert beim Anlegen auf, damit jeder
         // selbst abhaken muss — beides kommt im Vereinsalltag vor.
@@ -4259,9 +4377,22 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
           anhaenge: [], kommentare: [], verlauf: []
         });
       });
-      return { angelegt: empfaenger.length };
+      return { angelegt: empfaenger.length, empfaenger: empfaenger.slice(), ressortName };
     });
-    return json(ergebnis, 200, corsHeaders);
+
+    // Ab hier ist die Aufgabe gespeichert. Was hier noch schiefgeht, darf das
+    // Anlegen nicht mehr zu einem Fehler machen — der Zuweiser hätte sonst einen
+    // roten Hinweis vor einer Aufgabe, die es in Wahrheit gibt.
+    let versand = { benachrichtigt: 0, ohneAdresse: [], mailAus: true };
+    try {
+      versand = await vaBenachrichtige(ergebnis.empfaenger || [], {
+        titel, beschreibung, faellig, prioritaet, abnahme, vertraulich,
+        ressortName: ergebnis.ressortName || ""
+      }, ctx, env, authHeader);
+    } catch (e) {
+      console.error("vereinsaufgabe-anlegen: Benachrichtigung fehlgeschlagen", e && e.message);
+    }
+    return json({ ok: true, angelegt: ergebnis.angelegt, ...versand }, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
