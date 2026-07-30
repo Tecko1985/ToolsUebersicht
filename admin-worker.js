@@ -4087,6 +4087,34 @@ function vaPrioritaet(roh) {
   return VA_PRIORITAETEN.includes(p) ? p : "normal";
 }
 
+// Person existiert und ist Personal -- mehr nicht. Das ist die Schranke für
+// Ressort-MITGLIEDER: ein Ressort ist ein Amt, keine Rechtegruppe. Wer dort steht,
+// ist fachlich zuständig; ob ihm jemand darüber eine Aufgabe auftragen kann, ist
+// eine zweite, davon getrennte Frage (vaPruefeEmpfaenger). Vorher lief auch die
+// Mitgliederliste durch die Empfängerprüfung -- dadurch ließ sich ein Ressort erst
+// zusammenstellen, nachdem jedem Beteiligten das Bearbeiten-Recht auf die ganze
+// App vergeben war. Genau das sollte die eigene Ressort-Struktur vermeiden.
+function vaPruefeMitglied(username, usersDoc) {
+  const u = normalizeUsername(username);
+  const user = getOwn((usersDoc && usersDoc.users) || {}, u);
+  if (!user || !istPersonal(user)) throw new VaFehler("Unbekannte Person: " + u, 400);
+  return u;
+}
+
+// Reines Prädikat: darf diese Person die Vereinsaufgaben bearbeiten und damit eine
+// Aufgabe überhaupt abhaken? Herausgezogen, weil zwei Aufrufer es verschieden
+// brauchen -- der Empfängerpfad wirft (unten), das Auffächern eines Ressorts
+// überspringt und meldet die Übergangenen namentlich zurück.
+function vaKannBearbeiten(user, username, ctx, usersDoc) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  const entry = getOwn((ctx.config && ctx.config.tools) || {}, "vereinsaufgaben") || {};
+  const erlaubt = (Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [])
+    .concat(Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : []);
+  const eigene = getUserGroupIds(usersDoc, username);
+  return erlaubt.some((g) => eigene.includes(g));
+}
+
 // Empfänger müssen existieren, Personal sein UND die App bearbeiten dürfen. Der
 // letzte Punkt ist keine Förmlichkeit: wer nur Sehen hat, könnte die Aufgabe nie
 // abhaken — sie wäre eine stille Sackgasse, die erst bei der Frist auffällt.
@@ -4094,16 +4122,20 @@ function vaPruefeEmpfaenger(username, ctx, usersDoc) {
   const u = normalizeUsername(username);
   const user = getOwn((usersDoc && usersDoc.users) || {}, u);
   if (!user || !istPersonal(user)) throw new VaFehler("Unbekannter Empfänger: " + u, 400);
-  const entry = getOwn((ctx.config && ctx.config.tools) || {}, "vereinsaufgaben") || {};
-  const erlaubt = (Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [])
-    .concat(Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : []);
-  const eigene = getUserGroupIds(usersDoc, u);
-  if (!user.isAdmin && !erlaubt.some((g) => eigene.includes(g))) {
+  if (!vaKannBearbeiten(user, u, ctx, usersDoc)) {
     throw new VaFehler(
       `${aufgabenAnzeigeName(usersDoc, u)} darf die Vereinsaufgaben nicht bearbeiten und könnte die Aufgabe nie abhaken. ` +
       `Bitte zuerst in der Tools-Übersicht das Bearbeiten-Recht für dieses Tool vergeben.`, 400);
   }
   return u;
+}
+
+// Wie vaKannBearbeiten, aber mit Nutzernamen statt Datensatz -- für die Stellen,
+// die nur eine Namensliste haben.
+function vaEmpfangsfaehig(username, ctx, usersDoc) {
+  const user = getOwn((usersDoc && usersDoc.users) || {}, username);
+  if (!user || !istPersonal(user)) return false;
+  return vaKannBearbeiten(user, username, ctx, usersDoc);
 }
 
 async function handleVaLoad(request, env, authHeader, corsHeaders) {
@@ -4141,11 +4173,16 @@ async function handleVaRessortSpeichern(request, body, env, authHeader, corsHead
     const roh = (body && body.ressort) || {};
     const name = capStr(roh.name, 120).trim();
     if (!name) throw new VaFehler("Ein Ressort braucht einen Namen", 400);
+    // Verantwortlich und Stellvertretung bleiben auf der Empfängerprüfung, die
+    // weiteren Mitglieder nicht. Grund: bei "an das Ressort zuweisen" ist der
+    // Verantwortliche der Empfänger — ohne Bearbeiten-Recht entstünde dort eine
+    // Aufgabe, die niemand abhaken kann. Ein weiteres Mitglied trägt dagegen nur
+    // Zuständigkeit; ihm etwas aufzutragen ist ein eigener, geprüfter Schritt.
     const verantwortlich = vaPruefeEmpfaenger(roh.verantwortlich, ctx, ctx.session.usersDoc);
     const stellvertreter = roh.stellvertreter ? vaPruefeEmpfaenger(roh.stellvertreter, ctx, ctx.session.usersDoc) : "";
     const mitglieder = [];
     for (const m of (Array.isArray(roh.mitglieder) ? roh.mitglieder : []).slice(0, VA_MAX_EMPFAENGER)) {
-      const u = vaPruefeEmpfaenger(m, ctx, ctx.session.usersDoc);
+      const u = vaPruefeMitglied(m, ctx.session.usersDoc);
       if (!mitglieder.includes(u)) mitglieder.push(u);
     }
 
@@ -4329,6 +4366,10 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
       let empfaenger = [];
       let ressortId = "";
       let ressortName = "";
+      // Ressort-Mitglieder ohne Bearbeiten-Recht: beim Auffächern übersprungen,
+      // aber namentlich zurückgemeldet. Still weglassen wäre das Schlimmste --
+      // der Zuweiser hielte eine Aufgabe für vergeben, die es nie gab.
+      const uebersprungen = [];
 
       if (modus === "person") {
         const roh = Array.isArray(body && body.empfaenger) ? body.empfaenger : [];
@@ -4346,8 +4387,24 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
         // "An das Ressort" heißt: der Verantwortliche hakt ab und haftet, die
         // Mitglieder sehen mit. "Einzeln" fächert beim Anlegen auf, damit jeder
         // selbst abhaken muss — beides kommt im Vereinsalltag vor.
-        empfaenger = modus === "ressort" ? [r.verantwortlich] : vaRessortMitglieder(r);
-        if (!empfaenger.length) throw new VaFehler("Dieses Ressort hat niemanden hinterlegt", 400);
+        if (modus === "ressort") {
+          if (!r.verantwortlich) throw new VaFehler("Dieses Ressort hat niemanden hinterlegt", 400);
+          // Wirft mit Namen, wenn dem Verantwortlichen das Recht nachträglich
+          // entzogen wurde. Hier ist Überspringen keine Option: es gibt nur ihn.
+          empfaenger = [vaPruefeEmpfaenger(r.verantwortlich, ctx, ctx.session.usersDoc)];
+        } else {
+          const alle = vaRessortMitglieder(r);
+          if (!alle.length) throw new VaFehler("Dieses Ressort hat niemanden hinterlegt", 400);
+          alle.forEach((u) => {
+            if (vaEmpfangsfaehig(u, ctx, ctx.session.usersDoc)) empfaenger.push(u);
+            else uebersprungen.push(aufgabenAnzeigeName(ctx.session.usersDoc, u));
+          });
+          if (!empfaenger.length) {
+            throw new VaFehler(
+              `Niemand in diesem Ressort darf die Vereinsaufgaben bearbeiten — eine Aufgabe könnte dort nie abgehakt werden. ` +
+              `Betroffen: ${uebersprungen.join(", ")}.`, 400);
+          }
+        }
       } else {
         throw new VaFehler("Unbekannter Zuweisungs-Modus", 400);
       }
@@ -4377,7 +4434,7 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
           anhaenge: [], kommentare: [], verlauf: []
         });
       });
-      return { angelegt: empfaenger.length, empfaenger: empfaenger.slice(), ressortName };
+      return { angelegt: empfaenger.length, empfaenger: empfaenger.slice(), ressortName, uebersprungen: uebersprungen.slice() };
     });
 
     // Ab hier ist die Aufgabe gespeichert. Was hier noch schiefgeht, darf das
@@ -4392,7 +4449,9 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
     } catch (e) {
       console.error("vereinsaufgabe-anlegen: Benachrichtigung fehlgeschlagen", e && e.message);
     }
-    return json({ ok: true, angelegt: ergebnis.angelegt, ...versand }, 200, corsHeaders);
+    // ohneRecht rein additiv: ein älterer Client, der das Feld nicht kennt,
+    // ignoriert es und verhält sich wie bisher.
+    return json({ ok: true, angelegt: ergebnis.angelegt, ohneRecht: ergebnis.uebersprungen || [], ...versand }, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
