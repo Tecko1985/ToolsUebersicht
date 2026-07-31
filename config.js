@@ -358,6 +358,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.17",
+    groups: [
+      {
+        title: "Unterschrift anfordern: auf Wunsch mit E-Mail",
+        items: [
+          "Beim Anfordern einer Unterschrift steht unten im Fenster jetzt das Häkchen „Empfänger zusätzlich per E-Mail benachrichtigen“. Ist es gesetzt, bekommt jeder Empfänger eine kurze Nachricht mit Bezeichnung des Dokuments, Frist und dem Weg zur Unterschrift.",
+          "Ohne Häkchen wird nichts verschickt — genau wie bisher. Das Häkchen ist bei jedem neuen Vorgang wieder leer, es bleibt also nichts aus der letzten Anforderung stehen.",
+          "Der Betreff nennt die Bezeichnung des Dokuments bewusst nicht: er ist in der Handy-Vorschau und beim Mail-Versanddienst sichtbar, und hier gehen Verträge und Personalunterlagen um. Was drinsteht, steht in der Mail selbst.",
+          "Hat jemand keine E-Mail-Adresse in den Trainerdaten, wird das nach dem Absenden mit Namen gemeldet — die Anforderung selbst gilt trotzdem, sie liegt in der App bereit."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.16",
     groups: [
       {

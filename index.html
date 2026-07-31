@@ -684,6 +684,17 @@
       </div>
     </div>
 
+    <!-- Mailversand ist ein bewusstes Opt-in je Vorgang (Michel-Vorgabe 2026-07-31),
+         deshalb ein eigenes Häkchen und keine Automatik. Es steht hier unten beim
+         Senden-Knopf und NICHT im Dokument-Block darüber: die Seitenvorschau dort
+         ist bis zu 55vh hoch, ein Häkchen dahinter wäre erst nach dem Scrollen zu
+         sehen — also genau dann nicht, wenn man es setzen will. Sichtbar nur, wenn
+         auch wirklich ein Dokument mitgeht (zuweisenMailZeileZeigen() in app.js). -->
+    <label class="check-inline" id="aufgabe-zuweisen-mail-zeile" style="display:none; margin-top:14px;">
+      <input type="checkbox" id="aufgabe-zuweisen-mail" />
+      <span>Empfänger zusätzlich per E-Mail benachrichtigen</span>
+    </label>
+
     <p class="muted" id="aufgabe-zuweisen-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
     <div style="margin-top:14px; display:flex; gap:10px; justify-content:flex-end;">
       <button type="button" class="btn secondary small" id="btn-aufgabe-zuweisen-abbrechen">Abbrechen</button>
@@ -820,7 +831,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.42"></script>
-<script src="app.js?v=1.37"></script>
+<script src="config.js?v=1.43"></script>
+<script src="app.js?v=1.38"></script>
 </body>
 </html>

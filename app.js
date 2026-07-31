@@ -2544,6 +2544,10 @@ async function oeffneAufgabeZuweisen(modus) {
   document.getElementById("aufgabe-zuweisen-dok-datei").value = "";
   document.getElementById("aufgabe-zuweisen-dok-status").textContent = "";
   document.getElementById("aufgabe-zuweisen-dok-vorschau").style.display = "none";
+  // Mail-Häkchen bewusst bei JEDEM Öffnen zurück auf aus: der Versand ist eine
+  // Einzelfall-Entscheidung, kein Zustand, der aus dem letzten Vorgang stehenbleibt.
+  document.getElementById("aufgabe-zuweisen-mail").checked = false;
+  zuweisenMailZeileZeigen();
   // Schmal starten: die Breite kommt erst mit der Vorschau dazu (siehe unten am
   // Datei-Handler). Ein 860px-Formular ohne PDF darin sieht nur leer aus.
   overlay.querySelector(".code-dialog").classList.remove("mit-vorschau");
@@ -2624,6 +2628,7 @@ function setupAufgabenZuweisenDialog() {
   // ---- Zu unterschreibendes PDF ----
   document.getElementById("aufgabe-zuweisen-dok-an").addEventListener("change", (e) => {
     document.getElementById("aufgabe-zuweisen-dok-felder").style.display = e.target.checked ? "" : "none";
+    zuweisenMailZeileZeigen();
   });
   document.getElementById("aufgabe-zuweisen-dok-datei").addEventListener("change", async (e) => {
     const datei = e.target.files && e.target.files[0];
@@ -2672,6 +2677,22 @@ function zuweisenFeldInfoZeigen() {
     : "Zieh ein Rechteck auf die Stelle im Dokument, an der unterschrieben werden soll (mit der Maus oder dem Finger) — dort wird die Unterschrift später eingesetzt. Lässt du es weg, darf der Empfänger die Stelle selbst wählen; tut auch er es nicht, kommt die Unterschrift auf ein zusätzliches Blatt am Ende.";
 }
 
+// Das Mail-Häkchen gehört zur Unterschriftsanforderung und erscheint nur, wenn mit
+// diesem Vorgang auch wirklich ein Dokument rausgeht: im Anfordern-Modus immer, im
+// Zuweisen-Modus erst mit gesetztem Dokument-Häkchen. Ohne Dokument gäbe es nichts
+// zu unterschreiben, und die Mail hätte keinen Gegenstand.
+// ⚠️ Beim Ausblenden wird das Häkchen mit geleert -- ein unsichtbares, aber gesetztes
+// Kästchen würde beim Senden trotzdem gelesen (dieselbe Falle wie bei jedem
+// versteckten Formularfeld).
+function zuweisenMailZeileZeigen() {
+  const zeile = document.getElementById("aufgabe-zuweisen-mail-zeile");
+  if (!zeile) return;
+  const haken = document.getElementById("aufgabe-zuweisen-dok-an");
+  const mitDok = zuweisenModus === "unterschrift" || (haken && haken.checked);
+  zeile.style.display = mitDok ? "" : "none";
+  if (!mitDok) document.getElementById("aufgabe-zuweisen-mail").checked = false;
+}
+
 async function aufgabeZuweisenSenden() {
   const fehlerEl = document.getElementById("aufgabe-zuweisen-error");
   const btn = document.getElementById("btn-aufgabe-zuweisen-senden");
@@ -2701,10 +2722,25 @@ async function aufgabeZuweisenSenden() {
       await callWorker("dokument-datei-put", {
         id: fileId, zweck: "original", dataBase64: bytesZuBase64(zuweisenPdfBytes)
       });
-      await callWorker("dokument-anlegen", {
-        titel: text, faellig, empfaenger, originalFileId: fileId, feld: vorschauZuweisen.feld
+      // mail = das Häkchen unten im Dialog. Ein fehlendes/false-Feld heißt beim
+      // Worker "nicht verschicken" -- der alte Weg ohne Mail bleibt damit exakt der
+      // Ausgangszustand, auch wenn ein alter Client den Schlüssel gar nicht kennt.
+      const mailAn = document.getElementById("aufgabe-zuweisen-mail").checked;
+      const dokRes = await callWorker("dokument-anlegen", {
+        titel: text, faellig, empfaenger, originalFileId: fileId,
+        feld: vorschauZuweisen.feld, mail: mailAn
       });
       schliesseAufgabeZuweisen();
+      // Ein misslungener Versand darf den Vorgang nicht kippen -- er IST angelegt.
+      // Aber er muss gesagt werden: sonst verlässt sich der Absender auf eine
+      // Zustellung, die es nie gab (der Worker liefert die Zahlen dafür mit).
+      if (mailAn && dokRes) {
+        if (dokRes.mailAus) {
+          aufgabenFehler("Angefordert — aber der E-Mail-Versand ist serverseitig nicht eingerichtet, es wurde nichts verschickt.");
+        } else if (Array.isArray(dokRes.ohneAdresse) && dokRes.ohneAdresse.length) {
+          aufgabenFehler("Angefordert. Ohne E-Mail-Adresse und deshalb nicht benachrichtigt: " + dokRes.ohneAdresse.join(", "));
+        }
+      }
       await Promise.all([loadAufgaben(), loadDokumente()]);
       return;
     }

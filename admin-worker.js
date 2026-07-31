@@ -263,8 +263,12 @@
 //     LEER = niemand (nicht "alle"). Ein FEHLENDES Feld heisst "unveraendert" -- nur ein mitgeschicktes [] leert.
 //   POST { action: "dokumente-load" } (eingeloggtes Personal) -> { anMich, vonMir, canAssignDocs }
 //     Zu unterschreibende Dokumente aus dokumente.json, getrennt nach Rolle. Nur Eintraege, an denen man beteiligt ist.
-//   POST { action: "dokument-anlegen", titel, originalFileId, empfaenger[], faellig?, feld? } (aufgaben.dokumentGroupIds) -> { ok:true, angelegt }
+//   POST { action: "dokument-anlegen", titel, originalFileId, empfaenger[], faellig?, feld?, mail? } (aufgaben.dokumentGroupIds)
+//         -> { ok:true, angelegt, aufgabenAngelegt, benachrichtigt, ohneAdresse[], mailAus }
 //     Je Empfaenger ein eigener Eintrag auf dasselbe Original + eine Aufgabe als Erinnerung. feld = Seite + 4 Fraktionen.
+//     mail:true verschickt zusaetzlich je Empfaenger eine Brevo-Benachrichtigung (Adresse serverseitig aus Trainerdaten,
+//     siehe dokumentBenachrichtige). NUR auf ausdrueckliches Haekchen -- fehlendes/false Feld verschickt nichts, ein alter
+//     Client verhaelt sich also unveraendert. Der Versand kippt den Vorgang nie, wird aber in der Antwort benannt.
 //   POST { action: "dokument-datei-put", id, zweck:"original"|"signiert", dokId?, dataBase64 } -> { ok:true, id }
 //     Ablage in unterschriften/<uuid>, NICHT in dateien/ -- dav-file-get kann diesen Ordner nicht erreichen.
 //     "original" gegen das Zuweis-Recht, "signiert" nur fuer den Empfaenger des Dokuments und nur solange offen. Nur PDF.
@@ -3548,6 +3552,86 @@ async function handleDokumenteLoad(request, env, authHeader, corsHeaders) {
 // aufgaben.json. Bricht der zweite ab, existiert ein Dokument ohne Erinnerung —
 // der Empfänger findet es trotzdem im Tab, weil dokumente-load nicht an den
 // Aufgaben hängt. Andersherum stünde eine Aufgabe da, die auf nichts zeigt.
+// Mailtext zur Unterschriftsanforderung. **Der Betreff nennt den Titel NICHT** --
+// er steht in der Handy-Vorschau und im Versandprotokoll des Mailversenders, also
+// an zwei Stellen mehr als die App, und die Dokumente hier sind Verträge und
+// Personalunterlagen (gleiche Überlegung wie bei vaMailInhalt/vertraulich).
+function dokumentMailInhalt(titel, faellig, empfaengerUser, vonName) {
+  const anrede = (empfaengerUser && empfaengerUser.vorname) ? `Hallo ${empfaengerUser.vorname},` : "Hallo,";
+  const z = [anrede, "", `${vonName} bittet dich um deine Unterschrift.`, "", `Dokument:   ${titel}`];
+  if (faellig) z.push(`Frist:      ${vaDatumLesbar(faellig)}`);
+  z.push("", "Unterschrieben wird in der Tools-Übersicht: oben auf „Unterschriften“ klicken,",
+    "das Dokument öffnen und mit Finger oder Maus unterschreiben.",
+    "", "Zur Übersicht: https://tecko1985.github.io/ToolsUebersicht/", "",
+    "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
+  return { subject: "Ein Dokument wartet auf deine Unterschrift", textContent: z.join("\n") };
+}
+
+// Benachrichtigung zur Unterschriftsanforderung -- läuft NUR auf ausdrückliches
+// Häkchen im Dialog (`mail: true` im Body), Michel-Entscheidung 2026-07-31. Bis
+// dahin verschickte dieser Weg bewusst gar nichts, solange DKIM/DMARC offen sind
+// (siehe "Akzeptierte Limitierungen" in CLAUDE.md); das Häkchen macht daraus eine
+// Einzelfall-Entscheidung des Absenders statt einer Eigenschaft des Wegs. Fehlt das
+// Feld, bleibt es beim alten Verhalten -- ein alter Client verschickt also nichts.
+//
+// Ein Trainerdaten-Read für ALLE Empfänger (nicht einer je Person); aus dem Summary
+// wird ausschließlich das email-Feld verwendet und nie zurückgegeben, weil
+// PROVISION_ONLY_PATHS.trainerdaten IBAN-Daten enthält (Linie von handleNotifyUser
+// und vaBenachrichtige). Nichts hiervon darf den Vorgang kippen -- Dokument und
+// Aufgabe sind zu diesem Zeitpunkt bereits gespeichert. Fehler werden deshalb
+// geschluckt, aber in der Antwort BENANNT: sonst verlässt sich der Absender auf
+// eine Zustellung, die es nie gab (siehe [[feedback-stiller-nooperator-vs-echter-fehler]]).
+async function dokumentBenachrichtige(empfaenger, titel, faellig, session, env, authHeader) {
+  const ohneAdresse = [];
+  if (!empfaenger.length) return { benachrichtigt: 0, ohneAdresse, mailAus: false };
+  if (!env.BREVO_API_KEY) {
+    console.warn("dokument-anlegen: BREVO_API_KEY fehlt — keine Benachrichtigung verschickt");
+    return { benachrichtigt: 0, ohneAdresse, mailAus: true };
+  }
+
+  const usersDoc = session.usersDoc;
+  const vonName = aufgabenAnzeigeName(usersDoc, session.username);
+  let trainerdatenDoc;
+  try {
+    trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  } catch (e) {
+    console.error("dokument-anlegen: Trainerdaten nicht lesbar", e && e.message);
+    return { benachrichtigt: 0, ohneAdresse, mailAus: true };
+  }
+
+  let benachrichtigt = 0;
+  for (const username of empfaenger) {
+    const user = getOwn((usersDoc && usersDoc.users) || {}, username);
+    const email = buildTrainerdatenSummary(findTrainerdatenRecord(trainerdatenDoc, user)).email;
+    if (!email) {
+      ohneAdresse.push(aufgabenAnzeigeName(usersDoc, username));
+      continue;
+    }
+    const { subject, textContent } = dokumentMailInhalt(titel, faellig, user, vonName);
+    try {
+      const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": env.BREVO_API_KEY,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+          to: [{ email }],
+          subject,
+          textContent
+        })
+      });
+      if (resp.ok) benachrichtigt++;
+      else console.error("dokument-anlegen: Brevo-Versand fehlgeschlagen", resp.status, await resp.text().catch(() => ""));
+    } catch (e) {
+      console.error("dokument-anlegen: Brevo-Versand fehlgeschlagen", e && e.message);
+    }
+  }
+  return { benachrichtigt, ohneAdresse, mailAus: false };
+}
+
 async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders) {
   const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
   if (fehler) return fehler;
@@ -3659,7 +3743,17 @@ async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders
     }
   }
 
-  return json({ ok: true, angelegt, aufgabenAngelegt }, 200, corsHeaders);
+  // Dritter Schritt: die Benachrichtigung -- nur wenn der Absender sie im Dialog
+  // ausdrücklich angehakt hat. Steht bewusst hinter beiden Schreibvorgängen: ein
+  // Brevo-Ausfall darf weder Dokument noch Erinnerung kippen.
+  let versand = { benachrichtigt: 0, ohneAdresse: [], mailAus: false };
+  if (body && body.mail === true) {
+    versand = await dokumentBenachrichtige(
+      angelegt.map((a) => a.empfaenger), titel, faellig, session, env, authHeader
+    );
+  }
+
+  return json({ ok: true, angelegt, aufgabenAngelegt, ...versand }, 200, corsHeaders);
 }
 
 // Datei-Upload in den abgeschotteten Ordner. Zwei Zwecke mit unterschiedlicher
