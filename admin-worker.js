@@ -407,6 +407,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8788", // Besprechung (Dev-Server)
   "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
+  "http://localhost:8811", // Ausbildungsplan (Dev-Server)
   "https://tecko1985.github.io"
 ];
 
@@ -434,7 +435,8 @@ const DAV_APPS = {
   "testspielplaner":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Testspielplaner/testspielplaner.json",
   "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json",
   "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json",
-  "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json"
+  "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json",
+  "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json"
 };
 
 // Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt
@@ -487,7 +489,13 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // Check in handleDavSave steht VOR der OWNER_FILTERED/OWNER_WRITE-Routung, greift also
   // zuerst; materialbedarf/abwesenheitskalender bleiben in ihren Owner-Sets nur noch für
   // den LESE-Filter relevant (Editoren unberührt).
-  "materialbedarf", "kleiderbestellung", "abwesenheitskalender", "digitaler-stempel"
+  "materialbedarf", "kleiderbestellung", "abwesenheitskalender", "digitaler-stempel",
+  // ausbildungsplan (neu 2026-07-31): Nur-Seher lesen Stufen, Schwerpunkte und
+  // Uebungen, schreiben aber gar nichts -- weder den Katalog noch einen
+  // Spieltag-Bogen. Beides laeuft ueber generisches dav-save, deshalb reicht hier
+  // der Set-Eintrag; die Trennung Boegen (Bearbeiten) vs. Katalog (Administrieren)
+  // ist eine Client-Unterscheidung ueber canEdit()/canAdmin().
+  "ausbildungsplan"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch

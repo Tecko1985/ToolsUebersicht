@@ -300,6 +300,16 @@ const TOOLS = [
     category: "Verein",
     version: "1.0",
     devices: ["desktop"]
+  },
+  {
+    id: "ausbildungsplan",
+    name: "Ausbildungsplan",
+    description: "Trainingsschwerpunkte und passende Übungen für jede Altersklasse von den Bambini bis zur U23, auf Grundlage der Trainingsphilosophie Deutschland — dazu der Spieltag als Leistungsnachweis: nach dem Spiel wird je Mannschaft auf einer Ampel bewertet, wie weit das Erlernte bereits umgesetzt wird.",
+    url: "https://tecko1985.github.io/ausbildungsplan/",
+    icon: "🎯",
+    category: "Verein",
+    version: "1.0",
+    devices: ["mobile", "desktop"]
   }
 ];
 
