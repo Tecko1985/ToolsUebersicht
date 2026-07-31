@@ -1176,3 +1176,24 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
 @media (max-width: 820px) {
   input, select, textarea { font-size: 16px !important; }
 }
+
+/* Fusszeile mit den Pflichtangaben des Vereins.
+   Dieselbe max-width wie <main>, damit sie unter dem Inhalt buendig steht und
+   nicht ueber die volle Fensterbreite laeuft. Bewusst dezent (gedaempfte
+   Schrift, duenne Trennlinie): sie soll erreichbar sein, nicht um
+   Aufmerksamkeit mit den Kacheln konkurrieren. */
+.seiten-fuss {
+  max-width: 1100px;
+  margin: 40px auto 0;
+  padding: 18px 16px 28px;
+  border-top: 1px solid var(--border, #dde1e8);
+  text-align: center;
+  font-size: 13px;
+  color: #6b7280;
+}
+.seiten-fuss p { margin: 4px 0; }
+.seiten-fuss a { color: var(--blue, #1a56a0); text-decoration: none; }
+.seiten-fuss a:hover { text-decoration: underline; }
+/* Der Trenner zwischen den beiden Links braucht Luft, sonst kleben sie am
+   Handy aneinander und der Tippbereich wird mehrdeutig. */
+.seiten-fuss span { margin: 0 8px; color: #b0b6c0; }

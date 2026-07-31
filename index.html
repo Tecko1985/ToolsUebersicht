@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.27" />
+<link rel="stylesheet" href="style.css?v=1.28" />
 </head>
 <body>
 
@@ -148,7 +148,25 @@
       <h2>Änderungen</h2>
       <div id="changelog-list"></div>
     </div>
-  </section>
+  
+    <div class="card" id="ds-info-karte">
+      <h2>Datenschutz</h2>
+      <p>Diese Übersicht und die von hier verlinkten Werkzeuge gehören zu den
+      internen Anwendungen des 1. SC 1911 Heiligenstadt. Die dort erfassten Daten
+      werden ausschließlich für die Vereinsarbeit verwendet und liegen auf Servern
+      in Deutschland, die ein Auftragsverarbeiter für den Verein betreibt.</p>
+      <p>Verantwortlich ist der 1. SC 1911 Heiligenstadt, Leineberg 2,
+      37308 Heilbad Heiligenstadt, Telefon 03606 612206,
+      <a href="mailto:info@sc1911-heiligenstadt.de">info@sc1911-heiligenstadt.de</a>.
+      Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung,
+      Datenübertragbarkeit und Widerspruch lassen sich unter dieser Anschrift
+      geltend machen. Beschwerden nimmt der Thüringer Landesbeauftragte für den
+      Datenschutz und die Informationsfreiheit entgegen.</p>
+      <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
+      &middot;
+      <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
+    </div>
+</section>
 
   <!-- Eigenes Konto und alle Anmeldewege. Bewusst NICHT im Einstellungen-Tab:
        der ist seit dem Umbau admin-only, der Login muss aber jedem offenstehen. -->
@@ -829,6 +847,21 @@
     </div>
   </div>
 </div>
+
+<!-- Fusszeile: bewusst OHNE Rechte-Gate, anders als der Info-Tab dieser Seite
+     (der ist seit 2026-07-25 nur fuer Angemeldete). Genau umgekehrte
+     Begruendung: diese Seite ist die einzige, die ein nicht angemeldeter
+     Besucher ueberhaupt erreicht -- Impressum und Datenschutzerklaerung
+     muessen deshalb gerade IHM zugaenglich sein. Nichts davon ist
+     vereinsintern, es sind die Pflichtangaben des Vereins. -->
+<footer class="seiten-fuss">
+  <p>1. SC 1911 Heiligenstadt e.V. — interne Werkzeuge des Vereins</p>
+  <p>
+    <a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a>
+  </p>
+</footer>
 
 <script src="signature-pad.js?v=1.0"></script>
 <script src="config.js?v=1.43"></script>
