@@ -343,6 +343,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.15",
+    groups: [
+      {
+        title: "Neues Werkzeug „Ausbildungsplan“",
+        items: [
+          "Es gibt ein neues Werkzeug „Ausbildungsplan“: für jede Altersklasse von den Bambini bis zur U23 stehen dort die Trainingsschwerpunkte und die passenden Übungen — auf Grundlage der Trainingsphilosophie Deutschland des DFB. Jede Stufe zeigt außerdem ihr Profil: Altersspanne, die höchstzulässige Spielform, die wöchentliche Nettospielzeit und die Trainingsfrequenz.",
+          "Der Übungskatalog umfasst 28 Spielformen in den vier Säulen Gleichzahlspiele, Spiele mit Anspielern, eine Linie verteidigen und Über-/Unterzahlspiele. Eine Übung, die über der DFB-Obergrenze der gerade betrachteten Altersklasse liegt, wird deutlich markiert.",
+          "Die Spieltage sind als Leistungsnachweis eingebaut: nach dem Spiel wird je Mannschaft auf einer Ampel festgehalten, wie weit die Schwerpunkte im Spiel schon umgesetzt waren. Die Auswertung stellt das als Verlauf über die Saison dar. Bewertet wird die Mannschaft, nicht der einzelne Spieler — dafür bleibt die Spielerbewertung zuständig.",
+          "Für den Platz gibt es eine Druckansicht je Altersklasse mit allen Schwerpunkten und vollständigen Übungsbeschreibungen.",
+          "Lesen darf jeder Angemeldete, die Spieltag-Bögen füllt aus wer Bearbeiten-Recht hat, und Schwerpunkte, Übungen und Mannschaften pflegt die Nachwuchsleitung über das Administrieren-Recht."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.14",
     groups: [
       {
