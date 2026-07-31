@@ -828,6 +828,19 @@ main { flex: 1; min-width: 0; }
 }
 .tool-card h3 { font-size: 16px; color: var(--blue); }
 .tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
+/* Briefumschlag unten links auf der Kachel (Flag mail:true in config.js) -- zeigt vor
+   dem Klick, welches Werkzeug im Betrieb E-Mails nach außen verschickt. Bewusst IM
+   Flex-Fluss mit margin-top:auto statt absolut positioniert: die Beschreibung reicht
+   bei der laengsten Kachel einer Zeile bis ans untere Padding, ein absolut gesetztes
+   Badge laege dort lautlos auf dem Text. Da die Kacheln einer Zeile gleich hoch sind,
+   stehen die Umschlaege trotzdem alle auf einer Linie. */
+.tool-mail-badge {
+  margin-top: auto;
+  align-self: flex-start;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.8;
+}
 .tool-card.wip { opacity: 0.82; }
 .badge-wip {
   display: inline-flex;

@@ -9,6 +9,17 @@ const WHATSAPP_CONTACT = "491778587294";
 // (siehe admin-worker.js) — nur die Existenz eines Tools + seine Metadaten
 // (inkl. version) ändern sich hier, das braucht einen Code-Push und muss von
 // Hand mit der jeweiligen Version des verlinkten Tools synchron gehalten werden.
+//
+// Optionales Flag `mail: true` -> Briefumschlag-Symbol unten links auf der Kachel
+// (siehe renderToolGrid() in app.js). Es markiert Werkzeuge, die im Betrieb
+// tatsächlich E-Mails nach außen verschicken -- damit vor dem Klick sichtbar ist,
+// wo eine Handlung beim Empfänger im Postfach landet. **Maßgeblich ist der
+// admin-worker.js**, dort laufen ALLE Mails der Flotte über Brevo: vier
+// Sendestellen (`raumnutzung-mail-antrag`, `notify-user` -> Vereinskalender,
+// `vereinsaufgabe-anlegen`, `beleg-eingang-notify` -> Beleg-Eingang, ausgelöst
+// vom Worker sc-heiligenstadt-beleg-upload). Kommt eine Sendestelle dazu oder
+// weg, muss dieses Flag mitgezogen werden -- es gibt keine automatische
+// Verbindung zwischen Worker und Kachel.
 const TOOLS = [
   {
     id: "trainerdaten",
@@ -38,7 +49,8 @@ const TOOLS = [
     icon: "🗂️",
     category: "Verein",
     version: "1.0",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    mail: true
   },
   {
     id: "trainercheckliste",
@@ -88,7 +100,8 @@ const TOOLS = [
     icon: "🧾",
     category: "Verein",
     version: "1.0",
-    devices: ["mobile"]
+    devices: ["mobile"],
+    mail: true
   },
   {
     id: "geschaeftsstelle",
@@ -118,7 +131,8 @@ const TOOLS = [
     icon: "📅",
     category: "Verein",
     version: "1.0",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    mail: true
   },
   {
     id: "platzbelegung",
@@ -238,7 +252,8 @@ const TOOLS = [
     icon: "🏛️",
     category: "Verein",
     version: "1.0",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    mail: true
   },
   {
     id: "testspielplaner",
@@ -342,6 +357,19 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.16",
+    groups: [
+      {
+        title: "Auf einen Blick: welches Werkzeug E-Mails verschickt",
+        items: [
+          "Auf den Kacheln steht unten links jetzt ein Briefumschlag ✉️, wenn das Werkzeug im Betrieb E-Mails nach außen verschickt. Damit ist schon vor dem Klick zu sehen, wo ein Eintrag beim Empfänger im Postfach landet und nicht nur in einer Liste steht.",
+          "Markiert sind vier Werkzeuge: Vereinsaufgaben (Benachrichtigung an die Empfänger einer neuen Aufgabe), Vereinskalender (Hinweis an die Personen, mit denen ein privater Termin geteilt wird), Raumnutzung (der fertige Antrag geht als PDF ans Schulverwaltungsamt) und Beleg-Eingang (Info nach einer Einreichung).",
+          "Am Rechner erscheint der Hinweis als Text, wenn die Maus auf dem Umschlag stehen bleibt."
+        ]
+      }
+    ]
+  },
   {
     version: "1.15",
     groups: [

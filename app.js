@@ -1094,6 +1094,7 @@ function renderToolGrid() {
           : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
+        ${t.mail ? '<div class="tool-mail-badge" role="img" title="Dieses Werkzeug verschickt E-Mails nach außen" aria-label="Verschickt E-Mails">✉️</div>' : ""}
       `;
       card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
       card.addEventListener("click", (ev) => { if (card.dataset.justDragged === "1") ev.preventDefault(); });
