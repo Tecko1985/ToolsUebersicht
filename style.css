@@ -232,6 +232,24 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   word-break: break-all;
 }
 
+/* Anleitung im Fenster "Als App ablegen" (nur iPhone/iPad -- auf Android oeffnet
+   der Knopf den Systemdialog und dieses Fenster geht nie auf). */
+.app-schritte {
+  margin: 4px 0 14px;
+  padding-left: 22px;
+  line-height: 1.7;
+  font-size: 14px;
+}
+.app-schritte li { margin-bottom: 6px; }
+.app-schritte strong { color: var(--blue); }
+/* Das Teilen-Symbol steht mitten im Satz und muss auf der Textlinie sitzen --
+   ohne vertical-align haengt es an der Grundlinie und schiebt die Zeile auf. */
+.app-teilen-icon {
+  vertical-align: -4px;
+  margin: 0 2px;
+  color: var(--blue);
+}
+
 nav {
   display: flex;
   gap: 4px;

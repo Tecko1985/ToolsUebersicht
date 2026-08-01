@@ -4756,6 +4756,135 @@ function renderKontoKarte() {
     rows.push(["Gruppen", currentUser.groupNames.map(escapeHtml).join(", ")]);
   }
   if (currentUser.isAdmin) rows.push(["Rechte", "Administrator"]);
+  // Dritter Kopf-Knopf, gleiche Stelle: er verschwindet, sobald die App abgelegt
+  // ist, damit die enge Kopfzeile nicht dauerhaft eine Zeile mehr traegt.
+  const appKnopf = document.getElementById("btn-app-ablegen");
+  if (appKnopf) appKnopf.style.display = appAblegenMoeglich() ? "" : "none";
+}
+
+// ---------- App auf dem Startbildschirm ablegen ----------
+
+// Manifest und Service Worker liegen auf der WURZEL (eigenes Repo
+// tecko1985.github.io), damit der Geltungsbereich "/" die ganze Flotte umfasst.
+// Laegen sie hier, umfasste die abgelegte App nur /ToolsUebersicht/ und jeder
+// Klick auf eine Kachel fuehrte heraus in den Browser -- auf dem iPhone in ein
+// eigenes Safari-Fenster. Entwurf:
+// docs/superpowers/specs/2026-08-01-pwa-app-icon-knopf-design.md
+
+// Chrome feuert beforeinstallprompt einmal und erwartet, dass man das Ereignis
+// aufhebt und spaeter selbst ausloest.
+let appInstallEreignis = null;
+
+// Laeuft die Seite schon als abgelegte App? Dann waere der Knopf sinnlos.
+// ⚠️ Beide Wege noetig: display-mode deckt Android und den Rechner ab,
+// navigator.standalone ist der aeltere iOS-Weg -- Safari kennt display-mode
+// erst ab iOS 16.4, und in der Flotte sind aeltere Geraete unterwegs.
+function istAlsAppGestartet() {
+  const mm = window.matchMedia;
+  const alsApp = !!mm && (mm("(display-mode: standalone)").matches
+    || mm("(display-mode: fullscreen)").matches
+    || mm("(display-mode: minimal-ui)").matches);
+  return alsApp || window.navigator.standalone === true;
+}
+
+// Auf iOS gibt es keinen programmatischen Weg: Apple hat beforeinstallprompt nie
+// umgesetzt. Dort kann der Knopf nur anleiten -- und das nur in Safari, denn
+// "Zum Home-Bildschirm" bietet kein anderer iOS-Browser an, obwohl alle
+// dieselbe Engine benutzen.
+function istIosSafari() {
+  const ua = navigator.userAgent || "";
+  const iOS = /iPad|iPhone|iPod/.test(ua)
+    // iPadOS meldet sich seit 13 als Macintosh; die Touchpunkte verraten es.
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (!iOS) return false;
+  return !/CriOS|FxiOS|EdgiOS|OPiOS|Mercury/.test(ua);
+}
+
+// Drei Bedingungen, alle noetig: angemeldet (Michel-Vorgabe, gleiche Linie wie
+// Info-Tab und Neuigkeiten), noch nicht abgelegt, und die Plattform kann
+// ueberhaupt etwas anbieten. Firefox und die iOS-Fremdbrowser fallen hier
+// heraus -- ein Knopf, der nichts bewirkt, ist schlimmer als gar keiner.
+function appAblegenMoeglich() {
+  if (!currentUser) return false;
+  if (istAlsAppGestartet()) return false;
+  return !!appInstallEreignis || istIosSafari();
+}
+
+function setupAppInstallation() {
+  // Der Geltungsbereich richtet sich nach dem ORT DER SKRIPTDATEI, nicht nach
+  // dem der registrierenden Seite -- deshalb darf diese Seite im Unterordner
+  // den Wurzel-Worker registrieren. Fehler werden geschluckt: ohne Service
+  // Worker laesst sich die App nur nicht ablegen, die Uebersicht selbst
+  // funktioniert unveraendert weiter.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    appInstallEreignis = e;
+    // ⚠️ Das Ereignis trifft NACH dem Seitenaufbau ein. Ohne diesen Aufruf
+    // bliebe der Knopf beim ersten Besuch aus, obwohl Ablegen moeglich waere --
+    // dieselbe Falle wie bei canAssignDocs (siehe updateKopfKnoepfe).
+    updateKopfKnoepfe();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    appInstallEreignis = null;
+    schliesseAppAnleitung();
+    updateKopfKnoepfe();
+  });
+
+  const knopf = document.getElementById("btn-app-ablegen");
+  if (knopf) knopf.addEventListener("click", appAblegenKlick);
+  const zu = document.getElementById("btn-app-ablegen-close");
+  if (zu) zu.addEventListener("click", schliesseAppAnleitung);
+  const overlay = document.getElementById("app-ablegen-overlay");
+  if (overlay) {
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) schliesseAppAnleitung();
+    });
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const o = document.getElementById("app-ablegen-overlay");
+    if (!o || o.style.display !== "flex") return;
+    schliesseAppAnleitung();
+    // Markierung wie bei den uebrigen Fenstern: ein anderer Handler an document
+    // soll dasselbe Escape nicht ein zweites Mal verbrauchen.
+    e.escapeVerbraucht = true;
+  });
+}
+
+async function appAblegenKlick() {
+  if (appInstallEreignis) {
+    const ereignis = appInstallEreignis;
+    // ⚠️ Ein Ereignis laesst sich genau EINMAL verwenden -- auch wenn der Nutzer
+    // im Systemdialog abbricht, ist es verbraucht. Der Knopf verschwindet dann
+    // bis zum naechsten Seitenaufruf, wo der Browser es erneut anbietet. Das ist
+    // ehrlicher als ein Knopf, der beim zweiten Druck stumm bleibt.
+    appInstallEreignis = null;
+    try {
+      await ereignis.prompt();
+      await ereignis.userChoice;
+    } catch (err) {
+      // Dialog abgebrochen oder Ereignis abgelaufen -- nichts weiter zu tun.
+    }
+    updateKopfKnoepfe();
+    return;
+  }
+  // Kein Ereignis heisst hier iOS-Safari (siehe appAblegenMoeglich): anleiten.
+  oeffneAppAnleitung();
+}
+
+function oeffneAppAnleitung() {
+  const o = document.getElementById("app-ablegen-overlay");
+  if (o) o.style.display = "flex";
+}
+
+function schliesseAppAnleitung() {
+  const o = document.getElementById("app-ablegen-overlay");
+  if (o) o.style.display = "none";
 
   // Diese Zeile erscheint IMMER, auch ohne jedes Schreibrecht: sie beantwortet die
   // Frage "warum kann ich dort nichts speichern" -- sie wegzulassen liesse genau die
@@ -5321,3 +5450,6 @@ document.addEventListener("visibilitychange", () => {
   // ohne manuellen Reload verschwinden sehen.
   if (Date.now() - _testspielplanerStatusLastFetch >= 10000) loadTestspielplanerStatus();
 });
+  // Frueh registrieren: beforeinstallprompt kann jederzeit eintreffen, auch
+  // bevor die Worker-Aufrufe unten zurueck sind.
+  setupAppInstallation();

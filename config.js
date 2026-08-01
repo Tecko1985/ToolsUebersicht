@@ -358,6 +358,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.18",
+    groups: [
+      {
+        title: "Die Übersicht als App auf dem Handy ablegen",
+        items: [
+          "Oben in der Kopfzeile steht für angemeldete Nutzer der Knopf „📲 Als App ablegen“. Damit landet die Tools-Übersicht als eigenes Symbol auf dem Startbildschirm und startet im Vollbild, ohne Adressleiste und Browser-Menüs.",
+          "Auf Android-Geräten öffnet der Knopf direkt die Rückfrage des Systems. Auf iPhone und iPad zeigt er eine kurze Anleitung — Apple lässt das Ablegen dort nur von Hand über das Teilen-Symbol zu, das ist keine Einstellungssache.",
+          "Alle Werkzeuge bleiben dabei innerhalb der App: ein Tippen auf eine Kachel öffnet den Vereinskalender oder die Vereinsaufgaben weiterhin im selben Fenster, nicht in einem zweiten Browser daneben.",
+          "Auf dem iPhone hält die Anmeldung als abgelegte App länger. Safari räumt bei einer Seite, die nur als Lesezeichen benutzt wird, nach einigen Tagen Ruhe die gespeicherte Anmeldung weg — als App auf dem Startbildschirm ist sie davon ausgenommen.",
+          "Sobald das Symbol liegt, verschwindet der Knopf wieder. Er kommt auf einem neuen Gerät oder nach dem Löschen des Symbols von allein zurück."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.17",
     groups: [
       {

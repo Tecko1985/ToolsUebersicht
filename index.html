@@ -5,7 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🧰 Tools-Übersicht</title>
 <meta name="theme-color" content="#1a56a0" />
-<link rel="stylesheet" href="style.css?v=1.28" />
+<!-- Manifest, Icons und Service Worker liegen auf der WURZEL, nicht in diesem
+     Ordner: ein Manifest kann keinen Geltungsbereich oberhalb seines eigenen
+     Verzeichnisses beanspruchen. Laege es unter /ToolsUebersicht/, umfasste die
+     abgelegte App nur diesen Pfad und jeder Klick auf eine Kachel fuehrte
+     heraus in den Browser -- auf dem iPhone in ein eigenes Safari-Fenster.
+     Quelle der Dateien: Repo Tecko1985/tecko1985.github.io. -->
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="icon" href="/favicon.png" type="image/png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="SC 1911" />
+<link rel="stylesheet" href="style.css?v=1.30" />
 </head>
 <body>
 
@@ -26,6 +37,11 @@
          ausschließlich die Dokumente, die auf die eigene Unterschrift warten --
          die persönlichen ToDos haben ihren eigenen Knopf rechts. -->
     <button type="button" class="header-code-btn" id="btn-dokumente-oeffnen" style="display:none;" title="Unterschriften anfordern und selbst unterschreiben">✍ Unterschriften<span class="btn-lang" id="dok-btn-lang"> anfordern</span><span class="header-zaehler" id="dokumente-kopf-zaehler" style="display:none;"></span></button>
+    <!-- Steht hier nur, solange die App noch NICHT auf dem Startbildschirm liegt
+         (siehe appAblegenMoeglich in app.js) -- ein Knopf, den man je Geraet genau
+         einmal braucht, darf die ohnehin enge Kopfzeile nicht dauerhaft belasten.
+         Die beiden .btn-lang kuerzen ihn unter 860px auf "📲 App". -->
+    <button type="button" class="header-code-btn" id="btn-app-ablegen" style="display:none;" title="Diese Übersicht als App auf dem Startbildschirm ablegen">📲 <span class="btn-lang">Als </span>App<span class="btn-lang"> ablegen</span></button>
   </div>
   <button type="button" class="header-admin-btn" id="btn-admin-dashboard-open" style="display:none;">📊 Admin-Dashboard</button>
   <div class="header-right">
@@ -646,6 +662,29 @@
   </div>
 </div>
 
+<!-- Anleitung fuer iPhone und iPad. Auf Android oeffnet der Knopf stattdessen den
+     echten Installationsdialog des Systems und dieses Fenster geht nie auf:
+     Apple hat beforeinstallprompt nie umgesetzt, dort ist Anleiten das einzig
+     Moegliche. Nutzt bewusst .code-dialog -- die Basisklasse bringt seit 76989c7
+     max-height und eigenes Scrollen mit, eine Sonderklasse waere ein Rueckschritt. -->
+<div class="code-overlay" id="app-ablegen-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="app-ablegen-titel">
+    <div class="code-dialog-head">
+      <h2 id="app-ablegen-titel">📲 Als App ablegen</h2>
+      <button type="button" class="code-dialog-close" id="btn-app-ablegen-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted">In drei Schritten liegt die Tools-Übersicht als eigenes Symbol auf dem Startbildschirm — mit Vollbild, ohne Adressleiste.</p>
+    <ol class="app-schritte">
+      <li>Unten in der Safari-Leiste auf das Teilen-Symbol
+        <svg class="app-teilen-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 3l4 4h-3v8h-2V7H8l4-4z" fill="currentColor"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7h-2v7H7v-7H5z" fill="currentColor"/></svg>
+        tippen.</li>
+      <li>In der Liste nach unten wischen bis <strong>Zum Home-Bildschirm</strong>.</li>
+      <li>Oben rechts auf <strong>Hinzufügen</strong> tippen.</li>
+    </ol>
+    <p class="muted" style="font-size:12px;">Das Symbol verhält sich wie eine App: Alle Werkzeuge bleiben darin, du musst dich nicht erneut anmelden, und die Anmeldung hält länger als im normalen Browser-Tab.</p>
+  </div>
+</div>
+
 <!-- Aufgabe zuweisen (nur für Mitglieder der berechtigten Gruppen) -->
 <div class="code-overlay" id="aufgaben-zuweisen-overlay" style="display:none;">
   <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="aufgaben-zuweisen-titel">
@@ -864,7 +903,7 @@
 </footer>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.44"></script>
-<script src="app.js?v=1.38"></script>
+<script src="config.js?v=1.46"></script>
+<script src="app.js?v=1.40"></script>
 </body>
 </html>
