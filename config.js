@@ -358,6 +358,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.19",
+    groups: [
+      {
+        title: "Neuigkeiten: sehen, wer reagiert hat",
+        items: [
+          "Fährt man mit der Maus über eines der Emoji unter einer Meldung, erscheint darüber die Liste der Namen, die damit reagiert haben. Vorher stand dort nur die Anzahl.",
+          "Die Namen sehen alle angemeldeten Nutzer — wie die Neuigkeiten selbst. Wer nicht angemeldet ist, bekommt weder die Meldungen noch die Reaktionen zu Gesicht.",
+          "Beim eigenen Emoji steht unter den Namen zusätzlich der Hinweis, dass ein weiterer Klick die eigene Reaktion wieder entfernt.",
+          "Am Handy und Tablet gibt es kein Überfahren mit der Maus — dort bleibt es wie bisher bei der Anzahl."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.18",
     groups: [
       {

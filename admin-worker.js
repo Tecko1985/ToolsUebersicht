@@ -206,11 +206,13 @@
 //     wertet adminGroupIds mit); provisionGroupIds steuert das Auto-Provisioning: Mitglieder dieser Gruppen
 //     bekommen automatisch einen Eintrag im Tool.)
 //   POST { action: "save-news", news } (admin)                   -> speichert die Neuigkeiten (Array, serverseitig validiert) im news-Key von sichtbarkeit.json (erhält tools); GET liefert news NUR an Angemeldete (optionaler Bearer-Token am GET, seit 2026-07-25), sonst news: null
-//   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine }
+//   POST { action: "toggle-news-reaction", newsId, emoji } (jeder eingeloggte Nutzer) -> { newsId, counts, mine, namen }
 //     (setzt/wechselt/entfernt die EINE Reaktion des Nutzers auf eine Meldung; Emoji strikt gegen NEWS_REACTION_EMOJIS
 //     validiert, Nutzername aus der Session; Ablage in neuigkeiten-reaktionen.json getrennt von den News)
 //   POST { action: "my-news-reactions" } (jeder eingeloggte Nutzer) -> { mine: { newsId: emoji } } (nur eigene Reaktionen)
-//   GET liefert zusätzlich newsReactions: { newsId: { emoji: anzahl } } — reine Zähler ohne Namen, wie news nur an Angemeldete (sonst {})
+//   GET liefert zusätzlich newsReactions: { newsId: { emoji: anzahl } } — reine Zähler, wie news nur an Angemeldete (sonst {})
+//   GET liefert zusätzlich newsReactionNames: { newsId: { emoji: [anzeigename] } } — WER reagiert hat, ebenfalls nur an
+//     Angemeldete (sonst {}); der Client zeigt die Namen im Tooltip der Reaktionsknöpfe (seit 2026-08-01)
 //   POST { action: "submit-feedback", type, toolId?, text } (jeder eingeloggte Nutzer) -> { ok:true }
 //     (legt EINEN Feedback-/Wunsch-Eintrag an; Name/Nutzername kommen serverseitig aus dem eigenen Konto,
 //     der Client kann sie nicht fälschen oder für andere Nutzer einen Eintrag anlegen)
@@ -805,12 +807,16 @@ export default {
       // archiviertes Konto soll die Meldungen nicht bis zum Token-Ablauf weiterlesen.
       // Kostet nichts, usersDoc wird für bootstrapAvailable ohnehin gelesen.
       const angemeldet = tokenOk && !!sessionUserFromDoc(payload, usersDoc);
-      // newsReactions: reine Zähler je Meldung+Emoji, ohne Nutzernamen. Die eigene
-      // Wahl holt sich der Client separat über my-news-reactions.
+      // newsReactions: reine Zähler je Meldung+Emoji. newsReactionNames: dieselbe
+      // Aufteilung mit den Anzeigenamen für den Tooltip — beides NUR an Angemeldete,
+      // der anonyme Besucher bekommt bei beiden {}. Die eigene Wahl holt sich der
+      // Client separat über my-news-reactions. Kostet keinen zusätzlichen Read:
+      // reactionsDoc und usersDoc stehen oben schon.
       return json({
         tools: config.tools,
         news: (angemeldet && Array.isArray(config.news)) ? config.news : null,
         newsReactions: angemeldet ? newsReactionCounts(reactionsDoc) : {},
+        newsReactionNames: angemeldet ? newsReactionNames(reactionsDoc, usersDoc) : {},
         bootstrapAvailable: Object.keys(usersDoc.users).length === 0
       }, 200, corsHeaders);
     }
@@ -2849,7 +2855,8 @@ const NEWS_VALID_TYPES = ["neu", "update", "fix", "hinweis"];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 // Aggregiert das Reaktions-Dokument zu reinen Zählern je Meldung+Emoji — OHNE
-// Nutzernamen, damit der öffentliche GET nicht preisgibt, WER reagiert hat.
+// Nutzernamen. Bleibt die Form für den ANONYMEN Kanal: wer reagiert hat, geht nur
+// an Angemeldete (newsReactionNames, siehe unten und der GET-Handler).
 function newsReactionCounts(doc) {
   const byNews = (doc && doc.byNews && typeof doc.byNews === "object") ? doc.byNews : {};
   const out = {};
@@ -2861,6 +2868,34 @@ function newsReactionCounts(doc) {
       if (NEWS_REACTION_EMOJIS.includes(emoji)) counts[emoji] = (counts[emoji] || 0) + 1;
     }
     if (Object.keys(counts).length) out[newsId] = counts;
+  }
+  return out;
+}
+
+// Dasselbe mit Klarnamen statt Zahlen: { newsId: { emoji: ["Max Muster", ...] } }.
+// Seit 2026-08-01 (Michel-Vorgabe): beim Überfahren eines Reaktionsknopfes soll
+// sichtbar sein, WER reagiert hat. Geht ausschließlich an Angemeldete — der
+// GET-Handler ruft das nur im Zweig `angemeldet` auf, der anonyme Besucher bekommt
+// weiterhin nur newsReactionCounts. Der Anzeigename wird aus der ohnehin geladenen
+// nutzer.json aufgelöst und NICHT mitgespeichert (aufgabenAnzeigeName, bewusst
+// wiederverwendet statt kopiert): sonst zeigte eine alte Reaktion nach einer
+// Umbenennung weiter den früheren Namen. Sortiert, damit die Liste im Tooltip nicht
+// bei jedem Laden anders herum steht (Objekt-Schlüsselreihenfolge ist Einfügereihenfolge).
+function newsReactionNames(doc, usersDoc) {
+  const byNews = (doc && doc.byNews && typeof doc.byNews === "object") ? doc.byNews : {};
+  const out = {};
+  for (const newsId of Object.keys(byNews)) {
+    const perUser = byNews[newsId];
+    if (!perUser || typeof perUser !== "object") continue;
+    const namen = {};
+    for (const username of Object.keys(perUser)) {
+      const emoji = perUser[username];
+      if (!NEWS_REACTION_EMOJIS.includes(emoji)) continue;
+      if (!namen[emoji]) namen[emoji] = [];
+      namen[emoji].push(aufgabenAnzeigeName(usersDoc, username));
+    }
+    for (const emoji of Object.keys(namen)) namen[emoji].sort((a, b) => a.localeCompare(b, "de"));
+    if (Object.keys(namen).length) out[newsId] = namen;
   }
   return out;
 }
@@ -2902,7 +2937,11 @@ async function handleToggleNewsReaction(request, body, env, authHeader, corsHead
   if (!saved) return json({ error: "Reaktion konnte nicht gespeichert werden" }, 502, corsHeaders);
   const counts = newsReactionCounts(saved)[newsId] || {};
   const mine = (saved.byNews[newsId] && saved.byNews[newsId][username]) || null;
-  return json({ newsId, counts, mine }, 200, corsHeaders);
+  // namen additiv (seit 2026-08-01): der Client hat die Zähler nach dem Klick sofort
+  // maßgeblich, die Namensliste im Tooltip liefe sonst bis zum nächsten Seitenaufruf
+  // hinterher. usersDoc steckt bereits in der Session — kein zusätzlicher Read.
+  const namen = newsReactionNames(saved, session.usersDoc)[newsId] || {};
+  return json({ newsId, counts, mine, namen }, 200, corsHeaders);
 }
 
 // Liefert dem eingeloggten Nutzer NUR seine eigenen Reaktionen (newsId -> Emoji),

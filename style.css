@@ -432,7 +432,9 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-admin-row:first-child { border-top: none; }
 .news-admin-actions { display: flex; gap: 6px; flex-shrink: 0; }
 #news-form textarea { width: 100%; }
-.news-reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+/* position: relative ist der Bezugspunkt fuer die Namensliste unten -- sie wird per
+   JS an der Position des ueberfahrenen Knopfes ausgerichtet (btn.offsetLeft). */
+.news-reactions { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .news-react-btn {
   display: inline-flex;
   align-items: center;
@@ -451,6 +453,30 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-react-count { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 8px; text-align: center; }
 .news-react-btn.active .news-react-count { color: var(--blue); }
 .news-react-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+/* Namen der Reagierenden beim Ueberfahren eines Knopfes. Liegt UEBER der Leiste, damit
+   die Karte beim Hover nicht waechst (sonst rutscht der Knopf unter der Maus weg).
+   width: max-content + max-width: 100% haelt die Box so schmal wie noetig und trotzdem
+   innerhalb der Karte; die Links-Position setzt das JS geklemmt. */
+.news-react-namen {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  pointer-events: none; /* sonst nimmt die Box die Maus vom Knopf und flackert */
+}
+.news-react-namen[hidden] { display: none; }
+.news-react-namen-hinweis { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
 
 /* ---------- Feedback & Hilfe ---------- */
 

@@ -7,6 +7,7 @@ const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
 let visibilityState = {};
 let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
 let newsReactionCounts = {}; // { newsId: { emoji: anzahl } } — öffentliche Zähler, kommen aus fetchVisibility() (GET)
+let newsReactionNames = {};  // { newsId: { emoji: [anzeigename] } } — WER reagiert hat, für den Tooltip; nur angemeldet befüllt
 let newsReactionMine = {};   // { newsId: emoji } — eigene Reaktion, nur eingeloggt (my-news-reactions)
 let newsReactionHint = "";   // kurzer transienter Hinweis unter der Reaktionsleiste (z.B. "Bitte anmelden")
 let _newsReactionHintTimer = null;
@@ -1335,12 +1336,14 @@ async function refreshNews() {
   if (!currentUser) {
     newsState = [];
     newsReactionCounts = {};
+    newsReactionNames = {};
     renderNews();
     return;
   }
   const data = await fetchVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : [];
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {};
+  newsReactionNames = (data && data.newsReactionNames && typeof data.newsReactionNames === "object") ? data.newsReactionNames : {};
   renderNews();
 }
 
@@ -1413,6 +1416,13 @@ function renderNews() {
   if (nextBtn) nextBtn.addEventListener("click", () => { newsCarouselIndex = Math.min(items.length - 1, newsCarouselIndex + 1); renderNews(); });
   banner.querySelectorAll(".news-react-btn").forEach((b) => {
     b.addEventListener("click", () => toggleNewsReaction(n.id, b.dataset.emoji));
+    // focus/blur zusätzlich zu mouseenter/mouseleave: sonst erreicht die Namensliste
+    // nur, wer eine Maus hat. Am Touchgerät gibt es kein Hover — dort bleibt es beim
+    // Zähler (gleiche Lage wie beim ✉-Kennzeichen auf den Kacheln).
+    b.addEventListener("mouseenter", () => newsReaktionNamenZeigen(b, n.id, b.dataset.emoji));
+    b.addEventListener("focus", () => newsReaktionNamenZeigen(b, n.id, b.dataset.emoji));
+    b.addEventListener("mouseleave", newsReaktionNamenVerbergen);
+    b.addEventListener("blur", newsReaktionNamenVerbergen);
   });
 }
 
@@ -1420,20 +1430,65 @@ function renderNews() {
 // aus config.js als Buttons, jeweils mit Zähler (0 wird ausgeblendet). Die eigene Wahl
 // ist hervorgehoben (.active). Auch ohne Login sichtbar — der Klick-Handler entscheidet
 // dann, ob reagiert wird oder der Anmelde-Hinweis erscheint.
+//
+// Das title-Attribut trägt nur noch die Klick-Erklärung von Knöpfen OHNE Reaktion.
+// Sobald jemand reagiert hat, übernimmt das eigene Tooltip (#news-react-namen) — sonst
+// poppte der native Tooltip nach ~1 s zusätzlich auf und legte sich über die Namen.
+// Für Screenreader steht beides im aria-label, das nie doppelt angezeigt wird.
 function renderNewsReactionsBar(newsId) {
   if (!newsId || typeof NEWS_REACTION_EMOJIS === "undefined") return "";
   const counts = newsReactionCounts[newsId] || {};
+  const namen = newsReactionNames[newsId] || {};
   const mine = newsReactionMine[newsId] || null;
   const btns = NEWS_REACTION_EMOJIS.map((emoji) => {
     const c = counts[emoji] || 0;
     const active = mine === emoji;
-    const title = active ? "Deine Reaktion — nochmal klicken zum Entfernen" : "Mit diesem Emoji reagieren";
-    return `<button type="button" class="news-react-btn${active ? " active" : ""}" data-emoji="${escapeHtml(emoji)}" aria-pressed="${active ? "true" : "false"}" title="${title}">`
+    const liste = Array.isArray(namen[emoji]) ? namen[emoji] : [];
+    const klickHinweis = active ? "Deine Reaktion — nochmal klicken zum Entfernen" : "Mit diesem Emoji reagieren";
+    const ariaLabel = liste.length ? `${emoji} — ${liste.join(", ")}. ${klickHinweis}` : `${emoji} — ${klickHinweis}`;
+    return `<button type="button" class="news-react-btn${active ? " active" : ""}" data-emoji="${escapeHtml(emoji)}"`
+      + ` aria-pressed="${active ? "true" : "false"}" aria-label="${escapeHtml(ariaLabel)}"`
+      + (liste.length ? "" : ` title="${escapeHtml(klickHinweis)}"`) + `>`
       + `<span class="news-react-emoji">${emoji}</span>`
       + (c > 0 ? `<span class="news-react-count">${c}</span>` : "")
       + `</button>`;
   }).join("");
-  return `<div class="news-reactions">${btns}</div>`;
+  // Ein einziges Tooltip-Element für die ganze Leiste, absolut positioniert und beim
+  // Überfahren befüllt: an jedem Knopf ein eigenes hätte zehn Boxen im DOM und die
+  // äußeren wären am Handy seitlich aus der Karte gelaufen.
+  return `<div class="news-reactions">${btns}<div class="news-react-namen" id="news-react-namen" hidden></div></div>`;
+}
+
+// Namen der Reagierenden über dem überfahrenen Knopf einblenden. Bewusst nicht als
+// CSS-::after mit attr(): die Box wird an der Position des Knopfes ausgerichtet und
+// dabei am Rand der Leiste geklemmt — ohne das Klemmen liefe sie beim letzten Emoji
+// aus der Karte heraus und die ganze Seite bekäme einen seitlichen Überlauf.
+const NEWS_REACT_NAMEN_MAX = 12; // darüber wird gekürzt, sonst überdeckt der Tooltip die halbe Meldung
+
+function newsReaktionNamenZeigen(btn, newsId, emoji) {
+  const box = document.getElementById("news-react-namen");
+  const leiste = box && box.parentElement;
+  if (!box || !leiste) return;
+  const liste = (newsReactionNames[newsId] && newsReactionNames[newsId][emoji]) || [];
+  if (!liste.length) { newsReaktionNamenVerbergen(); return; }
+  const sichtbar = liste.slice(0, NEWS_REACT_NAMEN_MAX);
+  const rest = liste.length - sichtbar.length;
+  const eigene = newsReactionMine[newsId] === emoji;
+  box.innerHTML = `<div class="news-react-namen-liste">${sichtbar.map((nm) => escapeHtml(nm)).join("<br>")}`
+    + (rest > 0 ? `<br>… und ${rest} weitere` : "")
+    + `</div>`
+    + (eigene ? `<div class="news-react-namen-hinweis">Nochmal klicken, um deine Reaktion zu entfernen</div>` : "");
+  box.hidden = false;
+  // Erst nach dem Einblenden messen — versteckt ist offsetWidth 0.
+  const maxLinks = Math.max(0, leiste.clientWidth - box.offsetWidth);
+  box.style.left = Math.max(0, Math.min(btn.offsetLeft, maxLinks)) + "px";
+}
+
+function newsReaktionNamenVerbergen() {
+  const box = document.getElementById("news-react-namen");
+  if (!box) return;
+  box.hidden = true;
+  box.innerHTML = ""; // nicht nur ausblenden: sonst stehen die Namen weiter im DOM
 }
 
 // Aktualisiert Zähler + eigene Wahl im Speicher rein lokal (optimistisch), genau nach
@@ -1441,16 +1496,34 @@ function renderNewsReactionsBar(newsId) {
 // gleich darauf die maßgeblichen Zähler zurück (siehe toggleNewsReaction).
 function applyLocalReaction(newsId, prevEmoji, clickedEmoji) {
   const counts = { ...(newsReactionCounts[newsId] || {}) };
+  // Die Namensliste muss mitwandern, sonst zeigt der Tooltip direkt nach dem eigenen
+  // Klick noch den alten Stand. Sortiert wie der Server (localeCompare "de"), damit
+  // der eigene Name beim Eintreffen der Antwort nicht an eine andere Stelle springt.
+  const namen = { ...(newsReactionNames[newsId] || {}) };
+  const ich = currentUser
+    ? ([currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ") || currentUser.username)
+    : "";
   const dec = (e) => { counts[e] = Math.max(0, (counts[e] || 0) - 1); if (!counts[e]) delete counts[e]; };
+  const nameRaus = (e) => {
+    const rest = (namen[e] || []).filter((x) => x !== ich);
+    if (rest.length) namen[e] = rest; else delete namen[e];
+  };
+  const nameRein = (e) => {
+    namen[e] = [...(namen[e] || []).filter((x) => x !== ich), ich].sort((a, b) => a.localeCompare(b, "de"));
+  };
   if (prevEmoji === clickedEmoji) {
     dec(clickedEmoji);
+    if (ich) nameRaus(clickedEmoji);
     delete newsReactionMine[newsId];
   } else {
     if (prevEmoji) dec(prevEmoji);
+    if (prevEmoji && ich) nameRaus(prevEmoji);
     counts[clickedEmoji] = (counts[clickedEmoji] || 0) + 1;
+    if (ich) nameRein(clickedEmoji);
     newsReactionMine[newsId] = clickedEmoji;
   }
   newsReactionCounts[newsId] = counts;
+  newsReactionNames[newsId] = namen;
 }
 
 async function toggleNewsReaction(newsId, emoji) {
@@ -1458,16 +1531,21 @@ async function toggleNewsReaction(newsId, emoji) {
   if (!currentUser) { flashNewsReactionHint("Zum Reagieren bitte anmelden."); return; }
   const prevMine = newsReactionMine[newsId] || null;
   const prevCounts = { ...(newsReactionCounts[newsId] || {}) };
+  const prevNamen = { ...(newsReactionNames[newsId] || {}) };
   applyLocalReaction(newsId, prevMine, emoji); // sofortiges Feedback
   renderNews();
   try {
     const res = await callWorker("toggle-news-reaction", { newsId, emoji });
     newsReactionCounts[newsId] = (res && res.counts) || {};
+    // namen ist seit 2026-08-01 additiv dabei; fehlt es (alter Worker), bleibt die
+    // optimistisch gepflegte Liste stehen statt sie leer zu räumen.
+    if (res && res.namen && typeof res.namen === "object") newsReactionNames[newsId] = res.namen;
     if (res && res.mine) newsReactionMine[newsId] = res.mine;
     else delete newsReactionMine[newsId];
     renderNews();
   } catch (err) {
     newsReactionCounts[newsId] = prevCounts; // Rollback
+    newsReactionNames[newsId] = prevNamen;
     if (prevMine) newsReactionMine[newsId] = prevMine; else delete newsReactionMine[newsId];
     renderNews();
     flashNewsReactionHint(err.message || "Reaktion konnte nicht gespeichert werden.");
@@ -5396,6 +5474,7 @@ async function init() {
   visibilityState = (data && data.tools) || defaultVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {}; // öffentliche Zähler
+  newsReactionNames = (data && data.newsReactionNames && typeof data.newsReactionNames === "object") ? data.newsReactionNames : {}; // Namen für den Tooltip, nur angemeldet gefüllt
   bootstrapAvailable = !!(data && data.bootstrapAvailable);
   // ERST hier rendern, nicht schon oben im synchronen Teil: der News-Bereich ist die
   // einzige Stelle, deren Inhalt komplett vom Server kommt. Ein Render vor dem Fetch
