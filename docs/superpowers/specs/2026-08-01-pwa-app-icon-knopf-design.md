@@ -202,6 +202,41 @@ gemerkte Ereignis wird verworfen (es ist ohnehin verbraucht).
 - ⚠️ **Nicht durch mich prüfbar: der echte Ablauf auf Michels iPhone und einem
   Android-Gerät.** Das ist Michels Durchstich.
 
+## Ergebnis der Umsetzung (2026-08-01, Commit `ba5bdc8`)
+
+**Die Kopfzeilen-Frage ist entschieden, und zwar gegen die Hoffnung im Entwurf.**
+Gemessen als Vorher-Nachher im selben Zustand: der Knopf kostet bei **375 px und
+414 px je 38 px, also eine volle Zeile** — er passt *nicht* neben „✍ Unterschriften".
+Grund ist nachgerechnet, nicht geschätzt: `.header-btns` ist dort 309 px breit,
+Materialcontainer (164) + Unterschriften (120) belegen davon bereits 292 px. Auch
+als reines Emoji bliebe der Knopf zu breit. Bei **1280 px kostet er für normales
+Personal nichts** (passt in die Zeile), als Admin 47 px. Kein seitlicher Überlauf in
+allen drei Breiten. Wer die Zeile sparen will, muss „🔐 Materialcontainercode" am
+Handy kürzen — das bleibt die einzige Stellschraube.
+
+**Sieben Sichtbarkeitsfälle im Preview belegt:** abgemeldet trotz vorliegendem
+Ereignis → versteckt; angemeldet + Ereignis → sichtbar; angemeldet ohne Ereignis und
+ohne iOS → versteckt; iOS-Safari → sichtbar; iOS-Chrome → versteckt; iOS bereits
+abgelegt → versteckt; Android bereits abgelegt → versteckt.
+
+**Der Wurzel-Geltungsbereich funktioniert:** der Service Worker registriert sich aus
+`/ToolsUebersicht/` heraus mit Bereich `/`, im Testserver nachgewiesen. Manifest,
+`sw.js` und alle Icons antworten live mit 200.
+
+**Icons gezeichnet statt skaliert:** weißes Wappenschild mit blauem „SC" auf
+Vereinsblau `#1a56a0`, per GDI+. Die maskable-Variante hat mehr Rand (Pad 0.25),
+damit Androids Kreiszuschnitt die Schildecken nicht abschneidet.
+
+⚠️ **Parallelsitzung im selben Repo:** während der Umsetzung arbeitete eine zweite
+Sitzung an den Namen der Neuigkeiten-Reaktionen — in `admin-worker.js`, `app.js`,
+`style.css` und `config.js`. Gestaged wurden ausschließlich die eigenen Hunks
+(`git apply --cached --unidiff-zero`, 20 Hunks in `app.js` davon 2 eigene, 3 in
+`style.css` davon 1). Im Changelog teilten sich beide dieselbe Einfügestelle; die
+andere Sitzung hatte sauber als 1.19 über 1.18 einsortiert, der eigene Block wurde
+auf Blockebene herausgeschnitten. Der gestagte Baum wurde vor dem Commit per
+`git checkout-index` ausgecheckt und mit `node --check` geprüft — nicht bloß die
+Arbeitskopie.
+
 ## Offener Punkt
 
 **Icon-Quelle.** Das Wappen liegt nur in 223 × 211 px vor. Entweder liefert Michel
