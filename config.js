@@ -309,7 +309,7 @@ const TOOLS = [
   {
     id: "dokumentenvorlagen",
     name: "Dokumentenvorlagen",
-    description: "Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele Empfänger befüllen — Daten aus dem Trainerprofil oder (mit App-Passwort) aus den Trainerdaten inkl. Adresse/Bankverbindung; Ausgabe als Word-Dokumente, originalgetreue PDFs über ein beiliegendes Skript (nur für berechtigte Gruppe).",
+    description: "Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele Empfänger befüllen — Daten aus dem Trainerprofil oder, mit der Stufe „Administrieren“ für Trainerdaten, inkl. Adresse und Bankverbindung; Ausgabe als Word-Dokumente, originalgetreue PDFs über ein beiliegendes Skript (nur für berechtigte Gruppe).",
     url: "https://tecko1985.github.io/dokumentenvorlagen/",
     icon: "📄",
     category: "Verein",
@@ -358,390 +358,126 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
-    version: "1.19",
-    groups: [
-      {
-        title: "Neuigkeiten: sehen, wer reagiert hat",
-        items: [
-          "Fährt man mit der Maus über eines der Emoji unter einer Meldung, erscheint darüber die Liste der Namen, die damit reagiert haben. Vorher stand dort nur die Anzahl.",
-          "Die Namen sehen alle angemeldeten Nutzer — wie die Neuigkeiten selbst. Wer nicht angemeldet ist, bekommt weder die Meldungen noch die Reaktionen zu Gesicht.",
-          "Beim eigenen Emoji steht unter den Namen zusätzlich der Hinweis, dass ein weiterer Klick die eigene Reaktion wieder entfernt.",
-          "Am Handy und Tablet gibt es kein Überfahren mit der Maus — dort bleibt es wie bisher bei der Anzahl."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.18",
-    groups: [
-      {
-        title: "Die Übersicht als App auf dem Handy ablegen",
-        items: [
-          "Oben in der Kopfzeile steht für angemeldete Nutzer der Knopf „📲 Als App ablegen“. Damit landet die Tools-Übersicht als eigenes Symbol auf dem Startbildschirm und startet im Vollbild, ohne Adressleiste und Browser-Menüs.",
-          "Auf Android-Geräten öffnet der Knopf direkt die Rückfrage des Systems. Auf iPhone und iPad zeigt er eine kurze Anleitung — Apple lässt das Ablegen dort nur von Hand über das Teilen-Symbol zu, das ist keine Einstellungssache.",
-          "Alle Werkzeuge bleiben dabei innerhalb der App: ein Tippen auf eine Kachel öffnet den Vereinskalender oder die Vereinsaufgaben weiterhin im selben Fenster, nicht in einem zweiten Browser daneben.",
-          "Auf dem iPhone hält die Anmeldung als abgelegte App länger. Safari räumt bei einer Seite, die nur als Lesezeichen benutzt wird, nach einigen Tagen Ruhe die gespeicherte Anmeldung weg — als App auf dem Startbildschirm ist sie davon ausgenommen.",
-          "Sobald das Symbol liegt, verschwindet der Knopf wieder. Er kommt auf einem neuen Gerät oder nach dem Löschen des Symbols von allein zurück."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.17",
-    groups: [
-      {
-        title: "Unterschrift anfordern: auf Wunsch mit E-Mail",
-        items: [
-          "Beim Anfordern einer Unterschrift steht unten im Fenster jetzt das Häkchen „Empfänger zusätzlich per E-Mail benachrichtigen“. Ist es gesetzt, bekommt jeder Empfänger eine kurze Nachricht mit Bezeichnung des Dokuments, Frist und dem Weg zur Unterschrift.",
-          "Ohne Häkchen wird nichts verschickt — genau wie bisher. Das Häkchen ist bei jedem neuen Vorgang wieder leer, es bleibt also nichts aus der letzten Anforderung stehen.",
-          "Der Betreff nennt die Bezeichnung des Dokuments bewusst nicht: er ist in der Handy-Vorschau und beim Mail-Versanddienst sichtbar, und hier gehen Verträge und Personalunterlagen um. Was drinsteht, steht in der Mail selbst.",
-          "Hat jemand keine E-Mail-Adresse in den Trainerdaten, wird das nach dem Absenden mit Namen gemeldet — die Anforderung selbst gilt trotzdem, sie liegt in der App bereit."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.16",
-    groups: [
-      {
-        title: "Auf einen Blick: welches Werkzeug E-Mails verschickt",
-        items: [
-          "Auf den Kacheln steht unten links jetzt ein Briefumschlag ✉️, wenn das Werkzeug im Betrieb E-Mails nach außen verschickt. Damit ist schon vor dem Klick zu sehen, wo ein Eintrag beim Empfänger im Postfach landet und nicht nur in einer Liste steht.",
-          "Markiert sind vier Werkzeuge: Vereinsaufgaben (Benachrichtigung an die Empfänger einer neuen Aufgabe), Vereinskalender (Hinweis an die Personen, mit denen ein privater Termin geteilt wird), Raumnutzung (der fertige Antrag geht als PDF ans Schulverwaltungsamt) und Beleg-Eingang (Info nach einer Einreichung).",
-          "Am Rechner erscheint der Hinweis als Text, wenn die Maus auf dem Umschlag stehen bleibt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.15",
-    groups: [
-      {
-        title: "Neues Werkzeug „Ausbildungsplan“",
-        items: [
-          "Es gibt ein neues Werkzeug „Ausbildungsplan“: für jede Altersklasse von den Bambini bis zur U23 stehen dort die Trainingsschwerpunkte und die passenden Übungen — auf Grundlage der Trainingsphilosophie Deutschland des DFB. Jede Stufe zeigt außerdem ihr Profil: Altersspanne, die höchstzulässige Spielform, die wöchentliche Nettospielzeit und die Trainingsfrequenz.",
-          "Der Übungskatalog umfasst 28 Spielformen in den vier Säulen Gleichzahlspiele, Spiele mit Anspielern, eine Linie verteidigen und Über-/Unterzahlspiele. Eine Übung, die über der DFB-Obergrenze der gerade betrachteten Altersklasse liegt, wird deutlich markiert.",
-          "Die Spieltage sind als Leistungsnachweis eingebaut: nach dem Spiel wird je Mannschaft auf einer Ampel festgehalten, wie weit die Schwerpunkte im Spiel schon umgesetzt waren. Die Auswertung stellt das als Verlauf über die Saison dar. Bewertet wird die Mannschaft, nicht der einzelne Spieler — dafür bleibt die Spielerbewertung zuständig.",
-          "Für den Platz gibt es eine Druckansicht je Altersklasse mit allen Schwerpunkten und vollständigen Übungsbeschreibungen.",
-          "Lesen darf jeder Angemeldete, die Spieltag-Bögen füllt aus wer Bearbeiten-Recht hat, und Schwerpunkte, Übungen und Mannschaften pflegt die Nachwuchsleitung über das Administrieren-Recht."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.14",
-    groups: [
-      {
-        title: "Unterschriften nur noch dort, wo sie hingehören",
-        items: [
-          "Der Knopf „Unterschriften“ oben erscheint jetzt nur noch, wenn du damit auch etwas zu tun hast: entweder du darfst Unterschriften anfordern, oder es liegt gerade eine für dich an. Wer beides nicht hat, sieht ihn gar nicht mehr.",
-          "Bekommst du ein Dokument zum Unterschreiben, taucht der Knopf mit Zähler auf — am Unterschreiben selbst ändert sich also nichts.",
-          "„Selbst unterschreiben“ — ein eigenes PDF unterschreiben und herunterladen — ist ebenfalls auf die Gruppen beschränkt, die Unterschriften anfordern dürfen. Für alle anderen bleibt dafür der digitale Stempel.",
-          "Wer nicht anfordern darf, liest auf dem Knopf nur noch „Unterschriften“ statt „Unterschriften anfordern“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.13",
-    groups: [
-      {
-        title: "ToDos und Unterschriften sind getrennt",
-        items: [
-          "Der Knopf „Meine Aufgaben“ oben heißt jetzt „Unterschriften anfordern“ und enthält auch nur noch das: die Dokumente, die du unterschreiben sollst, die du selbst verschickt hast, und den Weg zum eigenen Unterschreiben.",
-          "Deine persönliche ToDo-Liste hat einen eigenen Knopf „Meine ToDos“ bekommen — er steht auf der rechten Seite der Kopfzeile, neben deinem Namen. Anlegen, Fälligkeit setzen, abhaken und aufräumen funktionieren dort unverändert.",
-          "Beide Knöpfe zählen jetzt getrennt: links steht, wie viele Dokumente auf deine Unterschrift warten, rechts, wie viele eigene ToDos offen sind. Rot wird die Zahl weiterhin, sobald etwas neu, heute fällig oder überfällig ist — und der Mauszeiger verrät, was genau.",
-          "Ein Dokument, das du unterschreiben sollst, steht damit nur noch an einer Stelle statt an zweien. Vorher tauchte es zusätzlich in der ToDo-Liste auf, ließ sich dort aber nicht abhaken."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.12",
-    groups: [
-      {
-        title: "Unterschrift anfordern: Hinweis und erreichbare Knöpfe",
-        items: [
-          "Nach dem Auswählen einer PDF waren die Knöpfe „Abbrechen“ und „Anfordern“ nicht mehr zu erreichen — das Fenster wuchs über den Bildschirmrand hinaus, und man kam nur über den Browser-Zoom heran. Das Fenster scrollt jetzt in sich selbst.",
-          "Mit einer Seitenvorschau wird das Fenster außerdem breiter, damit sich die Stelle im Dokument überhaupt treffen lässt.",
-          "Über der Vorschau steht jetzt ein Hinweis, der die Funktion erklärt: dass man ein Rechteck auf die gewünschte Stelle ziehen kann, dass sich das jederzeit ändern lässt und was passiert, wenn man es weglässt. Bisher stand dort nur ein knapper Satz unter der Seite — also erst nach dem Scrollen sichtbar."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.11",
-    groups: [
-      {
-        title: "Unterschrift lässt sich wieder platzieren",
-        items: [
-          "Beim Unterschreiben eines Dokuments verschwand das aufgezogene Rechteck, sobald man die Maustaste losließ — behoben.",
-          "Hat der Absender keine Stelle vorgegeben, darfst du sie jetzt selbst wählen: Rechteck aufziehen, fertig. Vorher landete die Unterschrift in diesem Fall zwangsläufig auf einem zusätzlichen Blatt am Ende, obwohl man genau wusste, wohin sie gehört.",
-          "Hat der Absender eine Stelle vorgegeben, gilt sie weiterhin — das steht jetzt aber als Satz über dem Dokument, mit Namen und Seitenzahl. Bisher sprang das Rechteck dabei kommentarlos zurück und sah nach einem Fehler aus.",
-          "Über der Seitenvorschau steht in beiden Fällen, was als Nächstes zu tun ist."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.10",
-    groups: [
-      {
-        title: "Einstellungen aufgeräumt",
-        items: [
-          "Das Panel „Aufgaben“ in den Einstellungen heißt jetzt „Unterschriften anfordern“ und enthält nur noch die eine Häkchenreihe, die auch wirklich etwas schaltet.",
-          "Die obere Reihe „wer darf anderen eine Aufgabe in die Liste legen“ ist entfallen: seit die Aufgaben für andere in den Vereinsaufgaben vergeben werden, gab es dafür keinen Knopf mehr, den sie hätte freischalten können. Die Häkchen sahen nach einer Freigabe aus, bewirkten aber nichts.",
-          "Wer in den Vereinsaufgaben zuweisen darf, richtet sich dort nach den Ressorts — wer ein Ressort verantwortet oder vertritt, darf dessen Mitgliedern etwas auftragen. Das war schon immer so und ändert sich nicht.",
-          "Bereits zugewiesene Aufgaben aus der alten Liste bleiben unverändert abhakbar und zurückziehbar."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.9",
-    groups: [
-      {
-        title: "Kleinigkeit",
-        items: [
-          "Im Fenster „Meine Aufgaben“ führt jetzt ein richtiger Knopf zu den Vereinsaufgaben statt eines Wortes im Fließtext — er sieht aus wie die übrigen Knöpfe der Werkzeuge und ist damit als Weg dorthin auch zu erkennen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.8",
-    groups: [
-      {
-        title: "Meine Aufgaben meldet sich von selbst",
-        items: [
-          "Der Knopf „Meine Aufgaben“ oben zeigt jetzt, wenn etwas deine Aufmerksamkeit braucht: die Zahl wird rot, sobald dir jemand eine neue Aufgabe zugewiesen hat, heute eine fällig ist oder eine Frist verstrichen ist. Fährst du mit der Maus darüber, steht dort im Klartext, worum es geht.",
-          "Im Fenster selbst steht der Hinweis noch einmal ausgeschrieben über der Liste — zum Beispiel „1 neue Aufgabe für dich · 2 Aufgaben sind heute fällig“.",
-          "„Heute fällig“ und „überfällig“ werden nicht mehr in einen Topf geworfen: heute fällig steht jetzt in Bernstein, erst eine verstrichene Frist wird rot. Bis dahin sah eine Aufgabe, für die noch der ganze Tag Zeit ist, genauso alarmierend aus wie eine, die seit einer Woche liegt.",
-          "Neu zugewiesene Aufgaben sind in der Liste zusätzlich mit „neu“ gekennzeichnet, solange du sie noch nicht angesehen hast."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.7",
-    groups: [
-      {
-        title: "Aufgaben für andere ziehen um",
-        items: [
-          "Es gibt ein neues Werkzeug „Vereinsaufgaben“: dort werden Aufgaben vergeben, die jemand anderem aufgetragen werden — mit verbindlicher Frist, Zuständigkeit über Ressorts und einer Historie, die dauerhaft bestehen bleibt.",
-          "„Aufgabe zuweisen“ ist deshalb aus dem Fenster „Meine Aufgaben“ verschwunden. Die Liste hier ist ab jetzt ausschließlich das, was du dir selbst notierst — so ist immer klar, wo eine Aufgabe zu suchen ist.",
-          "Unterschriften anfordern bleibt unverändert an dieser Stelle: das ist ein eigenes Recht und von der Trennung nicht betroffen.",
-          "Bereits zugewiesene Aufgaben aus der bisherigen Liste bleiben sichtbar und lassen sich weiterhin abhaken und zurückziehen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.6",
-    groups: [
-      {
-        title: "Dokumente zum Unterschreiben",
-        items: [
-          "Das Fenster ist in zwei Hälften geteilt: oben deine eigene Liste samt „Aufgabe zuweisen“, unten alles rund um Unterschriften — anfordern, selbst unterschreiben und der Rücklauf. Jeder Knopf steht bei dem Teil, zu dem er gehört.",
-          "„Unterschrift anfordern“ schickt ein PDF direkt zum Unterschreiben. Beim „Aufgabe zuweisen“ lässt sich zusätzlich ein PDF mitschicken, wenn beides zusammengehört. Beides braucht ein eigenes Recht — wer Aufgaben verteilen darf, kann deshalb nicht automatisch Unterschriften einfordern.",
-          "Beim Anfordern wählst du das PDF aus und ziehst direkt in der Seitenvorschau ein Rechteck auf die Stelle, an der unterschrieben werden soll.",
-          "Alles rund um Aufgaben steckt jetzt hinter dem Knopf „Meine Aufgaben“ oben in der Kopfzeile neben dem Materialcontainercode: die eigene Liste, das Zuweisen an andere, die Dokumente und der Rücklauf. Die Karte unten links auf der Startseite ist dafür ganz entfallen — dort stehen nur noch die Termine.",
-          "Am Knopf zeigt ein Zähler, wie viele Aufgaben offen sind; er wird rot, sobald etwas überfällig oder neu zugewiesen ist. So sieht man es beim Aufrufen der Seite, ohne das Fenster zu öffnen.",
-          "Unterschrieben wird mit dem Finger oder der Maus, in der eigenen Anmeldung. Danach steht das fertige Dokument bei dir zum Herunterladen bereit, mit Name und Zeitpunkt unter der Unterschrift.",
-          "Anders als beim Stempel-Werkzeug kann niemand für jemand anderen unterschreiben: die Unterschrift entsteht in der Sitzung der unterschreibenden Person, und der Server hält fest, wer wann unterschrieben hat.",
-          "Wer nicht unterschreiben möchte, kann mit einer Begründung ablehnen — sie kommt bei dir an. Abhaken lässt sich eine solche Aufgabe nicht; wer es versucht, bekommt einen Knopf direkt zum Dokument statt einer Absage.",
-          "Unter „Von mir zugewiesen“ lassen sich abgeschlossene Einträge jetzt selbst wegräumen — einzeln über das ✕ oder alle auf einmal. Offene bleiben stehen, die zieht man weiterhin zurück. Ein unterschriebenes Dokument bleibt dabei erhalten; es verschwindet nur aus der Erinnerungsliste.",
-          "Bei mehreren Empfängern unterschreibt jeder sein eigenes Exemplar, und du siehst pro Person, wer schon dran war.",
-          "Unterschriebene Dokumente bleiben erhalten, auch wenn die Aufgabe nach 14 Tagen aus der Liste läuft — sie verschwinden erst, wenn du sie löschst.",
-          "„Selbst unterschreiben“ im Aufgaben-Fenster: eigenes PDF wählen, unterschreiben, die Unterschrift an die richtige Stelle im Dokument ziehen und herunterladen — ohne jemandem etwas zuzuweisen.",
-          "Beim Platzieren erscheint die tatsächliche Unterschrift an der gewählten Stelle, nicht nur ein leeres Rechteck — man sieht vor dem Herunterladen, wie das Blatt wirklich aussieht.",
-          "Beim eigenen Dokument wird nie eine zusätzliche Seite angehängt: die Unterschrift muss platziert werden, dafür bleibt das PDF genau so lang wie vorher.",
-          "Freigeben, wer Unterschriften einfordern darf: Einstellungen → Aufgaben. Das ist eine eigene, engere Stufe als das normale Zuweisen; ohne Häkchen kann es niemand außer den Administratoren."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.5",
-    groups: [
-      {
-        title: "Meine Aufgaben",
-        items: [
-          "Neue Aufgabenliste: jedes Mitarbeiterkonto hat seine eigene, mit optionalem Fälligkeitsdatum. Überfällige stehen oben und sind rot markiert.",
-          "Erledigte bleiben durchgestrichen stehen, bis sie über „Erledigte aufräumen“ weggeräumt werden. Ein Fehlklick lässt sich also zurücknehmen.",
-          "Wer in einer dafür freigegebenen Gruppe ist, kann anderen eine Aufgabe zuweisen — auch mehreren auf einmal. Jeder bekommt seine eigene Kopie und hakt für sich ab.",
-          "Zugewiesene Aufgaben lassen sich abhaken, aber nicht löschen. Zurücknehmen kann sie nur, wer sie vergeben hat; der Empfänger sieht dann den Hinweis, dass sie zurückgezogen wurde.",
-          "Unter „Von mir zugewiesen“ steht, was man selbst verteilt hat und ob es erledigt ist.",
-          "Freigeben, wer zuweisen darf: Einstellungen → Aufgaben. Ohne Häkchen kann das niemand außer den Administratoren."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.4",
-    groups: [
-      {
-        title: "Bedienung am Handy",
-        items: [
-          "Am Handy stehen die Neuigkeiten jetzt über den Terminen. Vorher schob sich die Terminliste beim Umbruch auf eine Spalte über die Meldungen, sodass beim Öffnen der Seite zuerst der Kalender im Bild war."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
-      {
-        title: "Bedienung am Handy",
-        items: [
-          "Die Tab-Leiste bricht am Handy jetzt um, statt seitlich aus dem Bild zu laufen. Vorher waren die hinteren Tabs auf schmalen Bildschirmen nicht erreichbar.",
-          "Eingabefelder sind am Handy mindestens 16 Pixel groß. Dadurch zoomt der iPhone-Browser beim Antippen eines Feldes nicht mehr ungefragt in die Seite hinein und bleibt danach verschoben stehen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Zusagen direkt im Dashboard",
-        items: [
-          "Bei einem Termin mit mehreren Terminmöglichkeiten stehen die Zu- und Absagen jetzt direkt im Widget „Nächste Termine“ — mit Anzahl je Möglichkeit.",
-          "Zu- und absagen geht von dort aus mit einem Klick auf den Haken bzw. das Kreuz, ohne den Vereinskalender zu öffnen. Ein zweiter Klick auf denselben Knopf zieht die eigene Stimme wieder zurück; die eigene Wahl ist farbig hervorgehoben.",
-          "Abstimmen darf wie im Vereinskalender jeder, der den Termin sehen kann — nicht nur Bearbeiter."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Dashboard: Nächste Termine",
-        items: [
-          "Bei einem Termin mit mehreren Terminmöglichkeiten (Umfrage aus dem Vereinskalender) zeigt das Widget jetzt jede Möglichkeit als eigene Zeile — bisher erschien nur die früheste, alle weiteren fehlten.",
-          "Bereits vergangene Möglichkeiten einer noch laufenden Umfrage werden dabei ausgeblendet; die Zeilen stehen chronologisch zwischen den übrigen Terminen."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
       {
-        title: "Tools-Übersicht",
+        title: "Die Übersicht",
         items: [
-          "Kartenraster mit Links zu allen Vereins-Tools, gruppiert nach Kategorie.",
-          "Jede Tool-Karte zeigt die Version des verlinkten Tools sowie das geeignete Endgerät (📱 Handy, 💻 Laptop, oder beides).",
-          "Tool-Karten lassen sich per Greifpunkt frei verschieben und innerhalb ihrer Kategorie neu anordnen (Maus und Touch); die eigene Reihenfolge wird im Browser gemerkt.",
-          "Nach dem Anmelden ist der eigene Nutzername (inkl. Admin-Kennzeichnung) direkt im Header sichtbar; Vereinswappen im Header und in allen verlinkten Apps.",
-          "Ist niemand angemeldet und dadurch kein Tool sichtbar, erscheint ein Hinweis mit 'Jetzt anmelden'-Button statt einer reinen Leermeldung.",
-          "Tool-Kacheln, Neuigkeiten-Verlinkungen und das Termine-Widget öffnen das jeweilige Tool im selben Browser-Tab; jedes verlinkte Tool hat dafür oben einen 'Zurück zum Dashboard'-Link."
+          "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
+          "Die Kacheln lassen sich am Greifpunkt frei verschieben und innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger. Die eigene Reihenfolge merkt sich der Browser.",
+          "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
+          "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung.",
+          "Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
+          "Kacheln, Verlinkungen aus Neuigkeiten und das Termine-Widget öffnen im selben Tab; jedes Werkzeug hat oben einen Weg zurück zum Dashboard."
         ]
       },
       {
-        title: "Dashboard: Neuigkeiten & Termine",
+        title: "Als App auf dem Startbildschirm",
         items: [
-          "Neuigkeiten-Bereich über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. '2 / 5'), für alle Besucher sichtbar auch ohne Login. Admins pflegen Neuigkeiten direkt im Einstellungen-Tab (anlegen, bearbeiten, löschen — Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Tool-Verknüpfung), zentral in Nextcloud gespeichert und sofort für alle sichtbar.",
-          "Widget 'Nächste Termine' zeigt bis zu 8 anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten anstehenden Einträge aus dem Abwesenheitskalender, sofern Zugriff besteht. Private Termine stehen in einem eigenen Bereich darunter und werden nur dem jeweiligen Ersteller bzw. den damit geteilten Personen/Gruppen angezeigt.",
-          "Hat laut Trainerdaten heute jemand Geburtstag, erscheint das als eigener Eintrag ganz oben im Termine-Widget (🎂 Name hat Geburtstag) — nur am Geburtstag selbst, ohne Geburtsjahr.",
-          "Jede Neuigkeit lässt sich mit einem Emoji bereagieren (👍 ❤️ 🎉 👏 🔥 😍 😮 😂 🙏 💪): eine Reaktion pro Person und Meldung, erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt.",
-          "Neuigkeiten sind Vereinsinterna und werden erst nach dem Anmelden angezeigt — samt Reaktionszählern. Wer nicht angemeldet ist, sieht auf der Startseite nur noch die öffentlich freigegebenen Tool-Kacheln; die Meldungen werden dann auch nicht mehr an den Browser übertragen."
+          "Angemeldete Nutzer finden im Kopfbereich den Knopf „Als App ablegen“. Danach startet die Toolbox wie eine eigene App, ohne Browser-Adressleiste.",
+          "Auf Android übernimmt das der Systemdialog. Auf dem iPhone geht es nur über Safari von Hand — der Knopf öffnet dort eine Anleitung: Teilen-Symbol, dann „Zum Home-Bildschirm“.",
+          "Ist die App abgelegt, verschwindet der Knopf. Er erscheint auch gar nicht erst, wo der Browser nichts anbieten kann."
         ]
       },
       {
-        title: "Login & Nutzerverwaltung",
+        title: "Neuigkeiten",
         items: [
-          "Echte Nutzerkonten statt geteiltem PIN: Admin legt per Vorname/Nachname an (Nutzername wird automatisch generiert), jeder Nutzer vergibt sich selbst ein Passwort beim ersten Login.",
-          "Anmeldung ist zweistufig: erst nur Nutzername eingeben, danach je nach Ergebnis entweder Passwortfeld (bestehender Account) oder das Formular 'Konto einrichten' (erster Login) — beide Schritte mit 'Zurück'-Button zur Nutzernamen-Eingabe.",
-          "Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- und Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten.",
-          "Passwörter werden mit PBKDF2 (Web Crypto, 100.000 Iterationen, Salt pro Nutzer) gehasht, niemals im Klartext gespeichert. Sessions sind signierte Bearer-Token (7 Tage gültig), danach ist eine neue Anmeldung nötig.",
-          "Admin kann Nutzer bearbeiten (Vorname, Nachname, Admin-Status, „Vertrag benötigt“ unabhängig von der Gruppe „Trainer“), löschen oder ihr Passwort zurücksetzen — dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.",
-          "Text-Massenimport für größere Listen: ein Name pro Zeile, alle durchlaufen beim ersten Login den normalen Erstlogin-Flow.",
-          "Beim allerersten Besuch überhaupt (noch kein Nutzerkonto vorhanden) öffnet sich automatisch das Formular zum Anlegen des Admin-Kontos; danach ist dieser Weg dauerhaft gesperrt.",
-          "Wird Vor- oder Nachname eines Kontos im Bearbeiten-Panel korrigiert, zieht der Login-Nutzername automatisch mit um (z. B. „alex.rohner“ → „alexander.rohner“). Kollidiert die neue Kennung mit einem bereits bestehenden Konto, bleibt der Nutzername unverändert und ein Warnhinweis erscheint.",
-          "Die Nutzerliste hat genau zwei Abschnitte — „Personal“ und „Spieler“ — statt eines Abschnitts je Gruppe; jedes Konto steht damit an genau einer Stelle. Darüber filtern eine Namenssuche und ein Gruppen-Dropdown (mit „Ohne Gruppe“) die Liste, die Zähler zeigen dabei die Treffer.",
-          "„Abmelden“ sitzt oben rechts im Header direkt neben dem eigenen Namen und ist damit von jedem Tab aus erreichbar — vorher lag der Button nur im Einstellungen-Tab.",
-          "„Mein Konto“ ist ein eigener Tab und zeigt eigenen Namen, Nutzername sowie — sofern hinterlegt — Trainerlizenz und Mannschaften. Solange niemand angemeldet ist, heißt derselbe Tab „Anmelden“ und enthält die Anmeldemaske.",
-          "Der Tab „Einstellungen“ enthält nur noch Verwaltungsfunktionen und wird deshalb ausschließlich Admins angezeigt — alle anderen sehen ihn gar nicht erst.",
-          "„Mein Konto“ zeigt zusätzlich die eigenen Gruppen im Klartext (bisher nur Admins), in welchen Tools man bearbeiten darf statt nur zuzusehen, wann das Passwort zuletzt geändert wurde und bis wann die aktuelle Anmeldung gilt.",
-          "In „Mein Konto“ lässt sich das eigene Passwort ändern: bisheriges und neues Passwort eingeben, fertig. Aus Sicherheitsgründen werden dabei alle anderen Geräte abgemeldet — dort ist eine neue Anmeldung nötig.",
-          "Der Tab „Info“ mit der Änderungsliste wird erst nach dem Anmelden angezeigt — sie beschreibt Anmeldewege und interne Abläufe, die nicht öffentlich stehen sollen. Ohne Anmeldung führt auch das Versionsbadge im Header nicht mehr dorthin."
+          "Über den Kacheln laufen die Vereinsneuigkeiten als Karussell: eine Meldung sichtbar, per Pfeil blätterbar, mit Positionsanzeige.",
+          "Gepflegt werden sie im Reiter „Einstellungen“ — anlegen, ändern, löschen, mit Typ, Datum, Titel, Text und wahlweise einer Verknüpfung zu einem Werkzeug.",
+          "Jede Meldung lässt sich mit einem Emoji bereagieren. Eine Reaktion je Person und Meldung; ein erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt.",
+          "Wer mit der Maus über ein Emoji fährt, sieht die Namen der Personen, die so reagiert haben. Am Handy gibt es kein Überfahren, dort bleibt es beim Zähler.",
+          "Neuigkeiten sind Vereinsinterna und erscheinen erst nach dem Anmelden, samt Zählern und Namen. Wer nicht angemeldet ist, bekommt sie gar nicht erst übertragen."
         ]
       },
       {
-        title: "Nutzergruppen & Sichtbarkeit",
+        title: "Nächste Termine",
         items: [
-          "Gruppen anlegen (z.B. 'Vorstand', 'Trainer U15'), Mitglieder per Checkbox zuordnen — direkt in der Nutzerliste oder in der Gruppenverwaltung.",
-          "Sichtbarkeit pro Tool über ein einzelnes Dropdown mit vier eindeutigen Zuständen: Versteckt, Öffentlich, Alle eingeloggten Nutzer, oder Nur bestimmte Gruppen (Gruppen-Auswahl erscheint dann darunter). Der 'Apps'-Bereich je Gruppe legt alternativ direkt fest, welche Tools diese Gruppe nutzen darf.",
-          "Pro App und Gruppe lässt sich neben 'Sehen' zusätzlich 'Bearbeiten' vergeben — sowohl im Gruppen-Bereich als auch in der Ansicht 'Sichtbarkeit der Tools'. Ersetzt die früher nötigen dedizierten Bearbeiter-Gruppen je App; die jeweilige App fragt diese Berechtigung selbst ab.",
-          "Dritte Rechte-Stufe 'Administrieren' pro App und Gruppe: schaltet App-interne Admin-Funktionen frei (z.B. den vollen Trainerdaten-Zugriff inkl. IBAN oder die Rechte-Matrix im Kadermanager), ohne dass die Person globaler Admin der Tools-Übersicht sein muss. Administrieren schließt Bearbeiten automatisch mit ein; die Häkchen koppeln sich entsprechend. In der Karte 'Mein Konto' werden solche Tools mit dem Zusatz '(administrieren)' ausgewiesen.",
-          "Wer für ein Tool Bearbeiten- oder Administrieren-Recht bekommt, sieht das Tool jetzt automatisch — ein Häkchen bei „Bearbeiten“ setzt „Sehen“ mit; „nur Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
-          "Als sensibel eingestufte Tools (z. B. Personalakte, Kadermanager, Vereinsbudget, Dokumentenvorlagen) stehen im Bereich „Sichtbarkeit der Tools“ in einer eigenen, aufklappbaren Sektion ganz oben und tragen ein ⚠️-Zeichen — damit ihre Rechte-Vergabe besonders bewusst passiert.",
-          "Alle übrigen Tools stehen darunter ebenfalls in einer eigenen aufklappbaren Sektion „Weitere Tools“ — so bleibt das Sichtbarkeits-Panel übersichtlich und beide Gruppen lassen sich getrennt ein- und ausklappen.",
-          "Welche Tools als „sensibel“ gelten, legt der Admin jetzt selbst fest: pro Tool-Zeile im Sichtbarkeits-Panel ein Häkchen „Sensibel“ — das Tool wandert sofort in die passende Sektion und die Auswahl wird beim Speichern zentral hinterlegt (keine Code-Änderung mehr nötig).",
-          "Beim Vorlagen-Katalog (Dokumentenvorlagen) und in der Personalakte ist das Speichern jetzt zusätzlich serverseitig auf Bearbeiter beschränkt — reines Ansehen kann dort nichts mehr überschreiben.",
-          "Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden. Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt."
+          "Das Widget zeigt bis zu acht anstehende Vereinstermine aus dem Vereinskalender, dazu die nächsten Einträge aus dem Abwesenheitskalender, sofern man darauf Zugriff hat.",
+          "Private Termine stehen in einem eigenen Bereich darunter und nur bei denen, die sie angelegt haben oder mit denen sie geteilt wurden.",
+          "Hat laut Trainerdaten jemand Geburtstag, steht das am Tag selbst ganz oben im Widget — ohne Geburtsjahr.",
+          "Zu Terminen mit Umfrage lässt sich direkt aus dem Dashboard zusagen."
         ]
       },
       {
-        title: "WebDAV-Login-Gateway",
+        title: "Meine ToDos",
         items: [
-          "Andere Vereins-Apps, die ihre Daten in derselben Nextcloud speichern, nutzen dieselbe Anmeldung: kein eigenes WebDAV-Formular und kein App-Passwort mehr in diesen Apps nötig.",
-          "Der Worker prüft Login-Token und Gruppen-Sichtbarkeit, bevor er serverseitig mit den Vereins-Zugangsdaten auf die jeweilige Nextcloud-Datei zugreift — der Client erhält nie ein Passwort zu Gesicht.",
-          "Konfliktschutz: Speichern zwei Geräte gleichzeitig, wird der Konflikt erkannt und gemeldet, statt dass eine Änderung stillschweigend verloren geht.",
-          "Ist Nextcloud vorübergehend nicht erreichbar, antwortet der Worker mit einer klaren Fehlermeldung statt mit leeren Daten — kein Speichervorgang kann dadurch Bestandsdaten überschreiben.",
-          "Zentrale Passwortprüfung für geschützte Aktionen der Tool-Apps (z. B. Checklisten entsperren, Saison leeren): Die Passwörter liegen als Worker-Secrets auf dem Server statt lesbar im Quellcode der Apps."
+          "Der Knopf „Meine ToDos“ im Kopfbereich öffnet die persönliche Liste: Text und wahlweise ein Fälligkeitsdatum, abhaken, aufräumen.",
+          "Der Zähler am Knopf meldet, was offen ist. Er wird rot, wenn etwas überfällig ist.",
+          "Hier steht nur, was man sich selbst notiert. Was einem anderen aufgetragen wird, gehört in die Vereinsaufgaben — dorthin führt ein Knopf."
         ]
       },
       {
-        title: "Admin-Dashboard",
+        title: "Unterschriften anfordern",
         items: [
-          "Eigene Dashboard-Ansicht (Zugang über einen zentrierten Button in der Kopfzeile, nur für Admins sichtbar) zeigt Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag-, Trainerkodex- und Jugendschutzkonzept-Quote (bezogen auf die Gruppe „Trainer“, Trainervertrag zählt Gruppen-Mitglieder und individuell markierte Nutzer zusammen), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen, offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison sowie offene Testspiel-Anfragen.",
-          "Ist die Gruppe „Trainer“ noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.",
-          "Die Kennzahlen-Kacheln sind anklickbar und springen direkt zum jeweiligen Bereich.",
-          "Dropdown „Zuletzt aktiv“ zeigt wahlweise die letzten 5 Anmeldungen, Trainervertrags-Einreichungen, Trainerkodex- oder Jugendschutzkonzept-Bestätigungen mit Name und Zeitpunkt.",
-          "Karte „📦 Exporte“ sammelt die Export-Funktionen mehrerer Apps an einem Ort (Materialliste, Personalkosten, Busplan, Kleiderbestellung, Materialbedarf, Spielerbewertung); Apps mit eigenem, nicht zentral eingebundenem Export verlinken direkt auf die jeweilige App."
-        ]
-      },
-      {
-        title: "Admin-Testansicht",
-        items: [
-          "Umschalter oben rechts im Header (nur für Admins): eine Gruppe wählen, um Dashboard UND alle verlinkten Apps genau so zu sehen, wie ein echtes Mitglied dieser Gruppe sie sehen würde — inklusive echter Zugriffsbeschränkungen (z. B. Personalakte, Bearbeiten-Rechte). Spart das ständige Aus- und Wieder-Einloggen mit einem Test-Account. Ein deutlich sichtbarer Badge („🎭 Testansicht“) erinnert daran, dass gerade eine simulierte Rolle aktiv ist; „👑 Admin (echt)“ schaltet jederzeit zurück."
-        ]
-      },
-      {
-        title: "Tool-Kacheln: Status-Hinweise",
-        items: [
-          "Einzelne Tool-Kacheln zeigen zusätzlich einen eigenen Status- oder Erinnerungs-Badge, wenn dort für die eigene Person etwas ansteht — z. B. ein Ampel-Badge bei Trainerdaten (Stammdaten, Lizenz, Führerschein, Führungszeugnis, Kodex vollständig/aktuell?) mit manuellem Neulade-Knopf, oder ein Hinweis bei Testspielplaner, wenn ein genehmigter Termin bald keinen Gegner hat."
+          "Der Knopf „Unterschriften anfordern“ auf der anderen Seite des Kopfbereichs trägt den Unterschriften-Weg: ein PDF an eine Person schicken, die es am Bildschirm unterschreiben muss.",
+          "Der Absender legt fest, wo die Unterschrift stehen soll. Tut er es nicht, darf der Unterzeichner die Stelle selbst wählen; wählt niemand eine, kommt eine Nachweisseite ans Ende.",
+          "Unterschrieben wird per Freihand-Pad in der eigenen Sitzung. Den Zeitstempel setzt der Server — dadurch ist die Unterschrift an die Person gebunden.",
+          "Nur PDF, hart geprüft. Ein unterschriebenes Word-Dokument bliebe editierbar und wäre als Nachweis wertlos.",
+          "Bei mehreren Empfängern unterschreibt jeder eine eigene Kopie. Ablehnen ist möglich, verlangt aber eine Begründung.",
+          "Auf Wunsch wird der Empfänger zusätzlich per E-Mail benachrichtigt. Das ist ein Häkchen je Vorgang und steht bei jedem Öffnen wieder auf aus; der Betreff nennt den Dokumenttitel bewusst nicht.",
+          "Den Knopf sieht nur, wer Unterschriften anfordern darf — oder wer selbst ein offenes Dokument hat. Nach dem Unterschreiben verschwindet er wieder.",
+          "Das unterschriebene Dokument bleibt erhalten, auch wenn die zugehörige Erinnerung nach 14 Tagen abläuft. Einsehen dürfen es die Beteiligten und Administratoren."
         ]
       },
       {
         title: "Materialcontainer-Code",
         items: [
-          "Knopf „🔐 Materialcontainercode“ oben im Kopfbereich: ein Klick zeigt den aktuellen Code des Zahlenschlosses am Materialcontainer in einem kleinen Fenster, groß und gut ablesbar. Optional steht ein kurzer Hinweis darunter (z. B. wie das Schloss zu schließen ist).",
-          "Der Code wird erst beim Öffnen des Fensters geladen und nirgends gespeichert. Sichtbar für alle angemeldeten Mitarbeitenden, nicht für Spielerkonten.",
-          "Gepflegt wird er von Admins unter „Einstellungen → Materialcontainer-Code“ — dort steht auch, wann er zuletzt und von wem geändert wurde."
+          "Der Knopf im Kopfbereich zeigt den Code des Zahlenschlosses am Materialcontainer.",
+          "Gepflegt wird er von Administratoren im Reiter „Einstellungen“, samt Hinweistext.",
+          "Der Code wird erst beim Öffnen des Fensters geholt und nirgends zwischengespeichert. An unangemeldete Besucher geht er nie, und Spielerkonten bekommen ihn nicht — bei rund 200 Konten wäre das das Gegenteil eines Schlosses."
         ]
       },
       {
-        title: "Feedback & Hilfe",
+        title: "Anmelden und eigenes Konto",
         items: [
-          "Ganz oben im Tab „Feedback & Hilfe“ lässt sich direkt eine Frage ans Toolbox Wiki stellen, bevor man Feedback gibt oder Hilfe anfragt."
+          "Echte Nutzerkonten statt eines geteilten Zugangs. Angelegt wird über Vor- und Nachname, der Nutzername entsteht daraus; das Passwort vergibt sich jeder beim ersten Anmelden selbst.",
+          "Die Anmeldung läuft zweistufig: erst der Nutzername, danach je nach Konto entweder das Passwortfeld oder das Formular „Konto einrichten“. Beide Schritte haben einen Weg zurück.",
+          "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen.",
+          "Passwörter werden nie im Klartext gespeichert. Die Anmeldung gilt sieben Tage, danach ist eine neue nötig.",
+          "„Abmelden“ steht oben rechts neben dem eigenen Namen und ist damit aus jedem Reiter erreichbar.",
+          "Der Reiter „Mein Konto“ zeigt Name, Nutzername, Trainerlizenz und Mannschaften, die eigenen Gruppen im Klartext, in welchen Werkzeugen man mehr als zusehen darf, wann das Passwort zuletzt geändert wurde und bis wann die Anmeldung gilt. Solange niemand angemeldet ist, heißt derselbe Reiter „Anmelden“.",
+          "Dort lässt sich auch das eigene Passwort ändern. Dabei werden alle Geräte abgemeldet — auch das eigene; eine neue Anmeldung danach ist normal."
         ]
       },
       {
-        title: "Admin-Tab & Bedienung",
+        title: "Nutzer und Gruppen verwalten",
         items: [
-          "Alle Admin-Bereiche (Nutzer, Massenimport, Gruppen, Sichtbarkeit, Versionshistorie) sind einzeln auf-/zuklappbar und standardmäßig eingeklappt.",
-          "Namen mit Sonderzeichen (z.B. Anführungszeichen) werden in allen Formularen korrekt maskiert.",
-          "Der Versionshinweis oben neben dem Titel ist anklickbar und führt direkt zur aufgeklappten Versionshistorie in den Einstellungen."
+          "Nutzer bearbeiten, löschen oder ihr Passwort zurücksetzen. Dem letzten Administrator lässt sich der Status nicht entziehen, und löschen lässt er sich auch nicht.",
+          "Wird ein Vor- oder Nachname korrigiert, zieht der Anmeldename automatisch mit um. Kollidiert er mit einem bestehenden Konto, bleibt er unverändert und es kommt ein Warnhinweis.",
+          "Text-Massenimport für größere Listen: ein Name je Zeile. Alle durchlaufen danach den normalen Erstanmelde-Weg.",
+          "Die Nutzerliste hat genau zwei Abschnitte, Personal und Spieler, damit jedes Konto an genau einer Stelle steht. Darüber filtern eine Namenssuche und eine Gruppenauswahl.",
+          "Gruppen anlegen und Mitglieder zuordnen, direkt in der Nutzerliste oder in der Gruppenverwaltung.",
+          "Beim allerersten Besuch, wenn es noch kein Konto gibt, öffnet sich das Formular zum Anlegen des ersten Administrators. Danach ist dieser Weg dauerhaft zu."
         ]
       },
       {
-        title: "Daten & Speicherung",
+        title: "Die drei Rechte-Stufen",
         items: [
-          "Sichtbarkeits-Konfiguration und Nutzerkonten werden zentral über Nextcloud gespeichert (zwei JSON-Dateien) und gelten für alle Besucher, ohne zusätzliches Worker-Secret für Gruppen."
+          "Je Werkzeug und Gruppe gibt es Sehen, Bearbeiten und Administrieren.",
+          "Sehen wird über ein Dropdown mit vier Zuständen gesteuert: versteckt, öffentlich, alle angemeldeten Nutzer oder nur bestimmte Gruppen.",
+          "Bearbeiten erlaubt das Ändern von Daten und schließt Export, Druck und PDF ein.",
+          "Administrieren schaltet die app-internen Verwaltungsfunktionen frei — etwa den vollen Trainerdaten-Zugriff samt Bankverbindung oder die Rechte-Matrix im Kadermanager. Dafür muss niemand globaler Administrator sein.",
+          "Administrieren schließt Bearbeiten ein, und wer bearbeiten oder administrieren darf, sieht das Werkzeug automatisch. „Bearbeiten ohne Sehen“ lässt eine App nicht länger unsichtbar.",
+          "Als sensibel eingestufte Werkzeuge stehen im Sichtbarkeits-Bereich in einer eigenen aufklappbaren Sektion ganz oben und tragen ein Warnzeichen, damit ihre Rechtevergabe bewusst passiert. Alle übrigen stehen darunter in der Sektion „Weitere Tools“.",
+          "Welches Werkzeug als sensibel gilt, legt ein Häkchen je Zeile fest — dafür braucht es keine Code-Änderung.",
+          "Entfernt man einer Gruppe die letzte Zuordnung, wird das Werkzeug wieder versteckt statt für alle sichtbar. Eine gelöschte Gruppe verschwindet automatisch aus allen Zuordnungen."
+        ]
+      },
+      {
+        title: "Gemeinsame Anmeldung für alle Werkzeuge",
+        items: [
+          "Alle Vereins-Apps, die ihre Daten in derselben Nextcloud ablegen, nutzen diese eine Anmeldung. Kein eigenes Verbindungsformular, kein zusätzliches Passwort auf dem Gerät.",
+          "Der Server prüft bei jedem Zugriff Anmeldung und Gruppenrechte und greift dann selbst auf die Cloud zu. Die Zugangsdaten dazu liegen nur dort.",
+          "Ändern zwei Geräte gleichzeitig dieselbe Datei, wird das erkannt und gemeldet, statt still zu überschreiben.",
+          "Auch der gesamte E-Mail-Versand der Flotte läuft über diese Stelle — keine App verschickt selbst."
+        ]
+      },
+      {
+        title: "Bedienung am Handy",
+        items: [
+          "Die Übersicht ist für das Handy gebaut; die Kacheln stapeln sich auf schmalen Bildschirmen.",
+          "Eingabefelder sind mindestens 16 Pixel groß, damit der iPhone-Browser beim Antippen nicht ungefragt in die Seite hineinzoomt und verschoben stehen bleibt.",
+          "Auf schmalen Bildschirmen tragen die Kopfknöpfe kürzere Beschriftungen, damit die Kopfzeile nicht unnötig wächst."
         ]
       }
     ]
