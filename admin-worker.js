@@ -8426,7 +8426,13 @@ const PUSH_VORGANG_APPS = {
   testspielplaner: {
     liste: "reservierungen", anlass: "testspiele",
     neu: "Eine neue Anfrage wartet auf Entscheidung",
-    entschieden: "Deine Anfrage wurde bearbeitet"
+    entschieden: "Deine Anfrage wurde bearbeitet",
+    // Optionale Verteilerliste unter einstellungen.<feld> in der App-Datei,
+    // gepflegt im Einstellungen-Tab der App. Nur gesetzte Apps zahlen den
+    // zusaetzlichen Nextcloud-Read; materialbedarf hat dafuer keine Oberflaeche
+    // und soll ihn deshalb nicht zahlen. Wer es dort nachruestet, ergaenzt hier
+    // eine Zeile -- die Auswertung unten ist schon generisch.
+    empfaengerFeld: "pushEmpfaenger"
   },
   materialbedarf: {
     liste: "meldungen", anlass: "material",
@@ -8472,6 +8478,33 @@ async function handleVorgangPush(request, body, env, authHeader, corsHeaders, ex
   if (art === "neu") {
     // An die Zustaendigen: wer den Vorgang entscheiden kann.
     empfaenger = await pushEmpfaengerMitRecht(app, session.usersDoc, env, authHeader, session.username);
+    // Die App darf den Kreis VERKLEINERN, nie erweitern -- deshalb ein Filter
+    // ueber das Rechte-Ergebnis und keine eigene Empfaengerquelle. Sonst koennte
+    // ein Bearbeiter beliebige Konten (auch Spieler) mit Nachrichten belegen,
+    // und wer sein Bearbeiten-Recht verliert, bekaeme durch eine vergessene
+    // Liste weiter Meldungen.
+    //
+    // ⚠️ Leere oder fehlende Liste = ALLE Berechtigten, nicht niemand. Ein
+    // ausbleibendes Push faellt keinem auf (anders als ein fehlendes Schreib-
+    // recht), der stille Ausfall muss also die unwahrscheinlichere Richtung
+    // sein. Wer wirklich niemanden benachrichtigen will, nimmt den Anlass raus.
+    if (cfg.empfaengerFeld) {
+      const doc = await readJson(davUrl, authHeader, {});
+      const eins = (doc && typeof doc.einstellungen === "object" && doc.einstellungen) || {};
+      const roh = getOwn(eins, cfg.empfaengerFeld);
+      const gewaehlt = Array.isArray(roh)
+        ? roh.map((n) => normalizeUsername(String(n || ""))).filter(Boolean)
+        : [];
+      if (gewaehlt.length) {
+        const enger = empfaenger.filter((n) => gewaehlt.indexOf(n) !== -1);
+        // ⚠️ Nur uebernehmen, wenn davon jemand uebrig bleibt. Verliert der
+        // einzige Angehakte sein Bearbeiten-Recht, waere die Schnittmenge leer
+        // und die Anfrage ginge lautlos unter -- genau das soll Push verhindern.
+        // Lieber einer zu viel als eine Anfrage, die niemand sieht (gleiches
+        // Muster wie der Mannschafts-Fallback in handleFotoauftragPush).
+        if (enger.length) empfaenger = enger;
+      }
+    }
   } else {
     const id = String((body && body.id) || "");
     if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
