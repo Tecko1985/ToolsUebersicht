@@ -227,6 +227,35 @@ ohne zu senden**: je Treffer Nutzername, Nachweis, Ablaufdatum, Stufe und der Gr
 nicht gesendet würde (kein Konto, kein Abo, Schalter aus, Merker frisch). Ohne das ist die
 Frage „warum kam gestern nichts?" ein Blindflug.
 
+## Was der Datenbestand sagt (gemessen, nicht geschätzt)
+
+Gerechnet über `trainerdaten.backup.20260716-190101.json` (50 Datensätze; live sind es
+inzwischen 54 — die Zahlen sind eine Größenordnung, keine Live-Messung):
+
+| Monat | Ablaufende Fristen |
+|---|---|
+| 12/2026 | 1 (Trainerlizenz) |
+| **01/2027** | **84 — Führerschein 21, Trainerkodex 36, Jugendschutz 27** |
+| 12/2027 – 01/2030 | je 1–3 (Trainerlizenzen) |
+| 07/2029 | 8 (Führungszeugnisse) |
+
+**Zwei Folgerungen, die das Design berühren:**
+
+⚠️ **Das Feature sendet die nächsten vier Monate gar nichts.** Alle Nachweise wurden im
+Juli 2026 erfasst, der erste echte Ablauf ist Dezember 2026. Wer nach dem Deploy auf eine
+Nachricht wartet, um zu sehen, ob es geht, wartet bis Weihnachten. **Deshalb ist
+`ablauf-vorschau` keine Kür, sondern der einzige Weg, das Feature überhaupt abzunehmen** —
+zusammen mit einem testweise vorgezogenen `trainerlizenzGueltigBis`.
+
+⚠️ **Im Januar 2027 laufen 84 Fristen bei 36 Personen ab**, verteilt auf 11 Kalendertage,
+am stärksten am 13.01.2027 mit 20 Fristen. Das ist kein Fehler, sondern die Folge davon,
+dass Kodex und Jugendschutzkonzept im Juli 2026 flächendeckend auf einmal bestätigt wurden
+— und es ist genau der Zweck des Features. Zwei Dinge folgen daraus: der Fan-out in
+Häppchen zu zehn ist an diesem Tag wirklich gefordert (drei Binding-Aufrufe), und die
+**Vorwarnungen fallen auf die Tage um den 30.12.**, also mitten in die Feiertage. Wer das
+vermeiden will, muss die Bestätigungen vorher gestaffelt erneuern lassen — am Feature
+ändert es nichts.
+
 ## Reihenfolge (bindend)
 
 1. **`landingpage`**: `FUEHRUNGSZEUGNIS`-Frist in `buildTrainerdatenSummary`, neuer Anlass,
