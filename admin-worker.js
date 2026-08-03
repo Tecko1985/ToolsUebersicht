@@ -912,6 +912,10 @@ export default {
         return handlePushTest(request, env, authHeader, corsHeaders);
       case "vereinskalender-termin-push":
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
+      case "vorgang-push":
+        return handleVorgangPush(request, body, env, authHeader, corsHeaders, ctx);
+      case "fotoauftrag-push":
+        return handleFotoauftragPush(request, body, env, authHeader, corsHeaders, ctx);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
@@ -1039,7 +1043,7 @@ export default {
       case "dav-restricted-delete":
         return handleDavRestrictedDelete(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-submit":
-        return handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders);
+        return handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders, ctx);
       case "fahrtenbuch-extern-file-put":
         return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-fuehrerschein-put":
@@ -6757,7 +6761,7 @@ async function requireFahrtenbuchExternCode(body, env, corsHeaders) {
   return { ok: true };
 }
 
-async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders) {
+async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders, execCtx) {
   const codeCheck = await requireFahrtenbuchExternCode(body, env, corsHeaders);
   if (codeCheck.error) return codeCheck.error;
 
@@ -6841,6 +6845,23 @@ async function handleFahrtenbuchExternSubmit(body, env, authHeader, corsHeaders)
   } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
+
+  // Push an die Zustaendigen (seit 2026-08-03). Erst NACH dem Speichern: die
+  // Fahrt ist die Handlung, die Meldung nur ein Hinweis darauf.
+  //
+  // ⚠️ Dieser Weg hat KEINE Sitzung -- eingereicht wird per Zugriffscode ohne
+  // Login. Deshalb wird nutzer.json hier eigens gelesen (sonst kommt usersDoc
+  // aus der Session) und es gibt niemanden, den man ausschliessen muesste.
+  // Ein Fehler darf die schon gespeicherte Fahrt nicht kippen.
+  try {
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const empfaenger = await pushEmpfaengerMitRecht("fahrtenbuch", usersDoc, env, authHeader, "");
+    pushSenden(env, authHeader, execCtx, empfaenger, "fahrtenbuch",
+      "Eine Fahrt wurde eingereicht");
+  } catch (e) {
+    console.error("Fahrtenbuch-Push fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
+
   return json({ ok: true, id }, 200, corsHeaders);
 }
 
@@ -7891,7 +7912,36 @@ function json(obj, status, corsHeaders) {
 // Aufruf der ganzen Flotte um Daten verteuern, die nur beim Versand zaehlen.
 const PUSH_ABOS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/push-abos.json";
 
-const PUSH_ANLAESSE = ["kalender", "aufgaben", "unterschriften"];
+// ⚠️ EINE Liste als Quelle fuer alles: Schalter im Konto-Tab, Titel und Ziel der
+// Nachricht, erlaubte Werte beim Speichern. Vorher standen die drei Anlaesse
+// fest verdrahtet an vier Stellen (HTML, app.js, zwei Stellen hier) -- bei drei
+// Stueck geht das, bei sieben laeuft es auseinander. Ein neuer Anlass ist jetzt
+// ein Listeneintrag plus die Stelle, die ihn ausloest.
+//
+// titel = fette Zeile der Nachricht, ziel = wohin das Antippen fuehrt,
+// label = Beschriftung des Schalters im Konto-Tab.
+const PUSH_ANLAESSE = [
+  { id: "kalender", titel: "Vereinskalender", ziel: "/vereinskalender/",
+    label: "Vereinskalender — neue und geänderte Termine" },
+  { id: "aufgaben", titel: "Vereinsaufgaben", ziel: "/vereinsaufgaben/",
+    label: "Vereinsaufgaben — neue Aufgaben für mich" },
+  { id: "unterschriften", titel: "Unterschriften", ziel: "/ToolsUebersicht/",
+    label: "Unterschriften — Dokumente, die auf mich warten" },
+  { id: "testspiele", titel: "Testspielplaner", ziel: "/testspielplaner/",
+    label: "Testspielplaner — Anfragen und Entscheidungen" },
+  { id: "material", titel: "Materialbedarf", ziel: "/materialbedarf/",
+    label: "Materialbedarf — Meldungen und Entscheidungen" },
+  { id: "fahrtenbuch", titel: "Fahrtenbuch", ziel: "/fahrtenbuch/",
+    label: "Fahrtenbuch — neu eingereichte Fahrten" },
+  { id: "fotos", titel: "Fotoaufträge", ziel: "/fotoauftraege/",
+    label: "Fotoaufträge — neue Aufträge für meine Mannschaft" }
+];
+
+function pushAnlassInfo(id) {
+  for (const a of PUSH_ANLAESSE) if (a.id === id) return a;
+  return null;
+}
+
 const PUSH_MAX_GERAETE_PRO_NUTZER = 10;
 // Haeppchengroesse fuer den Fan-out. Jeder Aufruf ueber das Service Binding
 // bekommt sein EIGENES CPU-Budget -- genau deswegen liegt die Verschluesselung
@@ -7899,15 +7949,11 @@ const PUSH_MAX_GERAETE_PRO_NUTZER = 10;
 // Verschluesselungen in einem Budget. Nach einer echten Messung anpassbar.
 const PUSH_HAEPPCHEN = 10;
 
-// Die Texte stehen bewusst hier und nicht beim Aufrufer: keine Namen, keine
-// Dokumenttitel, keine Anzahl. Eine Push-Nachricht steht auf dem
-// Sperrbildschirm, den auch jemand anders sehen kann -- dieselbe Linie wie beim
-// Mail-Betreff der Unterschriften-Anforderung.
-const PUSH_ZIELE = {
-  kalender: "/vereinskalender/",
-  aufgaben: "/vereinsaufgaben/",
-  unterschriften: "/ToolsUebersicht/"
-};
+// Titel und Ziel stehen in PUSH_ANLAESSE oben, nicht beim Aufrufer. Der Aufrufer
+// liefert nur den kurzen Satz -- und der enthaelt keine Namen, keine Titel und
+// keine Anzahl: eine Push-Nachricht steht auf dem Sperrbildschirm, den auch
+// jemand anders sehen kann. Dieselbe Linie wie beim Mail-Betreff der
+// Unterschriften-Anforderung.
 
 function leerePushDoc() { return { version: 1, abos: {}, anlaesse: {} }; }
 
@@ -7917,7 +7963,7 @@ function leerePushDoc() { return { version: 1, abos: {}, anlaesse: {} }; }
 function pushAnlaesseFuer(doc, username) {
   const roh = (doc && doc.anlaesse && getOwn(doc.anlaesse, username)) || {};
   const out = {};
-  for (const a of PUSH_ANLAESSE) out[a] = roh[a] !== false;
+  for (const a of PUSH_ANLAESSE) out[a.id] = roh[a.id] !== false;
   return out;
 }
 
@@ -7968,7 +8014,12 @@ async function handlePushStatus(request, env, authHeader, corsHeaders) {
     geraete: pushAbosFuer(doc, username).map((a) => ({
       id: a.id, geraet: a.geraet || "Unbekanntes Geraet", angelegtAm: a.angelegtAm || ""
     })),
-    anlaesse: pushAnlaesseFuer(doc, username)
+    anlaesse: pushAnlaesseFuer(doc, username),
+    // Die Schalter im Konto-Tab werden hieraus gebaut, nicht fest im HTML: ein
+    // neuer Anlass soll nur einen Listeneintrag kosten, keinen Pages-Deploy.
+    // ⚠️ Ein aelterer Client ohne diese Auswertung zeigt einfach seine drei
+    // festen Schalter weiter -- rein additiv, verengt nichts.
+    liste: PUSH_ANLAESSE.map((a) => ({ id: a.id, label: a.label }))
   }, 200, corsHeaders);
 }
 
@@ -8048,7 +8099,7 @@ async function handlePushAnlaesseSetzen(request, body, env, authHeader, corsHead
 
   await pushAbosMutieren(authHeader, (doc) => {
     const neu = {};
-    for (const a of PUSH_ANLAESSE) neu[a] = gewuenscht[a] !== false;
+    for (const a of PUSH_ANLAESSE) neu[a.id] = gewuenscht[a.id] !== false;
     doc.anlaesse[username] = neu;
   });
 
@@ -8166,6 +8217,160 @@ async function handleVkTerminPush(request, body, env, authHeader, corsHeaders, e
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
+// Alle Personalkonten, die eine App BEARBEITEN duerfen -- die Zustaendigen also.
+// Gebraucht dort, wo eine Meldung nicht an eine bestimmte Person geht, sondern
+// an "wer sich darum kuemmert": Materialbedarf, Fahrtenbuch, Fotoauftraege.
+//
+// Spiegelt bewusst die Logik von resolveEditPermission (editGroupIds +
+// adminGroupIds, globale Admins immer) -- wer das eine aendert, muss das andere
+// mitziehen, sonst benachrichtigt die App jemanden, der gar nichts entscheiden
+// kann, oder uebergeht den, der es muss.
+//
+// ⚠️ usersDoc wird uebergeben statt gelesen: der Fahrtenbuch-Weg hat KEINE
+// Sitzung (Einreichung per Code ohne Login) und muss es selbst beschaffen.
+async function pushEmpfaengerMitRecht(app, usersDoc, env, authHeader, ausser) {
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, app) || {};
+  const editIds = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+  const adminIds = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  const gruppen = editIds.concat(adminIds);
+
+  const users = (usersDoc && usersDoc.users) || {};
+  const weg = normalizeUsername(String(ausser || ""));
+  const out = [];
+  for (const schluessel of Object.keys(users)) {
+    const u = users[schluessel];
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    const name = normalizeUsername(u.username || schluessel);
+    if (weg && name === weg) continue;          // wer es ausloest, weiss Bescheid
+    if (u.isAdmin) { out.push(name); continue; } // globaler Admin darf ueberall
+    const meine = getUserGroupIds(usersDoc, schluessel);
+    if (gruppen.some((g) => meine.indexOf(g) !== -1)) out.push(name);
+  }
+  return out;
+}
+
+// Apps nach dem Muster "jemand reicht ein, jemand entscheidet". Beide fuehren
+// eine Liste von Vorgaengen mit id/status/erstelltVon -- deshalb EINE Aktion
+// statt zwei fast gleicher. Ein weiterer Kandidat ist ein Listeneintrag.
+const PUSH_VORGANG_APPS = {
+  testspielplaner: {
+    liste: "reservierungen", anlass: "testspiele",
+    neu: "Eine neue Anfrage wartet auf Entscheidung",
+    entschieden: "Deine Anfrage wurde bearbeitet"
+  },
+  materialbedarf: {
+    liste: "meldungen", anlass: "material",
+    neu: "Eine neue Meldung wartet auf Entscheidung",
+    entschieden: "Deine Meldung wurde bearbeitet"
+  }
+};
+
+// ⚠️ Der Empfaenger kommt aus dem DATENSATZ, nicht aus dem Request. Wuerde der
+// Client den Nutzernamen mitschicken, koennte jeder Bearbeiter beliebige Leute
+// benachrichtigen lassen -- und ein Tippfehler liefe ins Leere, ohne dass es
+// jemand merkt. Der Worker liest den Vorgang selbst und nimmt erstelltVon.
+//
+// Ob der Vorgang wirklich gerade entschieden wurde, prueft diese Aktion NICHT:
+// sie wird unmittelbar nach dem Speichern gerufen, und ein zweiter Lesevorgang
+// zur Bestaetigung waere eine Scheinsicherheit (der Zustand kann sich zwischen
+// beiden Aufrufen ohnehin aendern). Die Schranke ist das Bearbeiten-Recht.
+async function handleVorgangPush(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const app = String((body && body.app) || "");
+  const cfg = getOwn(PUSH_VORGANG_APPS, app);
+  if (!cfg) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+
+  const davUrl = getOwn(DAV_APPS, app);
+  if (!davUrl) return json({ error: "Unbekannte App" }, 400, corsHeaders);
+  if (!(await userMayAccessTool(app, session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const art = (body && body.art === "entschieden") ? "entschieden" : "neu";
+
+  // Entscheiden darf nur, wer bearbeiten darf. Melden darf jeder, der die App
+  // sieht -- das ist der Zweck dieser Apps.
+  if (art === "entschieden") {
+    if (!(await resolveEditPermission(app, session, env, authHeader))) {
+      return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+    }
+  }
+
+  let empfaenger = [];
+  if (art === "neu") {
+    // An die Zustaendigen: wer den Vorgang entscheiden kann.
+    empfaenger = await pushEmpfaengerMitRecht(app, session.usersDoc, env, authHeader, session.username);
+  } else {
+    const id = String((body && body.id) || "");
+    if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
+    const doc = await readJson(davUrl, authHeader, {});
+    const liste = Array.isArray(doc[cfg.liste]) ? doc[cfg.liste] : [];
+    const vorgang = liste.find((v) => v && v.id === id);
+    if (!vorgang) return json({ error: "Vorgang nicht gefunden" }, 404, corsHeaders);
+    const wer = normalizeUsername(String(vorgang.erstelltVon || ""));
+    // Wer seinen eigenen Vorgang entscheidet, braucht keine Meldung darueber.
+    if (!wer || wer === normalizeUsername(session.username)) {
+      return json({ ok: true, infrage: 0 }, 200, corsHeaders);
+    }
+    empfaenger = [wer];
+  }
+
+  pushSenden(env, authHeader, execCtx, empfaenger, cfg.anlass, cfg[art]);
+  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
+}
+
+// Fotoauftrag angelegt -> an die Trainer DER BETROFFENEN MANNSCHAFT, nicht an
+// alle. Das Social-Media-Team fragt Fotos einer bestimmten Mannschaft an; wen
+// das nichts angeht, soll auch nichts hoeren. Die Zuordnung steht in
+// nutzer.json (u.mannschaften), es braucht also keinen zweiten Datenbestand.
+//
+// ⚠️ Fallback auf die Bearbeitenden, wenn zu der Mannschaft niemand hinterlegt
+// ist: sonst ginge die Anfrage lautlos unter, und genau das soll Push ja
+// verhindern. Lieber einer zu viel als eine Anfrage, die niemand sieht.
+async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("fotoauftraege", session, env, authHeader))) {
+    return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+  }
+
+  const id = String((body && body.id) || "");
+  if (!id) return json({ error: "Fehlende id" }, 400, corsHeaders);
+
+  const url = getOwn(DAV_APPS, "fotoauftraege");
+  const doc = await readJson(url, authHeader, { meta: {}, auftraege: [] });
+  const liste = Array.isArray(doc.auftraege) ? doc.auftraege : [];
+  const auftrag = liste.find((a) => a && a.id === id);
+  if (!auftrag) return json({ error: "Auftrag nicht gefunden" }, 404, corsHeaders);
+
+  const mannschaft = String(auftrag.mannschaft || "").trim();
+  const selbst = normalizeUsername(session.username);
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+
+  let empfaenger = [];
+  if (mannschaft) {
+    for (const schluessel of Object.keys(users)) {
+      const u = users[schluessel];
+      if (!u || u.archiviert || !istPersonal(u)) continue;
+      const meine = Array.isArray(u.mannschaften) ? u.mannschaften : [];
+      if (meine.indexOf(mannschaft) === -1) continue;
+      const name = normalizeUsername(u.username || schluessel);
+      if (name === selbst) continue;
+      empfaenger.push(name);
+    }
+  }
+  if (!empfaenger.length) {
+    empfaenger = await pushEmpfaengerMitRecht("fotoauftraege", session.usersDoc, env, authHeader, session.username);
+  }
+
+  pushSenden(env, authHeader, execCtx, empfaenger, "fotos",
+    "Für eine deiner Mannschaften werden Fotos gebraucht");
+  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
+}
+
 // ---------- Versand ----------
 
 // Erteilt den Versandauftrag an den Worker "push". Fehler werden geschluckt,
@@ -8181,7 +8386,8 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text) {
   // vor, aber ein Fehlschlag darf keine Zuweisung mitreissen.
   if (!env.PUSH || !env.PUSH_SHARED_SECRET) return;
   if (!Array.isArray(empfaenger) || !empfaenger.length) return;
-  if (PUSH_ANLAESSE.indexOf(anlass) === -1) return;
+  const info = pushAnlassInfo(anlass);
+  if (!info) return;
 
   const arbeit = (async () => {
     try {
@@ -8201,11 +8407,9 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text) {
       if (!ziele.length) return;
 
       const nachricht = {
-        titel: anlass === "kalender" ? "Vereinskalender"
-             : anlass === "aufgaben" ? "Vereinsaufgaben"
-             : "Unterschriften",
+        titel: info.titel,
         text: String(text || ""),
-        ziel: PUSH_ZIELE[anlass]
+        ziel: info.ziel
       };
 
       const tot = [];

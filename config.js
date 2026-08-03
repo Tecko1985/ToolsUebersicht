@@ -332,6 +332,22 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.3",
+    groups: [
+      {
+        title: "Mehr Anlässe für Benachrichtigungen",
+        items: [
+          "Vier weitere Werkzeuge melden sich jetzt aufs Handy: Testspielplaner, Materialbedarf, Fahrtenbuch und Fotoaufträge. Jedes lässt sich einzeln an- und abschalten.",
+          "Testspielplaner: Wer anfragt, erfährt es, sobald entschieden wurde — wer entscheidet, erfährt von neuen Anfragen.",
+          "Materialbedarf: dasselbe für gemeldeten Bedarf und die Entscheidung darüber.",
+          "Fahrtenbuch: Wird eine Fahrt über den externen Link eingereicht, erfahren es die Zuständigen. Bisher musste jemand von sich aus nachsehen.",
+          "Fotoaufträge: Ein neuer Auftrag meldet sich bei den Trainer:innen der betroffenen Mannschaft — nicht bei allen. Ist zu der Mannschaft niemand hinterlegt, gehen die Zuständigen nicht leer aus.",
+          "Die Schalter im Konto-Tab werden jetzt vom Server geliefert. Kommt künftig ein Anlass dazu, erscheint er dort von selbst."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.2",
     groups: [
       {

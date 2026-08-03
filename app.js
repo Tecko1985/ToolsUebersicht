@@ -4462,9 +4462,13 @@ function setupTabs() {
 
   // Push: der Einschalten-Knopf ruft die Erlaubnis-Abfrage direkt aus dem Klick.
   document.getElementById("btn-push-ein").addEventListener("click", pushEinschalten);
-  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
-    document.getElementById("push-an-" + a).addEventListener("change", pushSchalterSpeichern);
-  }
+  // Delegation: die Schalter werden bei jedem Aufbau neu geschrieben, einzeln
+  // registrierte Handler waeren nach dem ersten Rendern verwaist.
+  document.getElementById("push-schalter").addEventListener("change", (e) => {
+    if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-push-anlass")) {
+      pushSchalterSpeichern();
+    }
+  });
   // Abmelden per Delegation: die Liste wird bei jedem Aufbau neu geschrieben,
   // einzeln registrierte Handler waeren nach dem ersten Rendern verwaist.
   document.getElementById("push-geraete").addEventListener("click", (e) => {
@@ -5542,15 +5546,27 @@ async function pushPanelAufbauen() {
   }
 
   fertig.style.display = "block";
-  pushSchalterSetzen((status && status.anlaesse) || {});
+  pushSchalterRendern((status && status.liste) || [], (status && status.anlaesse) || {});
   pushGeraeteRendern((status && status.geraete) || []);
 }
 
-function pushSchalterSetzen(anlaesse) {
-  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
-    const el = document.getElementById("push-an-" + a);
-    if (el) el.checked = anlaesse[a] !== false;
-  }
+// Baut die Schalter aus der Liste, die der Worker mitliefert. ⚠️ Fallback auf
+// die drei urspruenglichen Anlaesse: liefert ein aelterer Worker das Feld noch
+// nicht, stuende hier sonst gar kein Schalter -- und der Nutzer koennte nichts
+// mehr abstellen, obwohl Nachrichten ankommen.
+function pushSchalterRendern(liste, anlaesse) {
+  const box = document.getElementById("push-schalter");
+  if (!box) return;
+  const quelle = (Array.isArray(liste) && liste.length) ? liste : [
+    { id: "kalender", label: "Vereinskalender" },
+    { id: "aufgaben", label: "Vereinsaufgaben" },
+    { id: "unterschriften", label: "Unterschriften" }
+  ];
+  box.innerHTML = quelle.map((a) =>
+    "<label><input type=\"checkbox\" data-push-anlass=\"" + escapeHtml(a.id) + "\""
+    + (anlaesse[a.id] !== false ? " checked" : "") + " /> <span>"
+    + escapeHtml(a.label) + "</span></label>"
+  ).join("");
 }
 
 function pushGeraeteRendern(geraete) {
@@ -5667,9 +5683,9 @@ async function pushEinschalten() {
 
 async function pushSchalterSpeichern() {
   const anlaesse = {};
-  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
-    const el = document.getElementById("push-an-" + a);
-    anlaesse[a] = !!(el && el.checked);
+  const kaestchen = document.querySelectorAll("#push-schalter [data-push-anlass]");
+  for (let i = 0; i < kaestchen.length; i++) {
+    anlaesse[kaestchen[i].getAttribute("data-push-anlass")] = !!kaestchen[i].checked;
   }
   try {
     await callWorker("push-anlaesse-setzen", { anlaesse });

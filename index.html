@@ -321,13 +321,12 @@
       <!-- Zustand 4: angemeldet -->
       <div id="push-eingerichtet" style="display:none;">
         <h3 class="push-titel">Wobei soll sich die App melden?</h3>
-        <!-- ⚠️ KEIN .form-field um die Kaestchen: dort greift input{width:100%}
+        <!-- Die Schalter kommen aus der Anlass-Liste des Workers (push-status),
+             nicht aus diesem Markup: ein neuer Anlass soll nur einen
+             Listeneintrag im Worker kosten, keinen Pages-Deploy.
+             ⚠️ KEIN .form-field um die Kaestchen: dort greift input{width:100%}
              und macht aus der Checkbox einen Balken. -->
-        <div class="push-schalter">
-          <label><input type="checkbox" id="push-an-kalender" /> <span>Vereinskalender — geteilte Termine</span></label>
-          <label><input type="checkbox" id="push-an-aufgaben" /> <span>Vereinsaufgaben — neue Aufgaben für mich</span></label>
-          <label><input type="checkbox" id="push-an-unterschriften" /> <span>Unterschriften — Dokumente, die auf mich warten</span></label>
-        </div>
+        <div class="push-schalter" id="push-schalter"></div>
 
         <h3 class="push-titel">Angemeldete Geräte</h3>
         <ul class="push-geraete" id="push-geraete"></ul>
@@ -954,6 +953,6 @@
 
 <script src="signature-pad.js?v=1.0"></script>
 <script src="config.js?v=1.52"></script>
-<script src="app.js?v=1.45"></script>
+<script src="app.js?v=1.46"></script>
 </body>
 </html>
