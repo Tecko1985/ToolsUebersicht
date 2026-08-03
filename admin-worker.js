@@ -910,6 +910,8 @@ export default {
         return handlePushAnlaesseSetzen(request, body, env, authHeader, corsHeaders);
       case "push-test":
         return handlePushTest(request, env, authHeader, corsHeaders);
+      case "vereinskalender-termin-push":
+        return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
@@ -7957,15 +7959,16 @@ async function handlePushStatus(request, env, authHeader, corsHeaders) {
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  const username = normalizeUsername(session.username);
   return json({
     ok: true,
     // Der oeffentliche VAPID-Schluessel kommt vom Server, nicht aus app.js:
     // so braucht ein Schluesselwechsel keinen Pages-Deploy.
     publicKey: String(env.VAPID_PUBLIC_KEY || ""),
-    geraete: pushAbosFuer(doc, session.username).map((a) => ({
+    geraete: pushAbosFuer(doc, username).map((a) => ({
       id: a.id, geraet: a.geraet || "Unbekanntes Geraet", angelegtAm: a.angelegtAm || ""
     })),
-    anlaesse: pushAnlaesseFuer(doc, session.username)
+    anlaesse: pushAnlaesseFuer(doc, username)
   }, 200, corsHeaders);
 }
 
@@ -7985,7 +7988,13 @@ async function handlePushAboAnlegen(request, body, env, authHeader, corsHeaders)
 
   // Der Nutzer kommt IMMER aus dem Token, nie aus dem Body -- sonst meldet ein
   // Eingeloggter fremde Geraete an. Gleiche Regel wie bei change-password.
-  const username = session.username;
+  //
+  // ⚠️ normalizeUsername auch HIER, nicht nur beim Versand: gespeichert wird
+  // unter diesem Schluessel, gesucht wird in pushSenden ueber
+  // normalizeUsername(empfaenger). Weichen die beiden Schreibweisen ab, liegt
+  // das Abo da und wird trotzdem nie gefunden -- ein Fehler, den man dem
+  // Konto-Tab nicht ansieht, weil dort alles richtig aussieht.
+  const username = normalizeUsername(session.username);
 
   let neueId = "";
   await pushAbosMutieren(authHeader, (doc) => {
@@ -8018,7 +8027,7 @@ async function handlePushAboLoeschen(request, body, env, authHeader, corsHeaders
 
   const id = String((body && body.id) || "").trim();
   if (!id) return json({ error: "Keine Geraete-Id" }, 400, corsHeaders);
-  const username = session.username;
+  const username = normalizeUsername(session.username);
 
   await pushAbosMutieren(authHeader, (doc) => {
     const liste = pushAbosFuer(doc, username);
@@ -8035,7 +8044,7 @@ async function handlePushAnlaesseSetzen(request, body, env, authHeader, corsHead
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
   const gewuenscht = (body && body.anlaesse) || {};
-  const username = session.username;
+  const username = normalizeUsername(session.username);
 
   await pushAbosMutieren(authHeader, (doc) => {
     const neu = {};
@@ -8074,7 +8083,7 @@ async function handlePushTest(request, env, authHeader, corsHeaders) {
   merke("Schluessel in push-abos.json", Object.keys(doc.abos || {}).join(", ") || "(keine)");
   merke("Nach normalizeUsername", normalizeUsername(session.username));
 
-  const meine = pushAbosFuer(doc, session.username);
+  const meine = pushAbosFuer(doc, normalizeUsername(session.username));
   merke("Eigene Geraete gefunden", meine.length);
   if (!meine.length) {
     return json({ ok: false, grund: "Fuer diesen Nutzer ist kein Geraet gespeichert.", schritte }, 200, corsHeaders);
@@ -8105,6 +8114,56 @@ async function handlePushTest(request, env, authHeader, corsHeaders) {
     merke("Aufruf des push-Workers warf", (e && e.message) ? e.message : String(e));
     return json({ ok: false, grund: "Der push-Worker war nicht erreichbar.", schritte }, 200, corsHeaders);
   }
+}
+
+// Push an ALLE beim Anlegen/Aendern eines nicht-privaten Kalendertermins
+// (seit 2026-08-03, Michel-Vorgabe "nicht nur private, sondern wirklich jeder
+// Termin").
+//
+// ⚠️ Private Termine laufen NICHT hierueber, sondern weiter ueber notify-user:
+// dort gibt es Mail UND Push, und zwar nur an die tatsaechlich Geteilten. Ohne
+// diese Trennung bekaeme ein privat geteilter Termin beides doppelt -- und
+// zusaetzlich die halbe Belegschaft, die ihn gar nicht sehen darf.
+//
+// ⚠️ Spielerkonten bleiben aussen vor (Michel-Entscheidung): bei ~200 davon
+// waere jeder Termin ein Fan-out an die halbe Vereinsdatenbank. Gleiche Linie
+// wie beim Materialcontainer-Code.
+async function handleVkTerminPush(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  // ⚠️ Gate am Bearbeiten-Recht. Ohne das koennte JEDES eingeloggte Konto die
+  // gesamte Belegschaft mit Nachrichten zuschuetten -- und zwar ohne dass dabei
+  // ein einziger Termin entstehen muesste. Termine anlegen darf ohnehin nur,
+  // wer canEdit hat (vereinskalender steht in WRITE_REQUIRES_EDIT_PERMISSION).
+  const darf = await resolveEditPermission("vereinskalender", session, env, authHeader);
+  if (!darf) return json({ error: "Keine Berechtigung" }, 403, corsHeaders);
+
+  const art = (body && body.art === "geaendert") ? "geaendert" : "neu";
+
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  const selbst = normalizeUsername(session.username);
+  const empfaenger = [];
+  for (const schluessel of Object.keys(users)) {
+    const u = users[schluessel];
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    // Wer den Termin anlegt, braucht keine Meldung darueber. Beide Schreibweisen
+    // pruefen: der Schluessel und das Feld username koennen abweichen.
+    const name = normalizeUsername(u.username || schluessel);
+    if (name === selbst) continue;
+    empfaenger.push(name);
+  }
+
+  // Der Text nennt bewusst weder Titel noch Ort -- Sperrbildschirm, gleiche
+  // Linie wie ueberall sonst.
+  pushSenden(env, authHeader, execCtx, empfaenger, "kalender",
+    art === "neu" ? "Ein neuer Termin steht im Kalender"
+                  : "Ein Termin im Kalender hat sich geändert");
+
+  // Die Zahl ist die der IN FRAGE KOMMENDEN, nicht der tatsaechlich erreichten:
+  // wer kein Geraet angemeldet oder den Kalender-Schalter aus hat, faellt erst
+  // in pushSenden heraus.
+  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
 // ---------- Versand ----------
