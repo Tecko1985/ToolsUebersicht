@@ -353,6 +353,19 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.6",
+    groups: [
+      {
+        title: "Vereinsaufgaben meldet sich bei mehr Gelegenheiten",
+        items: [
+          "Der Schalter „Vereinsaufgaben“ unter „Mein Konto“ umfasst jetzt auch Rückfragen und Statusmeldungen — bisher kam eine Nachricht nur, wenn eine Aufgabe neu zugewiesen wurde.",
+          "Gemeldet wird an die jeweils andere Seite eines Vorgangs: eine Rückfrage erreicht den, der die Aufgabe gestellt hat, dessen Antwort erreicht den Empfänger. Dasselbe gilt für erledigt, zur Abnahme, abgenommen, abgelehnt, zurückgegeben und zurückgezogen.",
+          "Titel, Namen und der Wortlaut stehen nie in der Nachricht. Wer den Schalter ausschaltet, bekommt von dort weiterhin gar nichts."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.5",
     groups: [
       {

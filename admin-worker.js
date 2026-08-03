@@ -1020,13 +1020,13 @@ export default {
       case "vereinsaufgabe-aendern":
         return handleVaAendern(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-status":
-        return handleVaStatus(request, body, env, authHeader, corsHeaders);
+        return handleVaStatus(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-zurueckziehen":
-        return handleVaZurueckziehen(request, body, env, authHeader, corsHeaders);
+        return handleVaZurueckziehen(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-loeschen":
         return handleVaLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-kommentar":
-        return handleVaKommentar(request, body, env, authHeader, corsHeaders);
+        return handleVaKommentar(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-datei-put":
         return handleVaDateiPut(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-datei-get":
@@ -4289,6 +4289,19 @@ function vaDarfInhaltSehen(a, ctx) {
   return a.von === ctx.session.username || a.empfaenger === ctx.session.username;
 }
 
+// Wer bei einer Rückfrage oder einem Statuswechsel eine Push-Nachricht bekommt:
+// die jeweils ANDERE Seite des Vorgangs, nie der Handelnde selbst. Greift ein
+// Administrierender ein, der weder zugewiesen noch empfangen hat, werden dadurch
+// beide Beteiligten benachrichtigt — genau richtig, denn keiner von ihnen hat es
+// ausgelöst. Der Empfänger kommt IMMER aus dem Datensatz, nie aus dem Request.
+function vaPushBeteiligte(a, ctx) {
+  const raus = [];
+  for (const u of [a.von, a.empfaenger]) {
+    if (u && u !== ctx.session.username && !raus.includes(u)) raus.push(u);
+  }
+  return raus;
+}
+
 // Der entscheidende Punkt an der Vertraulichkeit: der Text wird hier ENTFERNT,
 // nicht clientseitig ausgeblendet. Was der Unbeteiligte nie bekommt, kann er auch
 // im Netzwerk-Tab nicht nachlesen. Empfänger, Frist und Status bleiben stehen,
@@ -4734,7 +4747,7 @@ async function handleVaAendern(request, body, env, authHeader, corsHeaders) {
 // Die Statusübergänge sind einzeln aufgezählt statt über einen generischen Setter
 // abgebildet — so ist ein ungültiger Sprung (etwa "abgelehnt" -> "erledigt" durch
 // den Empfänger) strukturell ausgeschlossen und nicht nur nicht vorgesehen.
-async function handleVaStatus(request, body, env, authHeader, corsHeaders) {
+async function handleVaStatus(request, body, env, authHeader, corsHeaders, execCtx) {
   const ctx = await vaSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
   try {
@@ -4742,56 +4755,70 @@ async function handleVaStatus(request, body, env, authHeader, corsHeaders) {
     const aktion = capStr(body && body.aktion, 20);
     const grund = capStr(body && body.grund, VA_MAX_GRUND).trim();
 
-    const ergebnis = await vaMutiere(authHeader, (doc) => {
+    const { pushAn, pushText, ...antwort } = await vaMutiere(authHeader, (doc) => {
       const a = vaAufgabeHolen(doc, body && body.id);
       const jetzt = new Date().toISOString();
       const binEmpfaenger = a.empfaenger === ctx.session.username;
       const binZuweiser = a.von === ctx.session.username || ctx.canAdmin;
       const alt = a.status;
+      // Neutral formuliert, ohne "dir": greift ein Administrierender ein, gehen
+      // beide Beteiligten in denselben Versand.
+      let text = "";
 
       if (aktion === "erledigt" || aktion === "gemeldet") {
         if (!binEmpfaenger) throw new VaFehler("Nur der Empfänger kann die Aufgabe abhaken", 403);
         if (a.status !== "offen") throw new VaFehler("Die Aufgabe ist nicht mehr offen", 400);
         // Verlangt der Zuweiser eine Abnahme, endet der Weg des Empfängers bei
         // "gemeldet" — er kann den Vorgang nicht selbst schließen.
-        if (a.abnahme) { a.status = "gemeldet"; a.gemeldetAm = jetzt; }
-        else { a.status = "erledigt"; a.erledigtAm = jetzt; }
+        if (a.abnahme) {
+          a.status = "gemeldet"; a.gemeldetAm = jetzt;
+          text = "Eine Aufgabe wartet auf Abnahme";
+        } else {
+          a.status = "erledigt"; a.erledigtAm = jetzt;
+          text = "Eine Aufgabe wurde als erledigt gemeldet";
+        }
       } else if (aktion === "abgelehnt") {
         if (!binEmpfaenger) throw new VaFehler("Nur der Empfänger kann ablehnen", 403);
         if (a.status !== "offen") throw new VaFehler("Die Aufgabe ist nicht mehr offen", 400);
         if (!grund) throw new VaFehler("Eine Ablehnung braucht eine Begründung", 400);
         a.status = "abgelehnt"; a.abgelehntAm = jetzt; a.ablehnGrund = grund;
+        text = "Eine Aufgabe wurde abgelehnt";
       } else if (aktion === "abgenommen") {
         if (!binZuweiser) throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann abnehmen", 403);
         if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
         a.status = "erledigt"; a.erledigtAm = jetzt;
         a.abgenommenAm = jetzt; a.abgenommenVon = ctx.session.username;
+        text = "Eine erledigte Aufgabe wurde abgenommen";
       } else if (aktion === "zurueckgegeben") {
         if (!binZuweiser) throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann zurückgeben", 403);
         if (a.status !== "gemeldet") throw new VaFehler("Diese Aufgabe wartet nicht auf eine Abnahme", 400);
         if (!grund) throw new VaFehler("Eine Rückgabe braucht eine Begründung", 400);
         a.status = "offen"; a.gemeldetAm = ""; a.rueckgabeGrund = grund;
+        text = "Eine Aufgabe wurde zur Nacharbeit zurückgegeben";
       } else {
         throw new VaFehler("Unbekannte Aktion", 400);
       }
 
       vaVerlauf(a, ctx.session.username, "status", alt, a.status);
-      return {};
+      return { pushAn: vaPushBeteiligte(a, ctx), pushText: text };
     });
-    return json(ergebnis, 200, corsHeaders);
+    // Außerhalb von vaMutiere, sonst ginge die Nachricht bei einem Konflikt bis zu
+    // dreimal raus.
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben", pushText);
+    return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
 // Zurückziehen kann nur der Zuweiser und nur solange nichts abgeschlossen ist.
 // Der Eintrag bleibt als "zurueckgezogen" stehen statt zu verschwinden — sonst
 // wäre nicht mehr erkennbar, dass es den Auftrag je gab.
-async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders) {
+async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders, execCtx) {
   const ctx = await vaSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
   try {
     vaVerlangeEdit(ctx);
     const grund = capStr(body && body.grund, VA_MAX_GRUND).trim();
-    const ergebnis = await vaMutiere(authHeader, (doc) => {
+    const { pushAn, ...antwort } = await vaMutiere(authHeader, (doc) => {
       const a = vaAufgabeHolen(doc, body && body.id);
       if (a.von !== ctx.session.username && !ctx.canAdmin) {
         throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann sie zurückziehen", 403);
@@ -4805,9 +4832,13 @@ async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders
       a.zurueckgezogenVon = ctx.session.username;
       a.zurueckgezogenGrund = grund;
       vaVerlauf(a, ctx.session.username, "status", alt, a.status);
-      return {};
+      return { pushAn: vaPushBeteiligte(a, ctx) };
     });
-    return json(ergebnis, 200, corsHeaders);
+    // Gerade hier wichtig: wer den Auftrag noch offen hat, soll nicht an etwas
+    // weiterarbeiten, das es nicht mehr gibt.
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
+      "Eine Aufgabe wurde zurückgezogen");
+    return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
@@ -4844,14 +4875,18 @@ async function handleVaLoeschen(request, body, env, authHeader, corsHeaders) {
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
-async function handleVaKommentar(request, body, env, authHeader, corsHeaders) {
+// Eine Rückfrage bleibt sonst liegen, bis der andere zufällig hineinschaut —
+// dasselbe Argument, mit dem beim Anlegen die Mail dazugekommen ist. Push geht an
+// die andere Seite des Vorgangs, nicht an mitlesende Ressort-Mitglieder: die
+// müssen nichts tun.
+async function handleVaKommentar(request, body, env, authHeader, corsHeaders, execCtx) {
   const ctx = await vaSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
   try {
     vaVerlangeEdit(ctx);
     const text = capStr(body && body.text, VA_MAX_KOMMENTAR).trim();
     if (!text) throw new VaFehler("Der Kommentar ist leer", 400);
-    const ergebnis = await vaMutiere(authHeader, (doc) => {
+    const { pushAn, ...antwort } = await vaMutiere(authHeader, (doc) => {
       const a = vaAufgabeHolen(doc, body && body.id);
       // An einer vertraulichen Aufgabe kommentiert nur, wer sie auch lesen darf —
       // sonst schriebe jemand in einen Strang, den er nicht sieht.
@@ -4859,9 +4894,15 @@ async function handleVaKommentar(request, body, env, authHeader, corsHeaders) {
       if (!Array.isArray(a.kommentare)) a.kommentare = [];
       if (a.kommentare.length >= VA_MAX_KOMMENTARE) throw new VaFehler("Zu viele Rückfragen an diesem Vorgang", 400);
       a.kommentare.push({ id: crypto.randomUUID(), von: ctx.session.username, text, am: new Date().toISOString() });
-      return {};
+      return { pushAn: vaPushBeteiligte(a, ctx) };
     });
-    return json(ergebnis, 200, corsHeaders);
+    // Der Versand steht AUSSERHALB von vaMutiere: dessen Callback läuft bei einem
+    // If-Match-Konflikt bis zu dreimal, die Nachricht ginge sonst mehrfach raus.
+    // Der Text nennt weder Namen noch Titel noch den Wortlaut — er steht auf einem
+    // Sperrbildschirm, den auch jemand anders sehen kann.
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
+      "Neue Rückfrage oder Antwort zu einer Aufgabe");
+    return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
 
@@ -8093,7 +8134,7 @@ const PUSH_ANLAESSE = [
   { id: "kalender", titel: "Vereinskalender", ziel: "/vereinskalender/",
     label: "Vereinskalender — neue und geänderte Termine" },
   { id: "aufgaben", titel: "Vereinsaufgaben", ziel: "/vereinsaufgaben/",
-    label: "Vereinsaufgaben — neue Aufgaben für mich" },
+    label: "Vereinsaufgaben — neue Aufgaben, Rückfragen und Statusmeldungen" },
   { id: "unterschriften", titel: "Unterschriften", ziel: "/ToolsUebersicht/",
     label: "Unterschriften — Dokumente, die auf mich warten" },
   { id: "testspiele", titel: "Testspielplaner", ziel: "/testspielplaner/",
