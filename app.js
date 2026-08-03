@@ -149,7 +149,12 @@ async function checkSession() {
 async function login(username, password) {
   const data = await callWorker("login", { username, password });
   if (data.needsPasswordSetup) {
-    pendingFirstLoginUsername = username;
+    // Der Worker loest die Eingabe auf (Nutzername, Schreibvariante oder E-Mail-Adresse)
+    // und liefert seit 2026-08-03 den echten Nutzernamen mit -- im "Konto einrichten"-
+    // Panel steht sonst die eingetippte Adresse, obwohl der Satz dort den kuenftigen
+    // Anmeldenamen nennt. Faellt das Feld weg (alter Worker), bleibt es bei der Eingabe;
+    // set-password loest ohnehin serverseitig noch einmal auf.
+    pendingFirstLoginUsername = data.username || username;
     return { needsPasswordSetup: true };
   }
   currentToken = data.token;

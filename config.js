@@ -332,6 +332,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Anmelden",
+        items: [
+          "Zum Anmelden genügt jetzt auch die eigene E-Mail-Adresse. Der bisherige Nutzername funktioniert unverändert weiter — es kommt nur ein Weg dazu, es fällt keiner weg.",
+          "Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Michel Brunner“, „michel.brunner“, „michel_brunner“, „michel-brunner“ oder „MichelBrunner“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
+          "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
+          "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {

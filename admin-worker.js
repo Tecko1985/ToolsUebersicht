@@ -59,8 +59,11 @@
 // API (POST-Body: { action, ... } außer beim einfachen GET):
 //   GET                                                        -> { tools, bootstrapAvailable } ohne Auth
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
-//   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true } | 401
+//   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true, username } | 401
+//     `username` ist seit 2026-08-03 der Nutzername ODER eine Schreibvariante davon ODER die
+//     E-Mail-Adresse der Person (resolveLoginUser). Der Token lautet immer auf den echten Nutzernamen.
 //   POST { action: "set-password", username, password }        -> nur falls mustSetPassword=true beim Nutzer
+//     Nimmt dieselben Eingabevarianten entgegen wie "login" -- der Erstlogin-Flow reicht Schritt 1 durch.
 //   POST { action: "km-reg-oeffnen", teamId } + Bearer (Bearbeiten-Recht kadermanager) -> { token, teamName, expiresAt, ttlSeconds, freieSpieler }
 //     Öffnet ein 15-Minuten-Registrierungsfenster für eine Mannschaft. Zustandslos: das Fenster IST das
 //     signierte Token (typ "km-reg"), nichts wird gespeichert -- dafür nicht vorzeitig widerrufbar.
@@ -1082,10 +1085,12 @@ async function handleBootstrapAdmin(body, env, authHeader, corsHeaders) {
 }
 
 async function handleLogin(body, env, authHeader, corsHeaders) {
-  const username = normalizeUsername(body.username);
   const password = String(body.password || "");
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = getOwn(usersDoc.users, username);
+  // Nutzername, jede übliche Schreibvariante davon ODER die E-Mail-Adresse --
+  // siehe resolveLoginUser. Der Token wird unverändert auf user.username
+  // ausgestellt, die Eingabe ist nur der Suchschlüssel.
+  const user = await resolveLoginUser(body.username, usersDoc, authHeader);
 
   if (!user) return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
   // Archivierte Konten (Personalakte) werden VOR der Passwortprüfung abgefangen:
@@ -1098,7 +1103,11 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
     return json({ error: "Dieses Konto wurde archiviert.", archived: true }, 403, corsHeaders);
   }
   if (user.mustSetPassword || !user.passwordHash) {
-    return json({ needsPasswordSetup: true }, 200, corsHeaders);
+    // `username` additiv seit 2026-08-03: wer sich mit seiner E-Mail anmeldet, soll
+    // im "Konto einrichten"-Panel den echten Nutzernamen sehen -- der Satz dort nennt
+    // ihn als künftigen Anmeldeweg. Kein neues Wissen für den Anfragenden: dieses
+    // Konto ist über den bewusst ungeschützten set-password-Weg ohnehin erreichbar.
+    return json({ needsPasswordSetup: true, username: user.username }, 200, corsHeaders);
   }
 
   const ok = await verifyPassword(password, user.salt, user.iterations, user.passwordHash);
@@ -1124,13 +1133,14 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
 }
 
 async function handleSetPassword(body, env, authHeader, corsHeaders) {
-  const username = normalizeUsername(body.username);
   const password = String(body.password || "");
   const pwError = validatePasswordStrength(password);
   if (pwError) return json({ error: pwError }, 400, corsHeaders);
 
   const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-  const user = getOwn(usersDoc.users, username);
+  // Dieselbe Auflösung wie in handleLogin -- der Erstlogin-Flow reicht die Eingabe
+  // aus Schritt 1 durch, und das kann eine E-Mail-Adresse sein.
+  const user = await resolveLoginUser(body.username, usersDoc, authHeader);
   if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
   // Archivierte Konten wie in handleLogin abfangen. Diese Aktion ist bewusst OHNE
   // Login nutzbar (Erstvergabe des eigenen Passworts) und nur durch
@@ -7675,6 +7685,106 @@ function normalizeUsername(raw) {
   // der Account liegt aber unter "uwe.foerster" -> Konto nie gefunden, 401 statt
   // needsPasswordSetup (Login zeigt fälschlich das Passwort-Feld statt "Konto einrichten").
   return transliterate(String(raw || "")).trim().toLowerCase().replace(/\s+/g, ".");
+}
+
+// Anmeldung mit E-Mail-Adresse und Schreibvarianten (seit 2026-08-03, Michel-Vorgabe:
+// "Michel Brunner", "michel.brunner", "michel_brunner", "MichelBrunner" und
+// "Michel_Brunner@gmx.de" sollen alle dasselbe Konto treffen).
+//
+// ⚠️ Die REIHENFOLGE ist bindend: der exakte Treffer (normalizeUsername wie bisher)
+// steht immer vorn. Nutzernamen dürfen laut USERNAME_RE selbst "_" und "-" enthalten
+// -- griffe eine Variante zuerst, wäre ein Konto namens "max_mueller" über seinen
+// EIGENEN Namen nicht mehr erreichbar, weil die Variante "max.mueller" auf ein
+// anderes Konto zeigt. Aus demselben Grund liefert jede Stufe nur bei einem
+// EINDEUTIGEN Treffer ein Konto: bei zwei Kandidaten wird nicht geraten, sondern
+// abgelehnt -- sonst könnte eine mehrdeutige Adresse jemanden ins fremde Konto führen.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$/;
+
+// Stufe 1+2: Kandidaten-Nutzernamen allein aus der Eingabe, OHNE Datei-Zugriff.
+function loginNameKandidaten(raw) {
+  const eingabe = String(raw || "").trim();
+  const kandidaten = [];
+  const add = (v) => {
+    const kandidat = String(v || "").replace(/\.+/g, ".").replace(/^\.|\.$/g, "");
+    if (!kandidat || kandidat === "__proto__") return;
+    if (!USERNAME_RE.test(kandidat)) return;
+    if (!kandidaten.includes(kandidat)) kandidaten.push(kandidat);
+  };
+
+  add(normalizeUsername(eingabe)); // heutiges Verhalten, immer zuerst
+
+  // Bei einer E-Mail zählt nur der Teil vor dem @; "+zusatz" (Gmail-Stil) fällt weg.
+  const at = eingabe.indexOf("@");
+  const lokalteil = at > 0 ? eingabe.slice(0, at) : eingabe;
+  for (const basis of [lokalteil, lokalteil.split("+")[0]]) {
+    const norm = normalizeUsername(basis);
+    add(norm);
+    add(norm.replace(/[_\-]+/g, ".")); // alle üblichen Trennzeichen auf den Punkt
+  }
+  return kandidaten;
+}
+
+// Löst die Login-Eingabe auf einen Nutzer-Datensatz auf. Ersetzt das frühere
+// getOwn(usersDoc.users, normalizeUsername(body.username)) in handleLogin und
+// handleSetPassword -- beide Wege müssen dieselbe Eingabe akzeptieren, sonst
+// bekäme jemand mit seiner E-Mail zwar "Konto einrichten" angeboten, scheiterte
+// dann aber beim Setzen des Passworts an "Unbekannter Nutzer".
+async function resolveLoginUser(raw, usersDoc, authHeader) {
+  const users = (usersDoc && usersDoc.users) || {};
+  const eingabe = String(raw || "").trim().slice(0, 200);
+
+  // 1. Direkte Kandidaten -- kein zusätzlicher Nextcloud-Read.
+  for (const kandidat of loginNameKandidaten(eingabe)) {
+    const user = getOwn(users, kandidat);
+    if (user) return user;
+  }
+
+  const at = eingabe.indexOf("@");
+  const lokalteil = at > 0 ? eingabe.slice(0, at) : eingabe;
+
+  // 2. Name ohne jedes Trennzeichen ("MichelBrunner@..."), gegen die vorhandenen
+  //    Konten geprüft. Ebenfalls ohne Datei-Zugriff, deshalb VOR dem Rückfall unten.
+  //    slugifyNamePart wirft alles außer a-z0-9 weg, "michel.brunner" wird also
+  //    genauso zu "michelbrunner" wie der Adress-Lokalteil.
+  const kompakt = slugifyNamePart(lokalteil.split("+")[0]);
+  if (kompakt.length >= 3) {
+    const treffer = Object.values(users).filter((u) =>
+      slugifyNamePart(u.username) === kompakt ||
+      slugifyNamePart(u.vorname) + slugifyNamePart(u.nachname) === kompakt ||
+      slugifyNamePart(u.nachname) + slugifyNamePart(u.vorname) === kompakt
+    );
+    if (treffer.length === 1) return treffer[0];
+  }
+
+  // 3. Rückfall für Adressen, die nichts mit dem Namen zu tun haben ("mb1985@web.de"):
+  //    die echte E-Mail-Adresse steht in den Trainerdaten -- nutzer.json führt keine.
+  //    ⚠️ Das ist der EINZIGE unangemeldete Weg, der PROVISION_ONLY_PATHS.trainerdaten
+  //    liest (die Datei enthält IBAN-Daten). Michel-Entscheidung 2026-08-03. Bedingungen,
+  //    die das eng halten und nicht aufgeweicht werden sollten: nur bei einer Eingabe,
+  //    die wirklich wie eine Adresse aussieht, nur wenn Stufe 1+2 nichts gefunden haben,
+  //    und aus der Datei verlässt NICHTS den Worker -- ermittelt wird ausschließlich der
+  //    Nutzername. Wiederholte Versuche laufen in den jsonCache (5s).
+  if (!EMAIL_RE.test(eingabe)) return null;
+  let trainerdatenDoc;
+  try {
+    trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
+  } catch (_) {
+    return null; // ein Leseausfall darf den Login nicht kippen, nur diese Stufe
+  }
+
+  const gefunden = [];
+  for (const t of (trainerdatenDoc.trainer || [])) {
+    if (!sameText(t.email, eingabe)) continue;
+    // Gleiche Rangfolge wie findTrainerdatenRecord, nur andersherum gelesen:
+    // vom Trainerdaten-Satz auf das Konto statt umgekehrt.
+    const perUsername = getOwn(users, String(t.username || "").toLowerCase()) ||
+                        getOwn(users, normalizeUsername(t.linkedUsername));
+    if (perUsername) { gefunden.push(perUsername); continue; }
+    const perName = Object.values(users).filter((u) => sameNamePair(t.vorname, t.nachname, u.vorname, u.nachname));
+    if (perName.length === 1) gefunden.push(perName[0]);
+  }
+  const eindeutig = [...new Set(gefunden)];
+  return eindeutig.length === 1 ? eindeutig[0] : null;
 }
 
 // Dynamische Objekt-Lookups mit von außen bestimmten Keys: nur echte eigene

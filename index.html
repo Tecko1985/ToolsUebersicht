@@ -213,11 +213,12 @@
     <div class="pin-gate" id="admin-login-gate">
       <div class="card">
         <h2>Anmelden</h2>
-        <p class="muted" style="margin-bottom:14px;">Mit Nutzername anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
+        <p class="muted" style="margin-bottom:14px;">Mit Nutzername oder E-Mail-Adresse anmelden, um zusätzliche Tools zu sehen bzw. (als Admin) die Sichtbarkeit und Nutzer zu verwalten.</p>
         <form id="login-form">
           <div class="form-field" style="margin-bottom:14px;">
-            <label>Nutzername</label>
+            <label>Nutzername oder E-Mail-Adresse</label>
             <input type="text" id="login-username" autocomplete="username" required />
+            <small class="muted" style="display:block; margin-top:6px;">Egal ob „Michel Brunner“, „michel.brunner“ oder die eigene E-Mail-Adresse.</small>
           </div>
           <p class="muted" id="login-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
           <button type="submit" class="btn" id="btn-login-submit">Weiter</button>
@@ -246,7 +247,7 @@
     <div class="pin-gate" id="first-login-panel" style="display:none;">
       <div class="card">
         <h2>Konto einrichten</h2>
-        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit Nutzername und diesem Passwort anmelden.</p>
+        <p class="muted" style="margin-bottom:14px;">Für <strong id="first-login-username"></strong> gibt es noch keinen aktiven Zugang. Lege jetzt ein Passwort fest, um das Konto damit zu verknüpfen — danach kannst du dich immer mit diesem Nutzernamen (oder deiner E-Mail-Adresse) und dem Passwort anmelden.</p>
         <form id="first-login-form">
           <div class="form-field" style="margin-bottom:14px;">
             <label>Neues Passwort</label>
@@ -903,7 +904,7 @@
 </footer>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.50"></script>
-<script src="app.js?v=1.43"></script>
+<script src="config.js?v=1.51"></script>
+<script src="app.js?v=1.44"></script>
 </body>
 </html>
