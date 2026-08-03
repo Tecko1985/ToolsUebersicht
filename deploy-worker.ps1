@@ -50,6 +50,21 @@ $REGISTRY = [ordered]@{
       @{ name = '403 Passwort-Scope';    methode = 'POST'; body = '{"action":"verify-action-password","scope":"checkliste-sperre","password":"absichtlich-falsch"}'; erwartet = 403 }
     )
   }
+  'push' = @{
+    datei = 'E:\ToolsUebersicht\push-worker.js'
+    url   = 'https://push.michel-brunner.workers.dev'
+    hinweis = 'Web-Push-Versand. Zustandslos, KEIN Nextcloud-Zugang - landingpage uebergibt die Abos im Aufruf.'
+    # 403 statt 500 beweist nebenbei, dass PUSH_SHARED_SECRET gesetzt ist: der
+    # Worker antwortet 500, solange das Secret fehlt, und erst danach 403.
+    # ACHTUNG: Beide Proben brauchen eine erreichbare workers.dev-Adresse. Wird
+    # sie fuer diesen Worker abgeschaltet (empfohlen, siehe Dateikopf von
+    # push-worker.js), sind sie hier zu entfernen. Der tragende Riegel ist
+    # ohnehin das Shared Secret, nicht die Unerreichbarkeit der Adresse.
+    proben = @(
+      @{ name = '405 bei GET';                        methode = 'GET';  body = $null; erwartet = 405 }
+      @{ name = '403 falsches Secret (Secret gesetzt)'; methode = 'POST'; body = '{"secret":"absichtlich-falsch"}'; erwartet = 403 }
+    )
+  }
   'trainerdaten1' = @{
     datei = 'E:\Trainerdaten\submit-worker.js'
     url   = 'https://trainerdaten1.michel-brunner.workers.dev'

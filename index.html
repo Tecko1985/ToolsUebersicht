@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.32" />
+<link rel="stylesheet" href="style.css?v=1.33" />
 </head>
 <body>
 
@@ -178,6 +178,19 @@
       Datenübertragbarkeit und Widerspruch lassen sich unter dieser Anschrift
       geltend machen. Beschwerden nimmt der Thüringer Landesbeauftragte für den
       Datenschutz und die Informationsfreiheit entgegen.</p>
+      <!-- Push-Benachrichtigungen (seit 2026-08-03): neuer Empfaenger, deshalb
+           auskunftspflichtig. Steht bewusst NUR hier -- eingeschaltet wird der
+           Dienst ausschliesslich in dieser App, nicht in den 34 anderen. -->
+      <p><strong>Benachrichtigungen auf dem Gerät.</strong> Wer im Tab „Mein Konto“
+      Benachrichtigungen einschaltet, meldet damit sein Gerät beim Zustelldienst
+      seines Browser-Herstellers an — auf dem iPhone bei Apple, auf Android und in
+      Chrome bei Google. Dabei entsteht eine Geräteadresse, die der Verein
+      speichert, um Nachrichten dorthin schicken zu können; Apple beziehungsweise
+      Google erfahren, dass an dieses Gerät etwas zugestellt wird. <strong>Den Inhalt
+      der Nachricht können sie nicht lesen</strong> — er wird auf dem Vereinsserver
+      verschlüsselt und erst auf dem Gerät wieder entschlüsselt. Die Nachrichten
+      selbst nennen weder Namen noch Termin- oder Dokumenttitel. Das Abmelden ist
+      jederzeit an derselben Stelle möglich und löscht die Geräteadresse.</p>
       <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
       &middot;
       <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
@@ -285,6 +298,42 @@
         </form>
         <p class="muted" id="passwort-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
       </div>
+    </div>
+
+    <!-- Push-Benachrichtigungen (seit 2026-08-03). Bewusst hier und nicht als
+         Kopf-Knopf: die Kopfzeile ist am Handy am Anschlag, und vor allem ist
+         das eine dauerhafte Einstellung, die man auch wiederfinden muss -- zum
+         Abstellen und zum Einschalten auf einem zweiten Geraet. -->
+    <div class="card" id="push-panel" style="display:none;">
+      <h2>Benachrichtigungen aufs Handy</h2>
+      <p class="muted" style="margin-bottom:14px;">
+        Statt oder zusätzlich zur E-Mail meldet sich die App direkt auf dem Gerät, wenn ein
+        Termin geteilt wird, eine Aufgabe für dich hereinkommt oder ein Dokument auf deine
+        Unterschrift wartet. Die Nachricht nennt nie Namen oder Titel — nur worum es geht.
+      </p>
+
+      <!-- Zustand 1+2: Plattform kann nichts, oder auf dem iPhone fehlt die abgelegte App -->
+      <p class="muted" id="push-hinweis" style="display:none;"></p>
+
+      <!-- Zustand 3: moeglich, noch nicht eingeschaltet -->
+      <button type="button" class="btn" id="btn-push-ein" style="display:none;">Einschalten</button>
+
+      <!-- Zustand 4: angemeldet -->
+      <div id="push-eingerichtet" style="display:none;">
+        <h3 class="push-titel">Wobei soll sich die App melden?</h3>
+        <!-- ⚠️ KEIN .form-field um die Kaestchen: dort greift input{width:100%}
+             und macht aus der Checkbox einen Balken. -->
+        <div class="push-schalter">
+          <label><input type="checkbox" id="push-an-kalender" /> <span>Vereinskalender — geteilte Termine</span></label>
+          <label><input type="checkbox" id="push-an-aufgaben" /> <span>Vereinsaufgaben — neue Aufgaben für mich</span></label>
+          <label><input type="checkbox" id="push-an-unterschriften" /> <span>Unterschriften — Dokumente, die auf mich warten</span></label>
+        </div>
+
+        <h3 class="push-titel">Angemeldete Geräte</h3>
+        <ul class="push-geraete" id="push-geraete"></ul>
+      </div>
+
+      <p class="muted" id="push-meldung" style="display:none; margin-top:10px;"></p>
     </div>
 
   </section>
@@ -904,7 +953,7 @@
 </footer>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.51"></script>
-<script src="app.js?v=1.44"></script>
+<script src="config.js?v=1.52"></script>
+<script src="app.js?v=1.45"></script>
 </body>
 </html>

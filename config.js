@@ -332,6 +332,23 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.2",
+    groups: [
+      {
+        title: "Benachrichtigungen aufs Handy",
+        items: [
+          "Die App kann sich jetzt direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Tab „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
+          "Drei Anlässe, jeder einzeln an- und abschaltbar: ein im Vereinskalender mit dir geteilter Termin, eine neue Aufgabe in den Vereinsaufgaben, und ein Dokument, das auf deine Unterschrift wartet.",
+          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
+          "Die E-Mails bleiben unverändert bestehen. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
+          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
+          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
+          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.1",
     groups: [
       {

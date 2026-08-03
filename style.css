@@ -298,6 +298,57 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 .konto-passwort { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .konto-passwort form { max-width: 340px; }
 
+/* Push-Benachrichtigungen (seit 2026-08-03) */
+.push-titel { margin-top: 18px; }
+.push-titel:first-child { margin-top: 0; }
+
+/* ⚠️ Die Kaestchen stehen bewusst NICHT in .form-field: dort greift
+   input { width: 100% } und macht aus jeder Checkbox einen Balken quer durch
+   die Karte. Breite und Hoehe deshalb hier ausdruecklich festhalten. */
+.push-schalter { display: flex; flex-direction: column; gap: 10px; }
+.push-schalter label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.push-schalter input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;   /* sonst quetscht flex das Kaestchen bei langem Text zusammen */
+  margin: 1px 0 0 0;
+  cursor: pointer;
+}
+
+.push-geraete { list-style: none; margin: 0; padding: 0; }
+.push-geraete li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+.push-geraete li:last-child { border-bottom: none; }
+.push-geraete .muted { font-size: 13px; }
+.push-dieses {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
+  background: var(--blue-light);
+  border-radius: 10px;
+  padding: 1px 8px;
+  margin-left: 4px;
+}
+/* Am Handy untereinander: Geraetename und Knopf nebeneinander lassen den Namen
+   sonst auf wenige Zeichen zusammenschrumpfen. */
+@media (max-width: 560px) {
+  .push-geraete li { flex-direction: column; align-items: flex-start; gap: 7px; }
+}
+
 .answer-card { border-left: 4px solid var(--blue); }
 .answer-question {
   font-weight: 700;

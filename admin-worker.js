@@ -763,7 +763,10 @@ const LIZENZ_OPTIONEN = ["", "ohne Lizenz", "Basis", "C", "B", "B Elite", "A"];
 const TRAINER_GROUP_NAME = "Trainer";
 
 export default {
-  async fetch(request, env) {
+  // ctx (seit 2026-08-03): nur fuer ctx.waitUntil beim Push-Versand. Ohne den
+  // dritten Parameter wartet der Nutzer auf die Zustellung an bis zu 30
+  // Empfaenger, obwohl seine eigentliche Handlung laengst gespeichert ist.
+  async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
     const allowOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
@@ -894,7 +897,17 @@ export default {
       case "raumnutzung-mail-antrag":
         return handleRaumnutzungMailAntrag(request, body, env, authHeader, corsHeaders);
       case "notify-user":
-        return handleNotifyUser(request, body, env, authHeader, corsHeaders);
+        return handleNotifyUser(request, body, env, authHeader, corsHeaders, ctx);
+      // Push-Nachrichten (seit 2026-08-03). Schmale eigene Aktionen statt Feldern
+      // in "me" -- dieselbe Linie wie beim Materialcontainer-Code.
+      case "push-status":
+        return handlePushStatus(request, env, authHeader, corsHeaders);
+      case "push-abo-anlegen":
+        return handlePushAboAnlegen(request, body, env, authHeader, corsHeaders);
+      case "push-abo-loeschen":
+        return handlePushAboLoeschen(request, body, env, authHeader, corsHeaders);
+      case "push-anlaesse-setzen":
+        return handlePushAnlaesseSetzen(request, body, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
@@ -934,7 +947,7 @@ export default {
       case "dokumente-load":
         return handleDokumenteLoad(request, env, authHeader, corsHeaders);
       case "dokument-anlegen":
-        return handleDokumentAnlegen(request, body, env, authHeader, corsHeaders);
+        return handleDokumentAnlegen(request, body, env, authHeader, corsHeaders, ctx);
       case "dokument-datei-put":
         return handleDokumentDateiPut(request, body, env, authHeader, corsHeaders);
       case "dokument-datei-get":
@@ -956,7 +969,7 @@ export default {
       case "vereinsaufgaben-ressort-loeschen":
         return handleVaRessortLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-anlegen":
-        return handleVaAnlegen(request, body, env, authHeader, corsHeaders);
+        return handleVaAnlegen(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-aendern":
         return handleVaAendern(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-status":
@@ -2583,7 +2596,10 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
 // nie direkt an eingeloggte Nutzer durchgereicht werden, deshalb wird aus dem
 // vollen buildTrainerdatenSummary()-Ergebnis ausschließlich das email-Feld
 // verwendet und auch in der Antwort nie zurückgegeben.
-async function handleNotifyUser(request, body, env, authHeader, corsHeaders) {
+// execCtx (nicht "ctx"): in den Vereinsaufgaben-Handlern ist "ctx" bereits der
+// VA-Sitzungskontext aus vaSession(). Ein gleichnamiger Parameter waere dort ein
+// SyntaxError, deshalb flottenweit in dieser Datei execCtx.
+async function handleNotifyUser(request, body, env, authHeader, corsHeaders, execCtx) {
   const session = await getVerifiedSession(request, env, authHeader);
   if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
 
@@ -2596,6 +2612,18 @@ async function handleNotifyUser(request, body, env, authHeader, corsHeaders) {
 
   const targetUser = getOwn(session.usersDoc.users, username);
   if (!targetUser) return json({ ok: true, sent: false }, 200, corsHeaders);
+
+  // ⚠️ Push VOR der E-Mail-Auflösung: wer keine Adresse in den Trainerdaten
+  // stehen hat, steigt unten mit sent:false aus -- bekäme also auch keine
+  // Push-Nachricht, obwohl sein Handy angemeldet ist.
+  //
+  // ⚠️ Der Betreff wird bewusst NICHT weitergereicht: bei einer Änderung
+  // enthält er den Termintitel ("Privater Termin geändert: <Titel>"), und der
+  // hat auf einem Sperrbildschirm nichts zu suchen. Ein Aufrufer darf über
+  // pushText einen eigenen neutralen Satz mitgeben; ohne das greift der
+  // Standard, weshalb der Vereinskalender unverändert bleiben kann.
+  pushSenden(env, authHeader, execCtx, [username], "kalender",
+    String(body.pushText || "Ein geteilter Termin wurde angelegt oder geändert").slice(0, 150));
 
   const trainerdatenDoc = await readJson(PROVISION_ONLY_PATHS.trainerdaten, authHeader, { version: 1, trainer: [] });
   const td = findTrainerdatenRecord(trainerdatenDoc, targetUser);
@@ -3682,7 +3710,7 @@ async function dokumentBenachrichtige(empfaenger, titel, faellig, session, env, 
   return { benachrichtigt, ohneAdresse, mailAus: false };
 }
 
-async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders) {
+async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders, execCtx) {
   const { session, fehler } = await aufgabenSession(request, env, authHeader, corsHeaders);
   if (fehler) return fehler;
 
@@ -3802,6 +3830,17 @@ async function handleDokumentAnlegen(request, body, env, authHeader, corsHeaders
       angelegt.map((a) => a.empfaenger), titel, faellig, session, env, authHeader
     );
   }
+
+  // ⚠️ Push geht IMMER, unabhängig vom Mail-Häkchen (Michel-Entscheidung
+  // 2026-08-03). Das Häkchen gibt es wegen der Mail-Eigenheiten -- externe
+  // Zustellung, Spam-Gefahr, Versandprotokoll bei Brevo. Push hat davon nichts:
+  // interner Kanal, Ende-zu-Ende verschlüsselt, vom Empfänger selbst
+  // eingeschaltet und selbst abstellbar. Die Entscheidung liegt damit beim
+  // Empfänger statt beim Absender -- bei einem Vertrag, der auf ihn wartet, die
+  // richtige Seite. Ohne Titel des Dokuments, wie schon beim Mail-Betreff.
+  pushSenden(env, authHeader, execCtx, angelegt.map((a) => a.empfaenger), "unterschriften",
+    (angelegt.length === 1) ? "Ein Dokument wartet auf deine Unterschrift"
+                            : "Dokumente warten auf deine Unterschrift");
 
   return json({ ok: true, angelegt, aufgabenAngelegt, ...versand }, 200, corsHeaders);
 }
@@ -4496,7 +4535,7 @@ async function vaBenachrichtige(empfaenger, info, ctx, env, authHeader) {
   return { benachrichtigt, ohneAdresse, mailAus: false };
 }
 
-async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
+async function handleVaAnlegen(request, body, env, authHeader, corsHeaders, execCtx) {
   const ctx = await vaSession(request, env, authHeader, corsHeaders);
   if (ctx.fehler) return ctx.fehler;
   try {
@@ -4601,6 +4640,9 @@ async function handleVaAnlegen(request, body, env, authHeader, corsHeaders) {
     } catch (e) {
       console.error("vereinsaufgabe-anlegen: Benachrichtigung fehlgeschlagen", e && e.message);
     }
+    // Push zusaetzlich zur Mail, nicht statt ihr -- und ohne Titel der Aufgabe.
+    pushSenden(env, authHeader, execCtx, ergebnis.empfaenger || [], "aufgaben",
+      (ergebnis.angelegt === 1) ? "Eine neue Aufgabe für dich" : "Neue Aufgaben für dich");
     // ohneRecht rein additiv: ein älterer Client, der das Feld nicht kennt,
     // ignoriert es und verhält sich wie bisher.
     return json({ ok: true, angelegt: ergebnis.angelegt, ohneRecht: ergebnis.uebersprungen || [], ...versand }, 200, corsHeaders);
@@ -7826,4 +7868,278 @@ function json(obj, status, corsHeaders) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" }
   });
+}
+
+// =============================================================================
+// Push-Nachrichten (seit 2026-08-03)
+//
+// Bewusst als geschlossener Block am Dateiende: die Verschluesselung selbst
+// liegt im eigenen Worker "push", hier steht nur die Verwaltung der Abos und
+// das Erteilen des Versandauftrags. Sollte diese Datei je zu schwer werden,
+// laesst sich dieser Block am Stueck herausloesen.
+//
+// Entwurf: docs/superpowers/specs/2026-08-03-push-nachrichten-design.md
+// =============================================================================
+
+// Eigene Datei aus demselben Grund wie die Neuigkeiten-Reaktionen und die
+// Aufgaben -- vor allem aber: nutzer.json wird bei JEDEM authentifizierten
+// Request gelesen (getVerifiedSession). Abos dort wuerden jeden einzelnen
+// Aufruf der ganzen Flotte um Daten verteuern, die nur beim Versand zaehlen.
+const PUSH_ABOS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/push-abos.json";
+
+const PUSH_ANLAESSE = ["kalender", "aufgaben", "unterschriften"];
+const PUSH_MAX_GERAETE_PRO_NUTZER = 10;
+// Haeppchengroesse fuer den Fan-out. Jeder Aufruf ueber das Service Binding
+// bekommt sein EIGENES CPU-Budget -- genau deswegen liegt die Verschluesselung
+// in einem zweiten Worker. 30 Empfaenger mit je zwei Geraeten waeren sonst 60
+// Verschluesselungen in einem Budget. Nach einer echten Messung anpassbar.
+const PUSH_HAEPPCHEN = 10;
+
+// Die Texte stehen bewusst hier und nicht beim Aufrufer: keine Namen, keine
+// Dokumenttitel, keine Anzahl. Eine Push-Nachricht steht auf dem
+// Sperrbildschirm, den auch jemand anders sehen kann -- dieselbe Linie wie beim
+// Mail-Betreff der Unterschriften-Anforderung.
+const PUSH_ZIELE = {
+  kalender: "/vereinskalender/",
+  aufgaben: "/vereinsaufgaben/",
+  unterschriften: "/ToolsUebersicht/"
+};
+
+function leerePushDoc() { return { version: 1, abos: {}, anlaesse: {} }; }
+
+// Fehlender Eintrag = alle Anlaesse an. Wer sich anmeldet, bevor es die
+// Schalter gibt, bekommt alles; die Aenderung ist in beide Richtungen
+// vertraeglich.
+function pushAnlaesseFuer(doc, username) {
+  const roh = (doc && doc.anlaesse && getOwn(doc.anlaesse, username)) || {};
+  const out = {};
+  for (const a of PUSH_ANLAESSE) out[a] = roh[a] !== false;
+  return out;
+}
+
+function pushAbosFuer(doc, username) {
+  const liste = (doc && doc.abos && getOwn(doc.abos, username)) || [];
+  return Array.isArray(liste) ? liste : [];
+}
+
+// Read-modify-write mit Konflikt-Wiederholung. ⚠️ Kein blindes Ueberschreiben:
+// in dieselbe Datei schreibt auch das Aufraeumen toter Abos nach einem Versand.
+// Ohne ifMatch koennte ein Aufraeumen die Anmeldung von vor zwei Sekunden
+// kosten.
+async function pushAbosMutieren(authHeader, aendern) {
+  let letzterFehler = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const gelesen = await readJsonWithRev(PUSH_ABOS_URL, authHeader, leerePushDoc());
+    const doc = (gelesen.data && typeof gelesen.data === "object") ? gelesen.data : leerePushDoc();
+    if (!doc.abos || typeof doc.abos !== "object") doc.abos = {};
+    if (!doc.anlaesse || typeof doc.anlaesse !== "object") doc.anlaesse = {};
+
+    const weiter = aendern(doc);
+    if (weiter === false) return doc; // nichts zu aendern, kein Schreibzugriff
+
+    try {
+      await writeJson(PUSH_ABOS_URL, authHeader, doc, gelesen.rev);
+      return doc;
+    } catch (e) {
+      if (e instanceof ConflictError) { letzterFehler = e; continue; }
+      throw e;
+    }
+  }
+  throw letzterFehler || new Error("Push-Abos konnten nicht geschrieben werden");
+}
+
+// ---------- Aktionen fuer den Konto-Tab ----------
+
+async function handlePushStatus(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  return json({
+    ok: true,
+    // Der oeffentliche VAPID-Schluessel kommt vom Server, nicht aus app.js:
+    // so braucht ein Schluesselwechsel keinen Pages-Deploy.
+    publicKey: String(env.VAPID_PUBLIC_KEY || ""),
+    geraete: pushAbosFuer(doc, session.username).map((a) => ({
+      id: a.id, geraet: a.geraet || "Unbekanntes Geraet", angelegtAm: a.angelegtAm || ""
+    })),
+    anlaesse: pushAnlaesseFuer(doc, session.username)
+  }, 200, corsHeaders);
+}
+
+async function handlePushAboAnlegen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const endpoint = String((body && body.endpoint) || "").trim();
+  const p256dh = String((body && body.p256dh) || "").trim();
+  const auth = String((body && body.auth) || "").trim();
+  const geraet = String((body && body.geraet) || "").trim().slice(0, 80);
+
+  if (!/^https:\/\//i.test(endpoint) || !p256dh || !auth) {
+    return json({ error: "Unvollstaendiges Abo" }, 400, corsHeaders);
+  }
+  if (endpoint.length > 800) return json({ error: "Endpunkt zu lang" }, 400, corsHeaders);
+
+  // Der Nutzer kommt IMMER aus dem Token, nie aus dem Body -- sonst meldet ein
+  // Eingeloggter fremde Geraete an. Gleiche Regel wie bei change-password.
+  const username = session.username;
+
+  let neueId = "";
+  await pushAbosMutieren(authHeader, (doc) => {
+    const liste = pushAbosFuer(doc, username).slice();
+    // Deduplizierung ueber den Endpunkt: zweimal Einschalten auf demselben
+    // Geraet darf keinen Doppeleintrag erzeugen.
+    const schonDa = liste.findIndex((a) => a.endpoint === endpoint);
+    const eintrag = {
+      id: schonDa >= 0 ? liste[schonDa].id : crypto.randomUUID(),
+      endpoint, p256dh, auth,
+      geraet: geraet || "Unbekanntes Geraet",
+      angelegtAm: schonDa >= 0 ? (liste[schonDa].angelegtAm || new Date().toISOString()) : new Date().toISOString()
+    };
+    if (schonDa >= 0) liste[schonDa] = eintrag; else liste.push(eintrag);
+    // Deckel: ohne ihn waechst eine gemeinsame Datei unbegrenzt. Aeltestes raus.
+    while (liste.length > PUSH_MAX_GERAETE_PRO_NUTZER) liste.shift();
+    doc.abos[username] = liste;
+    neueId = eintrag.id;
+  });
+
+  // Die Id zurueck: der Client merkt sie sich lokal und kann seinen eigenen
+  // Eintrag in der Geraeteliste als "dieses Geraet" kennzeichnen. Ohne das
+  // waere die Liste eine Reihe ununterscheidbarer Namen.
+  return json({ ok: true, id: neueId }, 200, corsHeaders);
+}
+
+async function handlePushAboLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const id = String((body && body.id) || "").trim();
+  if (!id) return json({ error: "Keine Geraete-Id" }, 400, corsHeaders);
+  const username = session.username;
+
+  await pushAbosMutieren(authHeader, (doc) => {
+    const liste = pushAbosFuer(doc, username);
+    const rest = liste.filter((a) => a.id !== id);
+    if (rest.length === liste.length) return false; // war schon weg
+    doc.abos[username] = rest;
+  });
+
+  return json({ ok: true }, 200, corsHeaders);
+}
+
+async function handlePushAnlaesseSetzen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const gewuenscht = (body && body.anlaesse) || {};
+  const username = session.username;
+
+  await pushAbosMutieren(authHeader, (doc) => {
+    const neu = {};
+    for (const a of PUSH_ANLAESSE) neu[a] = gewuenscht[a] !== false;
+    doc.anlaesse[username] = neu;
+  });
+
+  const doc2 = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  return json({ ok: true, anlaesse: pushAnlaesseFuer(doc2, username) }, 200, corsHeaders);
+}
+
+// ---------- Versand ----------
+
+// Erteilt den Versandauftrag an den Worker "push". Fehler werden geschluckt,
+// aber protokolliert: die eigentliche Handlung (Aufgabe anlegen, Termin
+// speichern, Dokument zuweisen) ist zu diesem Zeitpunkt bereits passiert --
+// wie bei beleg-eingang-notify, anders als bei raumnutzung-mail-antrag, wo der
+// Versand DIE Handlung ist.
+//
+// ⚠️ Diese Funktion wirft nie. Wer sie ruft, muss nichts abfangen.
+function pushSenden(env, authHeader, ctx, empfaenger, anlass, text) {
+  // Nicht konfiguriert = still aus. So laesst sich landingpage deployen, bevor
+  // der push-Worker existiert; die Reihenfolge im Entwurf sieht es andersherum
+  // vor, aber ein Fehlschlag darf keine Zuweisung mitreissen.
+  if (!env.PUSH || !env.PUSH_SHARED_SECRET) return;
+  if (!Array.isArray(empfaenger) || !empfaenger.length) return;
+  if (PUSH_ANLAESSE.indexOf(anlass) === -1) return;
+
+  const arbeit = (async () => {
+    try {
+      const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+
+      const ziele = [];
+      const gesehen = {};
+      for (const roh of empfaenger) {
+        const u = normalizeUsername(String(roh || ""));
+        if (!u || gesehen[u]) continue;
+        gesehen[u] = true;
+        if (!pushAnlaesseFuer(doc, u)[anlass]) continue; // Schalter aus
+        for (const abo of pushAbosFuer(doc, u)) {
+          if (abo && abo.endpoint) ziele.push(abo);
+        }
+      }
+      if (!ziele.length) return;
+
+      const nachricht = {
+        titel: anlass === "kalender" ? "Vereinskalender"
+             : anlass === "aufgaben" ? "Vereinsaufgaben"
+             : "Unterschriften",
+        text: String(text || ""),
+        ziel: PUSH_ZIELE[anlass]
+      };
+
+      const tot = [];
+      for (let i = 0; i < ziele.length; i += PUSH_HAEPPCHEN) {
+        const haeppchen = ziele.slice(i, i + PUSH_HAEPPCHEN);
+        // Die Adresse ist bei einem Service Binding bedeutungslos, muss aber
+        // eine gueltige URL sein.
+        const res = await env.PUSH.fetch("https://push.intern/senden", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secret: env.PUSH_SHARED_SECRET,
+            nachricht,
+            abos: haeppchen.map((a) => ({ id: a.id, endpoint: a.endpoint, p256dh: a.p256dh, auth: a.auth }))
+          })
+        });
+        if (!res.ok) {
+          console.error("Push-Worker antwortete " + res.status);
+          continue;
+        }
+        const daten = await res.json().catch(() => null);
+        if (daten && Array.isArray(daten.tot)) {
+          for (const id of daten.tot) tot.push(String(id));
+        }
+      }
+
+      if (tot.length) await pushToteAbosEntfernen(authHeader, tot);
+    } catch (e) {
+      console.error("Push-Versand fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  })();
+
+  // ctx fehlt nur, wenn diese Funktion aus einem Pfad ohne Request-Kontext
+  // gerufen wird -- dann lieber warten als den Versand verlieren.
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(arbeit);
+  else return arbeit;
+}
+
+// Entfernt Abos, die der Push-Dienst mit 404/410 abgelehnt hat (App geloescht,
+// Geraet zurueckgesetzt). Ueber alle Nutzer, weil die Ids nutzeruebergreifend
+// eindeutig sind und ein Versand mehrere Empfaenger betrifft.
+async function pushToteAbosEntfernen(authHeader, ids) {
+  const weg = {};
+  for (const id of ids) weg[id] = true;
+  try {
+    await pushAbosMutieren(authHeader, (doc) => {
+      let geaendert = false;
+      for (const username of Object.keys(doc.abos)) {
+        const liste = pushAbosFuer(doc, username);
+        const rest = liste.filter((a) => !weg[a.id]);
+        if (rest.length !== liste.length) { doc.abos[username] = rest; geaendert = true; }
+      }
+      return geaendert ? undefined : false;
+    });
+  } catch (e) {
+    console.error("Aufraeumen toter Push-Abos fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
 }

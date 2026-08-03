@@ -4460,6 +4460,18 @@ function setupTabs() {
     loadAndRenderAdminStats();
   });
 
+  // Push: der Einschalten-Knopf ruft die Erlaubnis-Abfrage direkt aus dem Klick.
+  document.getElementById("btn-push-ein").addEventListener("click", pushEinschalten);
+  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
+    document.getElementById("push-an-" + a).addEventListener("change", pushSchalterSpeichern);
+  }
+  // Abmelden per Delegation: die Liste wird bei jedem Aufbau neu geschrieben,
+  // einzeln registrierte Handler waeren nach dem ersten Rendern verwaist.
+  document.getElementById("push-geraete").addEventListener("click", (e) => {
+    const knopf = e.target.closest ? e.target.closest("[data-push-ab]") : null;
+    if (knopf) pushGeraetAbmelden(knopf.getAttribute("data-push-ab"));
+  });
+
   document.getElementById("btn-materialcontainer").addEventListener("click", oeffneMaterialcontainer);
   document.getElementById("btn-materialcontainer-close").addEventListener("click", schliesseMaterialcontainer);
   // Klick auf den abgedunkelten Hintergrund schliesst ebenfalls -- aber nur dort,
@@ -4980,6 +4992,7 @@ function renderAdminPanels() {
   document.getElementById("admin-feedback-panel").style.display = "none";
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
+  document.getElementById("push-panel").style.display = "none";
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
   // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
   // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
@@ -4989,6 +5002,9 @@ function renderAdminPanels() {
   if (currentUser) {
     renderKontoKarte();
     document.getElementById("admin-logged-in-panel").style.display = "block";
+    // Laeuft nebenher: der Aufbau fragt den Server und darf den Rest des
+    // Konto-Tabs nicht aufhalten. Fehler landen sichtbar in der Karte selbst.
+    pushPanelAufbauen();
     if (currentUser.isAdmin) {
       document.getElementById("admin-users-panel").style.display = "block";
       document.getElementById("admin-groups-panel").style.display = "block";
@@ -5423,6 +5439,269 @@ function setupAuthForms() {
       }
     });
   }
+}
+
+// ===========================================================================
+// Push-Nachrichten (seit 2026-08-03)
+//
+// Der Service Worker und das Manifest liegen im Wurzel-Repo, hier steht nur das
+// Verhalten. Entwurf:
+// docs/superpowers/specs/2026-08-03-push-nachrichten-design.md
+// ===========================================================================
+
+// Merkt sich die Id des eigenen Abos, damit die Geraeteliste "dieses Geraet"
+// kennzeichnen kann -- sonst stuenden dort mehrere ununterscheidbare Namen.
+const PUSH_ID_SPEICHER = "sc1911-push-geraet-id";
+
+// ⚠️ Feature-Test mit echtem Rueckfallweg, nicht nur ein if: auf den aelteren
+// iPhones der Flotte gibt es diese Objekte gar nicht, und ein ungeschuetzter
+// Zugriff reisst den Rest des Konto-Tabs mit.
+function pushGrundsaetzlichMoeglich() {
+  return typeof Notification !== "undefined"
+    && typeof navigator !== "undefined" && !!navigator.serviceWorker
+    && typeof window.PushManager !== "undefined";
+}
+
+function pushMeldung(text, fehler) {
+  const el = document.getElementById("push-meldung");
+  if (!el) return;
+  if (!text) { el.style.display = "none"; return; }
+  el.textContent = text;
+  el.style.color = fehler ? "#c0392b" : "#2d8c4e";
+  el.style.display = "";
+}
+
+async function pushPanelAufbauen() {
+  const panel = document.getElementById("push-panel");
+  if (!panel) return;
+  if (!currentUser) { panel.style.display = "none"; return; }
+  panel.style.display = "block";
+
+  const hinweis = document.getElementById("push-hinweis");
+  const knopf = document.getElementById("btn-push-ein");
+  const fertig = document.getElementById("push-eingerichtet");
+  hinweis.style.display = "none";
+  knopf.style.display = "none";
+  fertig.style.display = "none";
+  pushMeldung("");
+
+  // Zustand 1: Die Plattform kann es nicht. Firefox und die iOS-Fremdbrowser
+  // fallen hier heraus, ebenso jedes iPhone vor iOS 16.4.
+  if (!pushGrundsaetzlichMoeglich()) {
+    hinweis.textContent = istIosSafari()
+      ? "Dieses Gerät kann noch keine Benachrichtigungen empfangen. Apple bietet sie erst ab iOS 16.4 an (iPhone 8 und neuer)."
+      : "Dieser Browser kann keine Benachrichtigungen empfangen. Mit Chrome, Edge oder Safari klappt es.";
+    hinweis.style.display = "";
+    return;
+  }
+
+  // Zustand 2: iPhone, aber die App liegt nicht auf dem Startbildschirm. Auf
+  // iOS gibt es Push AUSSCHLIESSLICH fuer abgelegte Web-Apps, im Safari-Tab
+  // existiert das Notification-Objekt nicht einmal.
+  if (istIosSafari() && !istAlsAppGestartet()) {
+    hinweis.textContent = "Auf dem iPhone gibt es Benachrichtigungen nur, wenn die Übersicht als App auf dem Startbildschirm liegt. Lege sie oben über „📲 Als App ablegen“ ab und öffne sie danach über das neue Symbol — hier erscheint dann der Einschalten-Knopf.";
+    hinweis.style.display = "";
+    return;
+  }
+
+  let status;
+  try {
+    status = await callWorker("push-status", {});
+  } catch (e) {
+    // ⚠️ Die ganze Karte verschwindet, statt einen Fehler anzuzeigen. Der Grund
+    // ist die Reihenfolge beim Ausrollen: Pages ist sofort live, der Worker
+    // braucht einen eigenen Deploy. Kennt er "push-status" noch nicht, saehe
+    // sonst JEDER Angemeldete einen roten Hinweis in seinem Konto -- fuer eine
+    // Funktion, die es serverseitig noch gar nicht gibt. Ein nicht angebotener
+    // Dienst ist besser als ein kaputt aussehender.
+    console.warn("push-status nicht verfügbar", e && e.message ? e.message : e);
+    panel.style.display = "none";
+    return;
+  }
+
+  let abo = null;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/");
+    if (reg) abo = await reg.pushManager.getSubscription();
+  } catch (_) { abo = null; }
+
+  const an = !!abo && Notification.permission === "granted";
+
+  if (!an) {
+    // Eine einmal abgelehnte Erlaubnis laesst sich nicht erneut erfragen --
+    // der Browser antwortet sofort wieder mit "denied". Das muss dastehen,
+    // sonst drueckt der Nutzer wirkungslos auf den Knopf.
+    if (Notification.permission === "denied") {
+      hinweis.textContent = "Benachrichtigungen sind für diese Seite gesperrt. Das lässt sich nur in den Einstellungen des Geräts wieder erlauben — auf dem iPhone unter Einstellungen › Mitteilungen, sonst über das Schloss-Symbol in der Adresszeile.";
+      hinweis.style.display = "";
+      return;
+    }
+    knopf.style.display = "inline-flex";
+    knopf.dataset.publicKey = (status && status.publicKey) || "";
+    return;
+  }
+
+  fertig.style.display = "block";
+  pushSchalterSetzen((status && status.anlaesse) || {});
+  pushGeraeteRendern((status && status.geraete) || []);
+}
+
+function pushSchalterSetzen(anlaesse) {
+  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
+    const el = document.getElementById("push-an-" + a);
+    if (el) el.checked = anlaesse[a] !== false;
+  }
+}
+
+function pushGeraeteRendern(geraete) {
+  const ul = document.getElementById("push-geraete");
+  if (!ul) return;
+  let eigeneId = "";
+  try { eigeneId = window.localStorage.getItem(PUSH_ID_SPEICHER) || ""; } catch (_) { eigeneId = ""; }
+
+  if (!geraete.length) {
+    ul.innerHTML = "<li class=\"muted\">Noch kein Gerät angemeldet.</li>";
+    return;
+  }
+  ul.innerHTML = geraete.map((g) => {
+    const seit = fmtDatumKurz(g.angelegtAm);
+    const dieses = (g.id && g.id === eigeneId) ? " <span class=\"push-dieses\">dieses Gerät</span>" : "";
+    return "<li><span>" + escapeHtml(g.geraet) + dieses
+      + (seit ? " <span class=\"muted\">seit " + escapeHtml(seit) + "</span>" : "")
+      + "</span><button type=\"button\" class=\"btn secondary small\" data-push-ab=\"" + escapeHtml(g.id) + "\">Abmelden</button></li>";
+  }).join("");
+}
+
+// Grobe Geraetebezeichnung fuer die Liste. Bewusst grob: sie soll dem Nutzer
+// helfen, seine eigenen Geraete auseinanderzuhalten, nicht ihn wiedererkennbar
+// machen.
+function pushGeraeteName() {
+  const ua = navigator.userAgent || "";
+  let geraet = "Rechner";
+  if (/iPhone/.test(ua)) geraet = "iPhone";
+  else if (/iPad/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) geraet = "iPad";
+  else if (/Android/.test(ua)) geraet = "Android-Gerät";
+  else if (/Macintosh/.test(ua)) geraet = "Mac";
+
+  let browser = "";
+  if (/EdgiOS|Edg\//.test(ua)) browser = "Edge";
+  else if (/CriOS|Chrome\//.test(ua)) browser = "Chrome";
+  else if (/FxiOS|Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua)) browser = "Safari";
+  return browser ? geraet + " · " + browser : geraet;
+}
+
+function pushBase64UrlZuBytes(b64url) {
+  const roh = String(b64url || "").replace(/-/g, "+").replace(/_/g, "/");
+  const voll = roh + "=".repeat((4 - (roh.length % 4)) % 4);
+  const bin = window.atob(voll);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function pushBytesZuBase64Url(buffer) {
+  const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return window.btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// ⚠️ Diese Funktion wird DIREKT aus dem Klick gerufen und ruft
+// Notification.requestPermission() als ALLERERSTES. Steht davor auch nur ein
+// await, verwirft Safari die Abfrage stillschweigend -- dieselbe Falle wie bei
+// window.open nach einem await.
+async function pushEinschalten() {
+  const knopf = document.getElementById("btn-push-ein");
+  const publicKey = (knopf && knopf.dataset.publicKey) || "";
+
+  let erlaubnis;
+  try {
+    const ergebnis = Notification.requestPermission();
+    // Aeltere Safari-Fassungen kennen nur die Rueckruf-Form ohne Promise.
+    erlaubnis = (ergebnis && typeof ergebnis.then === "function")
+      ? await ergebnis
+      : await new Promise((fertig) => Notification.requestPermission(fertig));
+  } catch (e) {
+    pushMeldung("Die Abfrage ließ sich nicht öffnen: " + (e && e.message ? e.message : e), true);
+    return;
+  }
+
+  if (erlaubnis !== "granted") {
+    pushMeldung("Ohne Erlaubnis kann nichts zugestellt werden. Du kannst es später hier erneut versuchen.", true);
+    return;
+  }
+  if (!publicKey) {
+    pushMeldung("Der Server hat keinen Schlüssel hinterlegt (VAPID_PUBLIC_KEY fehlt). Bitte Michel Bescheid geben.", true);
+    return;
+  }
+
+  if (knopf) { knopf.disabled = true; knopf.textContent = "Wird eingerichtet …"; }
+  try {
+    // register() statt .ready: idempotent, und es haengt nicht ewig, falls die
+    // Registrierung beim Seitenstart fehlgeschlagen ist.
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const abo = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: pushBase64UrlZuBytes(publicKey)
+    });
+
+    const antwort = await callWorker("push-abo-anlegen", {
+      endpoint: abo.endpoint,
+      p256dh: pushBytesZuBase64Url(abo.getKey("p256dh")),
+      auth: pushBytesZuBase64Url(abo.getKey("auth")),
+      geraet: pushGeraeteName()
+    });
+    try {
+      if (antwort && antwort.id) window.localStorage.setItem(PUSH_ID_SPEICHER, antwort.id);
+    } catch (_) { /* privater Modus: dann fehlt nur die Markierung */ }
+
+    pushMeldung("Eingeschaltet. Dieses Gerät bekommt ab jetzt Bescheid.", false);
+  } catch (e) {
+    pushMeldung("Einschalten fehlgeschlagen: " + (e && e.message ? e.message : e), true);
+  } finally {
+    if (knopf) { knopf.disabled = false; knopf.textContent = "Einschalten"; }
+  }
+  await pushPanelAufbauen();
+}
+
+async function pushSchalterSpeichern() {
+  const anlaesse = {};
+  for (const a of ["kalender", "aufgaben", "unterschriften"]) {
+    const el = document.getElementById("push-an-" + a);
+    anlaesse[a] = !!(el && el.checked);
+  }
+  try {
+    await callWorker("push-anlaesse-setzen", { anlaesse });
+    pushMeldung("Gespeichert.", false);
+  } catch (e) {
+    pushMeldung("Konnte nicht gespeichert werden: " + (e && e.message ? e.message : e), true);
+    await pushPanelAufbauen();
+  }
+}
+
+async function pushGeraetAbmelden(id) {
+  let eigeneId = "";
+  try { eigeneId = window.localStorage.getItem(PUSH_ID_SPEICHER) || ""; } catch (_) { eigeneId = ""; }
+
+  try {
+    await callWorker("push-abo-loeschen", { id });
+    // Ist es das eigene Geraet, auch lokal abbestellen -- sonst bliebe ein
+    // Abo bestehen, das der Server nicht mehr kennt, und der Konto-Tab zeigte
+    // weiterhin "eingeschaltet".
+    if (id === eigeneId) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration("/");
+        const abo = reg ? await reg.pushManager.getSubscription() : null;
+        if (abo) await abo.unsubscribe();
+        window.localStorage.removeItem(PUSH_ID_SPEICHER);
+      } catch (_) { /* das Serverseitige zaehlt, der Rest ist Kosmetik */ }
+    }
+    pushMeldung("Abgemeldet.", false);
+  } catch (e) {
+    pushMeldung("Abmelden fehlgeschlagen: " + (e && e.message ? e.message : e), true);
+  }
+  await pushPanelAufbauen();
 }
 
 function escapeHtml(str) {
