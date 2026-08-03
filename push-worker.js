@@ -129,7 +129,18 @@ async function sendeAnEinGeraet(abo, klartext, vapidKey, vapidPublicB64, subject
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
       "TTL": String(PUSH_TTL_SEKUNDEN),
-      "Urgency": "normal"
+      // ⚠️ "high" ist Michel-Vorgabe vom 2026-08-03 (vorher "normal"). Die vier
+      // Stufen aus RFC 8030 sagen dem Push-Dienst, wie wichtig eine Nachricht
+      // gegenueber dem Akkustand ist: bei niedriger Stufe darf er sie
+      // zurueckhalten, solange das Geraet im Energiesparmodus liegt, und
+      // gesammelt zustellen, wenn es ohnehin aufwacht. "high" ist die hoechste
+      // Stufe und heisst: dafuer darf das Geraet weckt werden.
+      //
+      // Der Preis ist Akku, und zwar auf JEDEM Geraet der Flotte -- die Stufe
+      // haengt am Versand, nicht am Empfaenger. Wer sie wieder senken will,
+      // aendert sie hier fuer alle; einzelne Anlaesse zu staffeln ginge nur
+      // ueber ein Feld je Nachricht, das es bewusst nicht gibt.
+      "Urgency": "high"
     },
     body: koerper
   });
