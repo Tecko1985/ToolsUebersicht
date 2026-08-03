@@ -8144,7 +8144,9 @@ const PUSH_ANLAESSE = [
   { id: "fahrtenbuch", titel: "Fahrtenbuch", ziel: "/fahrtenbuch/",
     label: "Fahrtenbuch — neu eingereichte Fahrten" },
   { id: "fotos", titel: "Fotoaufträge", ziel: "/fotoauftraege/",
-    label: "Fotoaufträge — neue Aufträge für meine Mannschaft" }
+    label: "Fotoaufträge — neue Aufträge für meine Mannschaft" },
+  { id: "raumnutzung", titel: "Raumnutzung", ziel: "/raumnutzung/",
+    label: "Raumnutzung — fertige Anträge und ihr weiterer Weg" }
 ];
 
 function pushAnlassInfo(id) {
@@ -8479,6 +8481,17 @@ const PUSH_VORGANG_APPS = {
     liste: "meldungen", anlass: "material",
     neu: "Eine neue Meldung wartet auf Entscheidung",
     entschieden: "Deine Meldung wurde bearbeitet"
+  },
+  // Raumnutzung folgt demselben Muster, nur heisst der Uebergabepunkt hier
+  // "fertig": Trainer fuellen den Antrag aus (Bearbeiten), eingereicht wird er
+  // von der Geschaeftsstelle (Administrieren). "entschieden" deckt beides ab --
+  // beim Amt eingereicht UND die Antwort des Landkreises. Der Text nennt deshalb
+  // kein Ergebnis; was passiert ist, steht in der App.
+  raumnutzung: {
+    liste: "antraege", anlass: "raumnutzung",
+    neu: "Ein Antrag ist fertig und wartet aufs Einreichen",
+    entschieden: "Bei deinem Antrag hat sich etwas getan",
+    empfaengerFeld: "pushEmpfaenger"
   }
 };
 

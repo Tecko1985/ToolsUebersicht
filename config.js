@@ -253,7 +253,8 @@ const TOOLS = [
     icon: "🏛️",
     category: "Verein",
     devices: ["mobile", "desktop"],
-    mail: true
+    mail: true,
+    push: true
   },
   {
     id: "testspielplaner",
@@ -352,6 +353,19 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Raumnutzung meldet sich jetzt auch",
+        items: [
+          "Neuer Schalter „Raumnutzung“ unter „Mein Konto“: eine Nachricht, sobald ein Antrag fertig ausgefüllt ist und eingereicht werden kann — und für den Ausfüllenden, sobald sein Antrag beim Amt ist oder der Landkreis entschieden hat.",
+          "Die Kachel „Raumnutzung“ trägt dafür jetzt das Glockensymbol 🔔, wie die anderen Werkzeuge, die sich aufs Handy melden.",
+          "Wer benachrichtigt wird, lässt sich in der Raumnutzung selbst einstellen (Reiter „Einstellungen“, nur mit der Stufe Administrieren)."
+        ]
+      }
+    ]
+  },
   {
     version: "1.6",
     groups: [
