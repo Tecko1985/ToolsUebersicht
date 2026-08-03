@@ -1371,6 +1371,9 @@ function renderNews() {
     // bliebe sonst nach dem Abmelden im DOM stehen und waere dort weiter lesbar.
     banner.innerHTML = "";
     banner.style.display = "none";
+    // Aus demselben Grund die geladenen Bilder freigeben: eine Objekt-URL bleibt
+    // sonst gueltig, solange die Seite offen ist -- auch nach dem Abmelden.
+    newsMedienBlobsLeeren();
     return;
   }
   const items = newsState.slice()
@@ -1413,9 +1416,12 @@ function renderNews() {
       <button type="button" class="news-nav-btn news-nav-next" ${atOldest ? "disabled" : ""} title="Ältere Meldung" aria-label="Ältere Meldung">›</button>
     </div>
     ${items.length > 1 ? `<div class="news-dots">${newsCarouselIndex + 1} / ${items.length}</div>` : ""}
+    ${newsMedienStreifen(n)}
     ${renderNewsReactionsBar(n.id)}
     ${newsReactionHint ? `<div class="news-react-hint">${escapeHtml(newsReactionHint)}</div>` : ""}
   `;
+
+  newsMedienThumbsBeleben(banner, n);
 
   const prevBtn = banner.querySelector(".news-nav-prev");
   const nextBtn = banner.querySelector(".news-nav-next");
@@ -3637,6 +3643,9 @@ function newsFormReset() {
   document.getElementById("news-tool").value = "";
   document.getElementById("news-title").value = "";
   document.getElementById("news-text").value = "";
+  document.getElementById("news-video-url").value = "";
+  newsMedienEntwurf = [];
+  newsMedienEditorRendern();
   document.getElementById("btn-news-submit").textContent = "Hinzufügen";
   document.getElementById("btn-news-cancel").style.display = "none";
 }
@@ -3650,6 +3659,11 @@ function startEditNews(id) {
   document.getElementById("news-tool").value = n.toolId || "";
   document.getElementById("news-title").value = n.title || "";
   document.getElementById("news-text").value = n.text || "";
+  document.getElementById("news-video-url").value = n.videoUrl || "";
+  // Kopie, nicht die Referenz: sonst schriebe ein "Entfernen" im Formular direkt
+  // in newsState und wäre auch dann weg, wenn der Admin auf Abbrechen drückt.
+  newsMedienEntwurf = (Array.isArray(n.medien) ? n.medien : []).map((m) => ({ ...m }));
+  newsMedienEditorRendern();
   document.getElementById("btn-news-submit").textContent = "Änderung speichern";
   document.getElementById("btn-news-cancel").style.display = "inline-block";
   document.getElementById("admin-news-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -3716,6 +3730,192 @@ function renderNewsAdmin() {
     const id = row.dataset.id;
     row.querySelector(".news-edit-btn").addEventListener("click", () => startEditNews(id));
     row.querySelector(".news-del-btn").addEventListener("click", () => deleteNews(id));
+  });
+}
+
+// ---------- Medien-Anhänge der Neuigkeiten (seit 2026-08-03) ----------
+//
+// ⚠️ Die Dateien liegen NICHT in der Meldung, sondern im Nextcloud-Ordner
+// neuigkeiten/ -- in sichtbarkeit.json steht nur die Id. Diese Datei wird bei
+// JEDEM Seitenaufruf gelesen, um die Kachel-Sichtbarkeit zu bestimmen; ein
+// eingebettetes base64-Bild schleppte jeder einzelne Aufruf der Startseite mit.
+
+const NEWS_MEDIEN_MAX = 4;
+const NEWS_MEDIEN_MAX_BYTES = 10 * 1024 * 1024;
+
+// Anhänge der Meldung, die gerade im Formular bearbeitet wird.
+let newsMedienEntwurf = [];
+
+// id -> Objekt-URL. Ohne Cache lädt jeder Klick auf den Karussell-Pfeil dieselben
+// Bilder erneut, und jedes createObjectURL ohne revoke ist ein Leck.
+const newsMedienBlobs = new Map();
+
+// ⚠️ Der Abruf verlangt den Token (Neuigkeiten sind login-gated), ein einfaches
+// <img src="..."> geht deshalb nicht -- die Bytes müssen geholt und als
+// Objekt-URL eingehängt werden.
+async function newsMedienUrl(m) {
+  if (!m || !m.id) return null;
+  const vorhanden = newsMedienBlobs.get(m.id);
+  if (vorhanden) return vorhanden;
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + loadStoredToken() },
+    body: JSON.stringify({ action: "news-datei-get", id: m.id })
+  });
+  if (!res.ok) {
+    let msg = "Die Datei konnte nicht geladen werden.";
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  newsMedienBlobs.set(m.id, url);
+  return url;
+}
+
+// Beim Abmelden alles freigeben -- eine Objekt-URL bleibt sonst gültig, solange
+// die Seite offen ist, und die Meldungen sind Vereinsinterna. Gleiche Linie wie
+// das innerHTML-Leeren in renderNews().
+function newsMedienBlobsLeeren() {
+  newsMedienBlobs.forEach((url) => { try { URL.revokeObjectURL(url); } catch (_) {} });
+  newsMedienBlobs.clear();
+}
+
+function newsMedienEditorRendern() {
+  const box = document.getElementById("news-medien-edit");
+  if (!box) return;
+  if (!newsMedienEntwurf.length) {
+    box.innerHTML = '<p class="muted" style="font-size:13px; margin:0 0 8px;">Noch nichts angehängt.</p>';
+    return;
+  }
+  box.innerHTML = newsMedienEntwurf.map((m, i) =>
+    '<div class="news-medien-zeile">'
+    + '<span class="news-medien-art">' + (m.art === "video" ? "🎬" : "🖼️") + '</span>'
+    + '<span class="news-medien-titel">' + escapeHtml(m.name || (m.art === "video" ? "Video" : "Bild")) + '</span>'
+    + '<button type="button" class="btn danger small news-medien-weg" data-i="' + i + '">Entfernen</button>'
+    + '</div>').join("");
+  box.querySelectorAll(".news-medien-weg").forEach((b) => {
+    b.addEventListener("click", () => {
+      newsMedienEntwurf.splice(Number(b.dataset.i), 1);
+      newsMedienEditorRendern();
+    });
+  });
+}
+
+// ⚠️ Die Datei geht sofort raus, nicht erst beim Speichern der Meldung. Sonst
+// müsste der Submit mehrere Uploads bündeln und bei einem Fehler mittendrin
+// zurückrollen. Bricht der Admin danach ab, bleibt eine verwaiste Datei liegen --
+// über news-datei-get ist sie nicht erreichbar, weil dort gegen die Meldungen
+// geprüft wird. Gleiches akzeptiertes Muster wie beim Unterschriften-Upload.
+async function newsMedienDateiGewaehlt(datei) {
+  const errorEl = document.getElementById("news-error");
+  if (errorEl) errorEl.style.display = "none";
+  if (!datei) return;
+  const meldung = (text) => {
+    if (!errorEl) return;
+    errorEl.textContent = text;
+    errorEl.style.display = "block";
+  };
+  if (newsMedienEntwurf.length >= NEWS_MEDIEN_MAX) {
+    meldung("Mehr als " + NEWS_MEDIEN_MAX + " Anhänge gehen nicht.");
+    return;
+  }
+  // Vor dem Lesen prüfen: eine 200-MB-Datei erst komplett einzulesen und dann am
+  // Server abzulehnen, kostet den Nutzer eine Minute für ein absehbares Nein.
+  if (datei.size > NEWS_MEDIEN_MAX_BYTES) {
+    meldung("Die Datei ist " + (datei.size / 1024 / 1024).toFixed(1)
+      + " MB groß — hochladen lassen sich 10 MB. Für längere Videos gibt es das Link-Feld darunter.");
+    return;
+  }
+  const btn = document.getElementById("btn-news-medien-add");
+  const beschriftung = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Lädt hoch…"; }
+  try {
+    const bytes = await dateiAlsBytes(datei);
+    const id = neueDateiId();
+    const res = await callWorker("news-datei-put", { id, dataBase64: bytesZuBase64(bytes) });
+    newsMedienEntwurf.push({ id, mime: res.mime, art: res.art, name: datei.name || "" });
+    newsMedienEditorRendern();
+  } catch (e) {
+    meldung(e && e.message ? e.message : "Hochladen fehlgeschlagen.");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = beschriftung; }
+  }
+}
+
+async function newsMedienOverlayOeffnen(m) {
+  const ov = document.getElementById("news-medien-overlay");
+  const buehne = document.getElementById("news-medien-buehne");
+  if (!ov || !buehne) return;
+  buehne.innerHTML = '<p class="muted">Lädt…</p>';
+  const nameEl = document.getElementById("news-medien-name");
+  if (nameEl) nameEl.textContent = m.name || "";
+  ov.style.display = "flex";
+  try {
+    const url = await newsMedienUrl(m);
+    // playsinline: iOS spielt ein Video sonst zwangsweise im Vollbild ab und
+    // reißt den Nutzer aus der Seite.
+    buehne.innerHTML = m.art === "video"
+      ? '<video src="' + url + '" controls playsinline preload="metadata"></video>'
+      : '<img src="' + url + '" alt="' + escapeHtml(m.name || "Bild zur Meldung") + '" />';
+  } catch (e) {
+    buehne.innerHTML = '<p class="muted">' + escapeHtml(e && e.message ? e.message : "Die Datei konnte nicht geladen werden.") + '</p>';
+  }
+}
+
+function newsMedienOverlaySchliessen() {
+  const ov = document.getElementById("news-medien-overlay");
+  if (!ov) return;
+  ov.style.display = "none";
+  // ⚠️ Inhalt leeren, nicht nur ausblenden: ein laufendes Video spielte hinter
+  // dem geschlossenen Fenster weiter und wäre nur noch zu hören.
+  const buehne = document.getElementById("news-medien-buehne");
+  if (buehne) buehne.innerHTML = "";
+}
+
+// Vorschau-Streifen unter der Meldung. Michel-Vorgabe 2026-08-03: klein zeigen,
+// Klick öffnet groß -- das Karussell steht ganz oben auf der Startseite und
+// schöbe die Kacheln sonst bei jeder bebilderten Meldung nach unten.
+//
+// ⚠️ Der Streifen steht AUSSERHALB von .news-item. Ist ein Tool verknüpft, ist
+// das ein <a>, und ein <button> darin wäre ungültiges HTML — der Klick auf ein
+// Vorschaubild landete beim Tool statt beim Bild.
+function newsMedienStreifen(n) {
+  const medien = Array.isArray(n.medien) ? n.medien : [];
+  if (!medien.length && !n.videoUrl) return "";
+  const thumbs = medien.map((m, i) =>
+    '<button type="button" class="news-medien-thumb" data-mi="' + i + '"'
+    + ' title="' + escapeHtml(m.name || (m.art === "video" ? "Video" : "Bild")) + '"'
+    + ' aria-label="' + escapeHtml((m.art === "video" ? "Video" : "Bild") + " groß ansehen") + '">'
+    + '<span class="news-medien-thumb-zeichen">' + (m.art === "video" ? "🎬" : "🖼️") + '</span>'
+    + '</button>').join("");
+  // ⚠️ Externer Videolink wird NICHT eingebettet, sondern nur verlinkt: ein
+  // iframe schickte schon beim Anzeigen der Startseite Daten an YouTube & Co.,
+  // ohne dass jemand darauf geklickt hat.
+  const link = n.videoUrl
+    ? '<a class="news-medien-link" href="' + escapeHtml(n.videoUrl) + '" target="_blank" rel="noopener noreferrer">🎬 Video ansehen →</a>'
+    : "";
+  return '<div class="news-medien">' + thumbs + link + '</div>';
+}
+
+function newsMedienThumbsBeleben(banner, n) {
+  const medien = Array.isArray(n.medien) ? n.medien : [];
+  banner.querySelectorAll(".news-medien-thumb").forEach((btn) => {
+    const m = medien[Number(btn.dataset.mi)];
+    if (!m) return;
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      newsMedienOverlayOeffnen(m);
+    });
+    // Nur Bilder bekommen eine echte Vorschau. Für ein Video-Standbild müsste die
+    // ganze Datei geladen werden -- bei bis zu 10 MB pro Meldung beim bloßen
+    // Anzeigen der Startseite. Videos bleiben deshalb beim Symbol.
+    if (m.art !== "bild") return;
+    newsMedienUrl(m).then((url) => {
+      if (!url || !btn.isConnected) return;
+      btn.style.backgroundImage = 'url("' + url + '")';
+      btn.classList.add("hat-bild");
+    }).catch(() => { /* Symbol bleibt stehen -- besser als eine Fehlermeldung im Karussell */ });
   });
 }
 
@@ -5407,12 +5607,54 @@ function setupAuthForms() {
       };
       const toolId = document.getElementById("news-tool").value;
       if (toolId) item.toolId = toolId;
+      if (newsMedienEntwurf.length) item.medien = newsMedienEntwurf.map((m) => ({ ...m }));
+      // ⚠️ Nicht still verwerfen: der Worker nimmt nur https an, und wer hier
+      // etwas eingetippt hat, verließe sich sonst auf einen Link, der nie
+      // erscheint. Zu diesem Zeitpunkt ist noch nichts gespeichert.
+      const videoUrl = document.getElementById("news-video-url").value.trim();
+      if (videoUrl && !/^https:\/\/[^\s]+$/i.test(videoUrl)) {
+        errorEl.textContent = "Der Video-Link muss mit https:// beginnen.";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (videoUrl) item.videoUrl = videoUrl;
       const prev = newsState.slice();
       newsState = editId ? newsState.map((x) => (x.id === editId ? item : x)) : [item, ...newsState];
       newsFormReset();
       await persistNews(prev);
     });
     document.getElementById("btn-news-cancel").addEventListener("click", () => newsFormReset());
+
+    // Medien-Anhänge: Knopf öffnet den Datei-Dialog, die Auswahl lädt sofort hoch.
+    const medienBtn = document.getElementById("btn-news-medien-add");
+    const medienInput = document.getElementById("news-medien-datei");
+    if (medienBtn && medienInput) {
+      medienBtn.addEventListener("click", () => medienInput.click());
+      medienInput.addEventListener("change", async () => {
+        const datei = medienInput.files && medienInput.files[0];
+        // ⚠️ Feld VOR dem Hochladen leeren: sonst löst dieselbe Datei ein zweites
+        // Mal kein change-Ereignis aus, wenn sie nach einem Fehler erneut gewählt wird.
+        medienInput.value = "";
+        await newsMedienDateiGewaehlt(datei);
+      });
+      newsMedienEditorRendern();
+    }
+    const medienClose = document.getElementById("btn-news-medien-close");
+    if (medienClose) medienClose.addEventListener("click", newsMedienOverlaySchliessen);
+    const medienOverlay = document.getElementById("news-medien-overlay");
+    if (medienOverlay) {
+      medienOverlay.addEventListener("click", (ev) => {
+        if (ev.target === medienOverlay) newsMedienOverlaySchliessen();
+      });
+    }
+    document.addEventListener("keydown", (ev) => {
+      const ov = document.getElementById("news-medien-overlay");
+      if (ev.key !== "Escape" || !ov || ov.style.display !== "flex") return;
+      // Wie bei den anderen gestaffelten Dialogen: markieren, damit ein
+      // darunterliegendes Fenster dasselbe Escape nicht ebenfalls verbraucht.
+      ev.escapeVerbraucht = true;
+      newsMedienOverlaySchliessen();
+    });
     newsFormReset();
   }
 

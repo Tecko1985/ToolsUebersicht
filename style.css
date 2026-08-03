@@ -502,6 +502,88 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 .news-react-count { font-size: 12px; font-weight: 700; color: var(--muted); min-width: 8px; text-align: center; }
 .news-react-btn.active .news-react-count { color: var(--blue); }
 .news-react-hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+/* ---- Medien-Anhaenge einer Neuigkeit (seit 2026-08-03) ----
+   Vorschau-Streifen unter der Meldung. Michel-Vorgabe: klein zeigen, Klick oeffnet
+   gross. Das Karussell steht ganz oben auf der Startseite -- ein grosses Bild darin
+   schoebe bei jeder bebilderten Meldung die Kacheln nach unten, am Handy aus dem
+   sichtbaren Bereich. Deshalb feste 64 px und flex-wrap statt einer Bildflaeche. */
+.news-medien { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.news-medien-thumb {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--blue-light);
+  background-size: cover;
+  background-position: center;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.news-medien-thumb:hover { transform: scale(1.05); border-color: var(--blue); }
+.news-medien-thumb-zeichen { font-size: 22px; line-height: 1; }
+/* Sobald das echte Bild als Hintergrund haengt, ist das Platzhalter-Zeichen im Weg. */
+.news-medien-thumb.hat-bild .news-medien-thumb-zeichen { display: none; }
+.news-medien-link { font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: none; }
+.news-medien-link:hover { text-decoration: underline; }
+
+/* ⚠️ Eigener z-index ueber den 1000 der uebrigen Overlays: bei Gleichstand
+   entscheidet die DOM-Reihenfolge, und dieses Fenster steht im Markup VOR den
+   anderen -- es laege sonst dahinter. Gleiche Loesung wie beim Zuweisen-Dialog. */
+.news-medien-overlay { z-index: 1010; }
+.news-medien-dialog { position: relative; max-width: 96vw; text-align: center; }
+#news-medien-buehne img,
+#news-medien-buehne video {
+  display: block;
+  max-width: 96vw;
+  /* 96px: Platz fuer den Schliessen-Knopf oben und die Namenszeile unten. */
+  max-height: calc(100vh - 96px);
+  border-radius: 10px;
+  background: #000;
+}
+.news-medien-name { margin-top: 8px; font-size: 13px; color: #fff; }
+.news-medien-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Anhang-Liste im Admin-Formular */
+.news-medien-edit { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.news-medien-zeile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--gray);
+}
+.news-medien-art { font-size: 18px; line-height: 1; flex: 0 0 auto; }
+/* minmax-Ersatz fuer Flex: ohne min-width:0 sprengt ein langer Dateiname die Zeile. */
+.news-medien-titel {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Namen der Reagierenden beim Ueberfahren eines Knopfes. Liegt UEBER der Leiste, damit
    die Karte beim Hover nicht waechst (sonst rutscht der Knopf unter der Maus weg).
    width: max-content + max-width: 100% haelt die Box so schmal wie noetig und trotzdem

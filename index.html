@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.34" />
+<link rel="stylesheet" href="style.css?v=1.35" />
 </head>
 <body>
 
@@ -371,6 +371,18 @@
           <label>Text (optional)</label>
           <textarea id="news-text" rows="2" maxlength="1000"></textarea>
         </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Bilder und Videos (optional, bis 4 Stück, je max. 10 MB)</label>
+          <div class="news-medien-edit" id="news-medien-edit"></div>
+          <button type="button" class="btn secondary small" id="btn-news-medien-add">📎 Bild oder Video hinzufügen</button>
+          <input type="file" id="news-medien-datei" style="display:none;" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" />
+          <p class="muted" style="font-size:12px; margin-top:6px;">JPEG, PNG, GIF, WebP, MP4 oder WebM. Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar.</p>
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label>Video-Link (optional, für längere Videos)</label>
+          <input type="url" id="news-video-url" maxlength="500" placeholder="https://…" />
+          <p class="muted" style="font-size:12px; margin-top:6px;">Für Videos, die über 10 MB liegen — z. B. YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nicht eingebettet.</p>
+        </div>
         <div class="form-field">
           <button type="submit" class="btn small" id="btn-news-submit">Hinzufügen</button>
           <button type="button" class="btn secondary small" id="btn-news-cancel" style="display:none;">Abbrechen</button>
@@ -698,6 +710,17 @@
 <!-- Materialcontainer-Code: kleines Fenster über dem Dashboard. Der Code wird erst
      beim Öffnen vom Worker geholt, nicht beim Seitenaufbau — er soll nur über die
      Leitung gehen, wenn ihn jemand ausdrücklich sehen will. -->
+<!-- Grossansicht eines Bildes/Videos aus einer Neuigkeit. Eigener z-index (siehe
+     style.css), damit die DOM-Reihenfolge gegenueber den anderen Overlays keine
+     Rolle spielt. -->
+<div class="code-overlay news-medien-overlay" id="news-medien-overlay" style="display:none;">
+  <div class="news-medien-dialog">
+    <button type="button" class="news-medien-close" id="btn-news-medien-close" title="Schließen" aria-label="Schließen">×</button>
+    <div id="news-medien-buehne"></div>
+    <div class="news-medien-name muted" id="news-medien-name"></div>
+  </div>
+</div>
+
 <div class="code-overlay" id="materialcontainer-overlay" style="display:none;">
   <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="materialcontainer-titel">
     <div class="code-dialog-head">
@@ -952,7 +975,7 @@
 </footer>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.54"></script>
-<script src="app.js?v=1.47"></script>
+<script src="config.js?v=1.55"></script>
+<script src="app.js?v=1.48"></script>
 </body>
 </html>

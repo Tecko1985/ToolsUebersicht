@@ -353,6 +353,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.5",
+    groups: [
+      {
+        title: "Bilder und Videos in den Neuigkeiten",
+        items: [
+          "An eine Meldung lassen sich jetzt bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
+          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
+          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
+          "Gepflegt wird alles wie gewohnt unter Einstellungen → Neuigkeiten."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.4",
     groups: [
       {

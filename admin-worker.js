@@ -620,6 +620,38 @@ const DOKUMENT_MAX_ABLEHNGRUND = 500;
 // Nutzer, sondern insgesamt: ein Dokument gehört zwei Leuten.
 const DOKUMENTE_MAX_GESAMT = 2000;
 
+// ---------- Medien-Anhänge der Neuigkeiten (seit 2026-08-03) ----------
+//
+// Eigener Ordner neben den Unterschriften, aus demselben Grund: es gibt keinen
+// generischen dav-Weg dorthin (ToolsUebersicht steht nicht in DAV_APPS).
+//
+// ⚠️ Die Dateien liegen NICHT in sichtbarkeit.json. Diese Datei wird bei JEDEM
+// Seitenaufruf gelesen, um die Kachel-Sichtbarkeit zu bestimmen -- ein
+// eingebettetes base64-Bild wuerde jeden einzelnen Aufruf der Landingpage
+// mitschleppen. In der Meldung steht nur die Datei-Id.
+const NEUIGKEITEN_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + "/neuigkeiten";
+const NEWS_MAX_MEDIEN = 4;
+const NEWS_MAX_VIDEO_URL = 500;
+
+// Erlaubte Formate. Der Typ wird IMMER aus den ersten Bytes bestimmt, nie aus der
+// Angabe des Clients -- eine umbenannte .exe soll nicht als "image/png" landen und
+// spaeter mit diesem Content-Type wieder ausgeliefert werden.
+function erkenneMedientyp(b) {
+  if (!b || b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { mime: "image/jpeg", art: "bild" };
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { mime: "image/png", art: "bild" };
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return { mime: "image/gif", art: "bild" };
+  // RIFF....WEBP
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return { mime: "image/webp", art: "bild" };
+  // ISO-BMFF: Groessenfeld, dann "ftyp" -- deckt mp4, m4v und die iPhone-Aufnahme ab
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return { mime: "video/mp4", art: "video" };
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { mime: "video/webm", art: "video" };
+  return null;
+}
+
+const NEWS_MIME_ERLAUBT = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm"];
+
 // ---------- Vereinsaufgaben (eigene App) ----------
 //
 // Aufgaben, die Funktionären aufgetragen werden — mit Ressorts als dauerhafte
@@ -930,6 +962,13 @@ export default {
         return handleSaveVisibility(request, body, env, authHeader, corsHeaders);
       case "save-news":
         return handleSaveNews(request, body, env, authHeader, corsHeaders);
+      // Medien-Anhänge der Neuigkeiten (seit 2026-08-03). put ist Admin-only wie
+      // save-news, get steht jedem Angemeldeten offen -- prüft aber, dass die Id
+      // wirklich an einer Meldung hängt.
+      case "news-datei-put":
+        return handleNewsDateiPut(request, body, env, authHeader, corsHeaders);
+      case "news-datei-get":
+        return handleNewsDateiGet(request, body, env, authHeader, corsHeaders);
       case "toggle-news-reaction":
         return handleToggleNewsReaction(request, body, env, authHeader, corsHeaders);
       case "my-news-reactions":
@@ -5000,6 +5039,42 @@ async function handleSaveNews(request, body, env, authHeader, corsHeaders) {
     };
     const toolId = String(n.toolId || "").trim().slice(0, 60);
     if (toolId) item.toolId = toolId;
+
+    // Medien-Anhänge: nur Id, Typ und Anzeigename. Die Bytes liegen im Ordner
+    // neuigkeiten/ und werden über news-datei-get geholt.
+    //
+    // ⚠️ Der Client kann hier eine beliebige Datei-Id eintragen -- geprüft wird
+    // die Existenz NICHT. Das ist unkritisch: news-datei-get liefert nur, was
+    // wirklich unter dieser Id liegt, und eine geratene Id trifft nichts (UUID).
+    // Umgekehrt gilt: was hier nicht (mehr) steht, ist über news-datei-get nicht
+    // mehr abrufbar -- das Löschen einer Meldung entzieht ihren Bildern also
+    // sofort den Zugang, auch wenn die Datei in Nextcloud liegen bleibt.
+    const medien = [];
+    for (const m of (Array.isArray(n.medien) ? n.medien : []).slice(0, NEWS_MAX_MEDIEN)) {
+      if (!m || typeof m !== "object") continue;
+      const mid = String(m.id || "");
+      if (!FILE_ID_RE.test(mid)) continue;
+      const mime = String(m.mime || "");
+      if (!NEWS_MIME_ERLAUBT.includes(mime)) continue;
+      if (medien.some((x) => x.id === mid)) continue;
+      medien.push({
+        id: mid,
+        mime,
+        art: mime.indexOf("video/") === 0 ? "video" : "bild",
+        name: String(m.name || "").trim().slice(0, 120)
+      });
+    }
+    if (medien.length) item.medien = medien;
+
+    // Externer Videolink (Michel-Entscheidung 2026-08-03: Upload UND Link).
+    // ⚠️ Nur https und nur als Verweis -- der Client bettet ihn NICHT als iframe
+    // ein, sondern öffnet ihn auf Klick in einem neuen Tab. Eine Einbettung würde
+    // beim bloßen Anzeigen der Startseite Daten an YouTube & Co. schicken, ohne
+    // dass jemand darauf geklickt hat; das berührt den offenen Datenschutzpunkt
+    // zu externen Diensten.
+    const videoUrl = String(n.videoUrl || "").trim().slice(0, NEWS_MAX_VIDEO_URL);
+    if (/^https:\/\/[^\s]+$/i.test(videoUrl)) item.videoUrl = videoUrl;
+
     clean.push(item);
   }
 
@@ -5013,6 +5088,100 @@ async function handleSaveNews(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ news: config.news }, 200, corsHeaders);
+}
+
+// Medien-Anhang einer Neuigkeit hochladen (seit 2026-08-03). Admin-only, wie
+// save-news selbst -- wer Meldungen schreiben darf, darf ihnen auch Bilder
+// anhängen; eine zweite Rechtestufe dafür wäre Ballast.
+//
+// Die Datei geht VOR der Meldung raus (der Client lädt hoch, bekommt die Id und
+// schickt sie dann mit save-news mit). Bricht er dazwischen ab, bleibt eine
+// verwaiste Datei liegen -- dasselbe akzeptierte Muster wie beim
+// Unterschriften-Upload. Sie ist dann über news-datei-get nicht erreichbar,
+// weil dort gegen die Meldungen geprüft wird.
+async function handleNewsDateiPut(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const id = String((body && body.id) || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String((body && body.dataBase64) || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß (max. 10 MB)" }, 413, corsHeaders);
+
+  // Typ IMMER aus den Bytes, nie aus der Angabe des Clients: der ermittelte Wert
+  // wird gespeichert und beim Abruf als Content-Type zurückgegeben.
+  const typ = erkenneMedientyp(bytes);
+  if (!typ) {
+    return json({ error: "Nur Bilder (JPEG, PNG, GIF, WebP) und Videos (MP4, WebM) sind erlaubt" }, 400, corsHeaders);
+  }
+
+  const fileUrl = NEUIGKEITEN_DIR + "/" + id;
+  const headers = { Authorization: authHeader, "Content-Type": typ.mime };
+  let resp;
+  try {
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    // Gleicher MKCOL-Autofix wie bei dav-file-put: 409 = eine Ebene fehlt,
+    // 404 = zwei oder mehr (der Fall beim allerersten Upload überhaupt).
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(NEUIGKEITEN_DIR, authHeader, 0);
+      resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+    }
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, id, mime: typ.mime, art: typ.art }, 200, corsHeaders);
+}
+
+// Medien-Anhang ausliefern. Jeder Angemeldete darf -- Neuigkeiten sind seit
+// 2026-07-25 login-gated, und ihre Bilder gehören zur Meldung.
+//
+// ⚠️ Die Id wird gegen die MELDUNGEN geprüft, nicht bloß gegen den Ordner. Ohne
+// das wäre die Aktion ein generischer Leseweg in neuigkeiten/ für jeden
+// Angemeldeten. Mit der Prüfung gilt: was in keiner Meldung (mehr) steht, ist
+// nicht abrufbar -- eine gelöschte Meldung entzieht ihren Bildern sofort den
+// Zugang, ohne dass in Nextcloud etwas angefasst werden muss.
+async function handleNewsDateiGet(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const id = String((body && body.id) || "");
+  if (!FILE_ID_RE.test(id)) return json({ error: "Ungültige Datei-Id" }, 400, corsHeaders);
+
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  let treffer = null;
+  for (const n of (Array.isArray(config.news) ? config.news : [])) {
+    for (const m of (n && Array.isArray(n.medien) ? n.medien : [])) {
+      if (m && String(m.id) === id) { treffer = m; break; }
+    }
+    if (treffer) break;
+  }
+  if (!treffer) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+
+  let resp;
+  try {
+    resp = await fetch(NEUIGKEITEN_DIR + "/" + id, { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Datei nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+
+  const mime = NEWS_MIME_ERLAUBT.includes(String(treffer.mime)) ? String(treffer.mime) : "application/octet-stream";
+  // private: der Browser darf es im eigenen Cache halten (das Karussell blättert
+  // hin und her), aber kein Zwischenspeicher unterwegs -- die Meldungen sind
+  // Vereinsinterna.
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": mime, "Cache-Control": "private, max-age=300" }
+  });
 }
 
 // ---------- Aktionen: Feedback & Hilfe ----------
