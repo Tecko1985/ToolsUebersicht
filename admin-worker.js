@@ -4759,7 +4759,16 @@ async function handleVaStatus(request, body, env, authHeader, corsHeaders, execC
       const a = vaAufgabeHolen(doc, body && body.id);
       const jetzt = new Date().toISOString();
       const binEmpfaenger = a.empfaenger === ctx.session.username;
-      const binZuweiser = a.von === ctx.session.username || ctx.canAdmin;
+      // Michel-Entscheidung 2026-08-03: Abnehmen und Zurueckgeben gehoeren
+      // ausschliesslich dem, der die Aufgabe GESTELLT hat — Administrieren zaehlt
+      // hier NICHT mit. Vorher stand "|| ctx.canAdmin" hier, und weil Sehen,
+      // Bearbeiten und Administrieren in dieser App an fast denselben Gruppen
+      // haengen, konnte ein Empfaenger mit Administrieren-Recht seine eigene
+      // Meldung selbst abnehmen: erst "Erledigt melden", dann "Abnehmen" — die
+      // verlangte Pruefung war mit zwei Klicks umgangen. Aendern, Zurueckziehen
+      // und Loeschen behalten den Admin-Weg (Handler darunter): dort geht es um
+      // Korrektur, nicht um das Urteil ueber eine geleistete Arbeit.
+      const binZuweiser = a.von === ctx.session.username;
       const alt = a.status;
       // Neutral formuliert, ohne "dir": greift ein Administrierender ein, gehen
       // beide Beteiligten in denselben Versand.
