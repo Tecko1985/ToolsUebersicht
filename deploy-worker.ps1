@@ -54,16 +54,20 @@ $REGISTRY = [ordered]@{
     datei = 'E:\ToolsUebersicht\push-worker.js'
     url   = 'https://push.michel-brunner.workers.dev'
     hinweis = 'Web-Push-Versand. Zustandslos, KEIN Nextcloud-Zugang - landingpage uebergibt die Abos im Aufruf.'
-    # 403 statt 500 beweist nebenbei, dass PUSH_SHARED_SECRET gesetzt ist: der
-    # Worker antwortet 500, solange das Secret fehlt, und erst danach 403.
-    # ACHTUNG: Beide Proben brauchen eine erreichbare workers.dev-Adresse. Wird
-    # sie fuer diesen Worker abgeschaltet (empfohlen, siehe Dateikopf von
-    # push-worker.js), sind sie hier zu entfernen. Der tragende Riegel ist
-    # ohnehin das Shared Secret, nicht die Unerreichbarkeit der Adresse.
-    proben = @(
-      @{ name = '405 bei GET';                        methode = 'GET';  body = $null; erwartet = 405 }
-      @{ name = '403 falsches Secret (Secret gesetzt)'; methode = 'POST'; body = '{"secret":"absichtlich-falsch"}'; erwartet = 403 }
-    )
+    # KEINE Gesundheitsproben, und das ist Absicht: workers.dev ist fuer diesen
+    # Worker abgeschaltet (am 2026-08-03 per API geprueft: enabled = False). Er
+    # ist ausschliesslich ueber das Service Binding von landingpage erreichbar,
+    # jeder HTTP-Aufruf von aussen endet in Error 1042. Proben wuerden hier also
+    # dauerhaft fehlschlagen und einen Fehlalarm erzeugen.
+    #
+    # Der Nachweis, dass dieser Worker laeuft, fuehrt deshalb ueber landingpage:
+    # eine echte Push-Zustellung auf ein angemeldetes Geraet. Dass der richtige
+    # Code oben liegt, prueft dieses Skript ohnehin byte-genau.
+    #
+    # Wer die Proben doch braucht, schaltet workers.dev voruebergehend ein und
+    # muss danach mehrere Minuten auf die Route warten -- 8 Sekunden reichten
+    # am 2026-08-03 nicht, alle drei Versuche liefen in 1042.
+    proben = @()
   }
   'trainerdaten1' = @{
     datei = 'E:\Trainerdaten\submit-worker.js'
