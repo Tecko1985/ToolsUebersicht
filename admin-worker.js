@@ -908,6 +908,8 @@ export default {
         return handlePushAboLoeschen(request, body, env, authHeader, corsHeaders);
       case "push-anlaesse-setzen":
         return handlePushAnlaesseSetzen(request, body, env, authHeader, corsHeaders);
+      case "push-test":
+        return handlePushTest(request, env, authHeader, corsHeaders);
       case "my-trainercheckliste-status":
         return handleMyTrainerchecklisteStatus(request, env, authHeader, corsHeaders);
       case "my-testspielplaner-status":
@@ -8043,6 +8045,66 @@ async function handlePushAnlaesseSetzen(request, body, env, authHeader, corsHead
 
   const doc2 = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
   return json({ ok: true, anlaesse: pushAnlaesseFuer(doc2, username) }, 200, corsHeaders);
+}
+
+// Testnachricht an die eigenen Geraete. Anders als pushSenden schluckt diese
+// Aktion NICHTS, sondern meldet jeden Schritt zurueck -- der normale Versand
+// laeuft in ctx.waitUntil und ist damit von aussen unsichtbar, was die Suche
+// nach "es kommt nichts an" sonst zum Blindflug macht.
+async function handlePushTest(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const schritte = [];
+  const merke = (was, wert) => schritte.push(was + ": " + wert);
+
+  merke("Service Binding PUSH", env.PUSH ? "vorhanden" : "FEHLT");
+  merke("PUSH_SHARED_SECRET", env.PUSH_SHARED_SECRET ? "gesetzt" : "FEHLT");
+  merke("VAPID_PUBLIC_KEY", env.VAPID_PUBLIC_KEY ? "gesetzt" : "FEHLT");
+  merke("Nutzername der Sitzung", session.username);
+
+  if (!env.PUSH || !env.PUSH_SHARED_SECRET) {
+    return json({ ok: false, grund: "Serverseitig nicht vollstaendig eingerichtet.", schritte }, 200, corsHeaders);
+  }
+
+  const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  // Zeigt einen Namens-Versatz zwischen Anmeldung und Versand sofort: die Abos
+  // liegen unter session.username, gesucht wird beim Versand ueber
+  // normalizeUsername(empfaenger).
+  merke("Schluessel in push-abos.json", Object.keys(doc.abos || {}).join(", ") || "(keine)");
+  merke("Nach normalizeUsername", normalizeUsername(session.username));
+
+  const meine = pushAbosFuer(doc, session.username);
+  merke("Eigene Geraete gefunden", meine.length);
+  if (!meine.length) {
+    return json({ ok: false, grund: "Fuer diesen Nutzer ist kein Geraet gespeichert.", schritte }, 200, corsHeaders);
+  }
+
+  try {
+    const res = await env.PUSH.fetch("https://push.intern/senden", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: env.PUSH_SHARED_SECRET,
+        nachricht: { titel: "SC 1911", text: "Testnachricht - es funktioniert.", ziel: "/ToolsUebersicht/" },
+        abos: meine.map((a) => ({ id: a.id, endpoint: a.endpoint, p256dh: a.p256dh, auth: a.auth }))
+      })
+    });
+    merke("Antwort des push-Workers", "HTTP " + res.status);
+    const roh = await res.text();
+    let daten = null;
+    try { daten = JSON.parse(roh); } catch (_) { merke("Antworttext", roh.slice(0, 300)); }
+    if (daten) {
+      merke("zugestellt", daten.zugestellt);
+      merke("tote Abos", (daten.tot || []).length);
+      if (daten.fehler && daten.fehler.length) merke("Fehler", JSON.stringify(daten.fehler).slice(0, 400));
+      if (daten.error) merke("Fehlermeldung", daten.error);
+    }
+    return json({ ok: true, schritte, antwort: daten }, 200, corsHeaders);
+  } catch (e) {
+    merke("Aufruf des push-Workers warf", (e && e.message) ? e.message : String(e));
+    return json({ ok: false, grund: "Der push-Worker war nicht erreichbar.", schritte }, 200, corsHeaders);
+  }
 }
 
 // ---------- Versand ----------
