@@ -122,7 +122,7 @@ Kopf 'Fazit'
 $handlungsbedarf = ($fehlend.Count -gt 0) -or ($nurErwaehnt.Count -gt 0) -or ($tote.Count -gt 0) -or ($neuer -and $neuer.Count -gt 0)
 if ($handlungsbedarf) {
   Write-Host '   Aktualisierung faellig. Danach die Datei im Toolbox Wiki neu hochladen:' -ForegroundColor Yellow
-  Write-Host '   https://tecko1985.github.io/Vereinswiki/ -> Tab "Dokumente" -> alte Version' -ForegroundColor DarkGray
+  Write-Host '   https://sc1911heiligenstadt.github.io/Vereinswiki/ -> Tab "Dokumente" -> alte Version' -ForegroundColor DarkGray
   Write-Host '   entfernen, neue hochladen (nur Admin). Ohne Upload aendert sich fuer die' -ForegroundColor DarkGray
   Write-Host '   Nutzer nichts — die Datei auf der Platte ist nicht die im Wiki.' -ForegroundColor DarkGray
   exit 1

@@ -414,7 +414,8 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
-  "https://tecko1985.github.io"
+  "https://sc1911heiligenstadt.github.io",
+  "https://tecko1985.github.io" // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
 ];
 
 // Apps, die ihre Daten über das Gateway (Action dav-load/dav-save) in Nextcloud
@@ -3601,7 +3602,7 @@ function dokumentMailInhalt(titel, faellig, empfaengerUser, vonName) {
   if (faellig) z.push(`Frist:      ${vaDatumLesbar(faellig)}`);
   z.push("", "Unterschrieben wird in der Tools-Übersicht: oben auf „Unterschriften“ klicken,",
     "das Dokument öffnen und mit Finger oder Maus unterschreiben.",
-    "", "Zur Übersicht: https://tecko1985.github.io/ToolsUebersicht/", "",
+    "", "Zur Übersicht: https://sc1911heiligenstadt.github.io/ToolsUebersicht/", "",
     "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
   return { subject: "Ein Dokument wartet auf deine Unterschrift", textContent: z.join("\n") };
 }
@@ -4413,7 +4414,7 @@ function vaMailInhalt(info, empfaengerUser, vonName) {
 
   if (info.abnahme) z.push("", `Deine Erledigung muss ${vonName} noch abnehmen.`);
 
-  z.push("", "Zur Aufgabe: https://tecko1985.github.io/Vereinsaufgaben/", "",
+  z.push("", "Zur Aufgabe: https://sc1911heiligenstadt.github.io/Vereinsaufgaben/", "",
     "Diese Nachricht wurde automatisch verschickt.", NOTIFY_FROM_NAME);
 
   return {

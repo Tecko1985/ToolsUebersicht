@@ -1,6 +1,6 @@
 # Tools-Übersicht (v1.0)
 
-Zentrale Landingpage mit Links zu allen Vereins- und privaten Tools (Vanilla JS, kein Build-Step). Live unter https://tecko1985.github.io/ToolsUebersicht/, deployed via GitHub Pages.
+Zentrale Landingpage mit Links zu allen Vereins- und privaten Tools (Vanilla JS, kein Build-Step). Live unter https://sc1911heiligenstadt.github.io/ToolsUebersicht/, deployed via GitHub Pages.
 
 Jede Tool-Karte zeigt Version und geeignetes Endgerät (📱/💻) des verlinkten Tools; die Karten lassen sich per Greifpunkt frei anordnen (Reihenfolge wird im Browser gemerkt).
 
@@ -54,7 +54,7 @@ Ein zentrierter Button "📊 Admin-Dashboard" in der Kopfzeile (nur für Admins 
 
 Mehrere Vereins-Tools (Materialliste, TrainerCheckliste, Spielertool, Trainerkodex, Spielersichtung, Platzbelegung, Personalkosten, Vereinskalender, Busplan, Kadermanager, Digitaler Stempel, Kleiderbestellung, Fahrtenbuch, Materialbedarf) speichern ihre eigenen Daten per WebDAV in derselben Nextcloud. Statt dort ein eigenes Formular mit WebDAV-Adresse, Benutzername und App-Passwort zu verlangen, nutzen sie dieselbe Anmeldung wie diese Übersicht:
 
-- Die Apps lesen das Login-Token aus `localStorage["tu_session_token"]` (funktioniert, weil alle Apps auf derselben Origin `tecko1985.github.io` liegen) und rufen den Worker mit `{ action: "dav-load" | "dav-save", app: "<tool-id>" }` auf.
+- Die Apps lesen das Login-Token aus `localStorage["tu_session_token"]` (funktioniert, weil alle Apps auf derselben Origin `sc1911heiligenstadt.github.io` liegen) und rufen den Worker mit `{ action: "dav-load" | "dav-save", app: "<tool-id>" }` auf.
 - Der Worker prüft das Token **und** die Gruppen-Sichtbarkeit des jeweiligen Tools (identische Regeln wie oben), bevor er serverseitig mit den eigenen Nextcloud-Zugangsdaten auf die passende Datei zugreift. Der Client bekommt nie ein Passwort zu Gesicht.
 - Die Zuordnung App-id → Nextcloud-Datei-Pfad liegt fest in `DAV_APPS` in `admin-worker.js`. Eine weitere App anzubinden heißt: Eintrag in `DAV_APPS` ergänzen, in der App den gleichen Gateway-Code (Token lesen, `dav-load`/`dav-save` aufrufen) einbauen und das alte WebDAV-Formular entfernen.
 

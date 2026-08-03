@@ -38,7 +38,7 @@ Materialcontainer-Knopf am Handy kürzen — das ist die einzige verbliebene
 Stellschraube." Michel hat die Kopfzeile trotz dieses Hinweises bewusst als Platz
 gewählt; die Gegenmaßnahmen stehen unter „Der Knopf".
 
-**Es gibt kein Wurzel-Repo.** `E:\` enthält kein `tecko1985.github.io`, die nackte
+**Es gibt kein Wurzel-Repo.** `E:\` enthält kein `sc1911heiligenstadt.github.io`, die nackte
 Adresse läuft heute ins Leere.
 
 **Das Vereinswappen ist zu klein.** `ToolsUebersicht/logo.png` misst 223 × 211 px
@@ -56,7 +56,7 @@ physisch mit rund 360–540 px dargestellt — Hochskalieren würde matschen.
 
 ## Architektur
 
-### Neues Repo `Tecko1985/tecko1985.github.io`
+### Neues Repo `sc1911heiligenstadt/sc1911heiligenstadt.github.io`
 
 Trägt das Wurzelverzeichnis, das heute ins Leere läuft. ⚠️ **Das Manifest muss
 dort liegen** — ein Manifest kann keinen Geltungsbereich oberhalb seines eigenen

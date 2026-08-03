@@ -4756,84 +4756,6 @@ function updateKopfKnoepfe() {
   const lang = document.getElementById("dok-btn-lang");
   if (lang) lang.classList.toggle("aus", !darfAnfordern);
   // Der Knopf im Fenster hat dasselbe Gate wie das Anfordern (siehe renderDokumente).
-}
-
-// Der Info-Tab enthaelt die komplette Aenderungsliste, und die beschreibt Anmeldewege,
-// Rechte-Stufen und interne Ablaeufe. Diese Seite ist die einzige, die ein nicht
-// angemeldeter Besucher ueberhaupt erreicht -- fuer den bleibt der Tab deshalb zu.
-function infoTabOffen() {
-  return !!currentUser;
-}
-
-// Datum ohne Uhrzeit. Zweistellig erzwingen, sonst liefert de-DE "14.7.2026" statt
-// "14.07.2026" und die Karte weicht vom Rest der App ab (vgl. fmtDateTime).
-// Leerer String bei allem, was sich nicht als Datum lesen laesst -- die Aufrufer
-// lassen die Zeile dann weg.
-function fmtDatumKurz(wert) {
-  if (!wert) return "";
-  const d = new Date(wert);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
-
-// Ablaufdatum der aktuellen Anmeldung. Das Token ist "payloadB64.sigB64" (base64url),
-// der Payload traegt exp als Unix-Sekunden. Wird hier nur GELESEN -- ausgestellt und
-// geprueft wird serverseitig, ein manipuliertes Token wuerde beim naechsten Aufruf
-// ohnehin abgelehnt; hier haengt nur eine Anzeige daran.
-// Jeder Fehler (kein Token, falsches Format, kaputtes base64, kein exp) endet in "",
-// nie in einer Exception: eine Konto-Auskunft darf nicht am Anzeigen scheitern.
-function tokenAblaufDatum() {
-  try {
-    const token = loadStoredToken();
-    const payloadTeil = token ? token.split(".")[0] : "";
-    if (!payloadTeil) return "";
-    const exp = JSON.parse(atob(payloadTeil.replace(/-/g, "+").replace(/_/g, "/"))).exp;
-    return Number.isFinite(exp) ? fmtDatumKurz(exp * 1000) : "";
-  } catch (_) {
-    return "";
-  }
-}
-
-// In welchen Tools darf ich mehr als lesen? Schnittmenge aus den Bearbeiter-/
-// Administrieren-Gruppen je Tool (editGroupIds/adminGroupIds -- kommen mit der
-// oeffentlichen Sichtbarkeits-Konfiguration ohnehin in den Client, kostet also
-// keinen zusaetzlichen Aufruf) und den eigenen Gruppen. Tools ohne Sichtbarkeit
-// bleiben draussen: ein Schreibrecht auf etwas, das man gar nicht sieht, ist
-// wirkungslos. Administrieren wird ausgewiesen und impliziert Bearbeiten.
-// Bewusst ueber isAdmin/groupIds und NICHT ueber realIsAdmin -- waehrend einer
-// Admin-Testansicht soll hier stehen, was die getestete Gruppe darf.
-function eigeneBearbeitenRechte() {
-  const meine = new Set(currentUser.groupIds || []);
-  const inMeinen = (ids) => (ids || []).some((id) => meine.has(id));
-  return TOOLS
-    .filter((t) => isVisibleToUser(t.id, currentUser))
-    .map((t) => {
-      const entry = visibilityState[t.id] || {};
-      if (inMeinen(entry.adminGroupIds)) return t.name + " (administrieren)";
-      if (inMeinen(entry.editGroupIds)) return t.name;
-      return null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b, "de"));
-}
-
-// Karte "Mein Konto" im gleichnamigen Tab. Sie steht dort zusammen mit den
-// Anmeldewegen; der Einstellungen-Tab ist seit dem Umbau rein administrativ.
-function renderKontoKarte() {
-  const rows = [];
-  const name = [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ");
-  if (name) rows.push(["Name", escapeHtml(name)]);
-  rows.push(["Nutzername", escapeHtml(currentUser.username)]);
-  if (currentUser.lizenz) rows.push(["Trainerlizenz", escapeHtml(currentUser.lizenz)]);
-  if (currentUser.mannschaften.length) {
-    rows.push(["Mannschaften", currentUser.mannschaften.map(escapeHtml).join(", ")]);
-  }
-  // Namen kommen fertig aufgeloest aus "me" (groupNames). Vor dem Worker-Deploy vom
-  // 2026-07-21 fehlt das Feld -- dann bleibt die Zeile weg, statt IDs zu zeigen.
-  if (currentUser.groupNames.length) {
-    rows.push(["Gruppen", currentUser.groupNames.map(escapeHtml).join(", ")]);
-  }
-  if (currentUser.isAdmin) rows.push(["Rechte", "Administrator"]);
   // Dritter Kopf-Knopf, gleiche Stelle: er verschwindet, sobald die App abgelegt
   // ist, damit die enge Kopfzeile nicht dauerhaft eine Zeile mehr traegt.
   const appKnopf = document.getElementById("btn-app-ablegen");
@@ -4843,7 +4765,7 @@ function renderKontoKarte() {
 // ---------- App auf dem Startbildschirm ablegen ----------
 
 // Manifest und Service Worker liegen auf der WURZEL (eigenes Repo
-// tecko1985.github.io), damit der Geltungsbereich "/" die ganze Flotte umfasst.
+// sc1911heiligenstadt.github.io), damit der Geltungsbereich "/" die ganze Flotte umfasst.
 // Laegen sie hier, umfasste die abgelegte App nur /ToolsUebersicht/ und jeder
 // Klick auf eine Kachel fuehrte heraus in den Browser -- auf dem iPhone in ein
 // eigenes Safari-Fenster. Entwurf:
@@ -4963,6 +4885,84 @@ function oeffneAppAnleitung() {
 function schliesseAppAnleitung() {
   const o = document.getElementById("app-ablegen-overlay");
   if (o) o.style.display = "none";
+}
+
+// Der Info-Tab enthaelt die komplette Aenderungsliste, und die beschreibt Anmeldewege,
+// Rechte-Stufen und interne Ablaeufe. Diese Seite ist die einzige, die ein nicht
+// angemeldeter Besucher ueberhaupt erreicht -- fuer den bleibt der Tab deshalb zu.
+function infoTabOffen() {
+  return !!currentUser;
+}
+
+// Datum ohne Uhrzeit. Zweistellig erzwingen, sonst liefert de-DE "14.7.2026" statt
+// "14.07.2026" und die Karte weicht vom Rest der App ab (vgl. fmtDateTime).
+// Leerer String bei allem, was sich nicht als Datum lesen laesst -- die Aufrufer
+// lassen die Zeile dann weg.
+function fmtDatumKurz(wert) {
+  if (!wert) return "";
+  const d = new Date(wert);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// Ablaufdatum der aktuellen Anmeldung. Das Token ist "payloadB64.sigB64" (base64url),
+// der Payload traegt exp als Unix-Sekunden. Wird hier nur GELESEN -- ausgestellt und
+// geprueft wird serverseitig, ein manipuliertes Token wuerde beim naechsten Aufruf
+// ohnehin abgelehnt; hier haengt nur eine Anzeige daran.
+// Jeder Fehler (kein Token, falsches Format, kaputtes base64, kein exp) endet in "",
+// nie in einer Exception: eine Konto-Auskunft darf nicht am Anzeigen scheitern.
+function tokenAblaufDatum() {
+  try {
+    const token = loadStoredToken();
+    const payloadTeil = token ? token.split(".")[0] : "";
+    if (!payloadTeil) return "";
+    const exp = JSON.parse(atob(payloadTeil.replace(/-/g, "+").replace(/_/g, "/"))).exp;
+    return Number.isFinite(exp) ? fmtDatumKurz(exp * 1000) : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+// In welchen Tools darf ich mehr als lesen? Schnittmenge aus den Bearbeiter-/
+// Administrieren-Gruppen je Tool (editGroupIds/adminGroupIds -- kommen mit der
+// oeffentlichen Sichtbarkeits-Konfiguration ohnehin in den Client, kostet also
+// keinen zusaetzlichen Aufruf) und den eigenen Gruppen. Tools ohne Sichtbarkeit
+// bleiben draussen: ein Schreibrecht auf etwas, das man gar nicht sieht, ist
+// wirkungslos. Administrieren wird ausgewiesen und impliziert Bearbeiten.
+// Bewusst ueber isAdmin/groupIds und NICHT ueber realIsAdmin -- waehrend einer
+// Admin-Testansicht soll hier stehen, was die getestete Gruppe darf.
+function eigeneBearbeitenRechte() {
+  const meine = new Set(currentUser.groupIds || []);
+  const inMeinen = (ids) => (ids || []).some((id) => meine.has(id));
+  return TOOLS
+    .filter((t) => isVisibleToUser(t.id, currentUser))
+    .map((t) => {
+      const entry = visibilityState[t.id] || {};
+      if (inMeinen(entry.adminGroupIds)) return t.name + " (administrieren)";
+      if (inMeinen(entry.editGroupIds)) return t.name;
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "de"));
+}
+
+// Karte "Mein Konto" im gleichnamigen Tab. Sie steht dort zusammen mit den
+// Anmeldewegen; der Einstellungen-Tab ist seit dem Umbau rein administrativ.
+function renderKontoKarte() {
+  const rows = [];
+  const name = [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ");
+  if (name) rows.push(["Name", escapeHtml(name)]);
+  rows.push(["Nutzername", escapeHtml(currentUser.username)]);
+  if (currentUser.lizenz) rows.push(["Trainerlizenz", escapeHtml(currentUser.lizenz)]);
+  if (currentUser.mannschaften.length) {
+    rows.push(["Mannschaften", currentUser.mannschaften.map(escapeHtml).join(", ")]);
+  }
+  // Namen kommen fertig aufgeloest aus "me" (groupNames). Vor dem Worker-Deploy vom
+  // 2026-07-21 fehlt das Feld -- dann bleibt die Zeile weg, statt IDs zu zeigen.
+  if (currentUser.groupNames.length) {
+    rows.push(["Gruppen", currentUser.groupNames.map(escapeHtml).join(", ")]);
+  }
+  if (currentUser.isAdmin) rows.push(["Rechte", "Administrator"]);
 
   // Diese Zeile erscheint IMMER, auch ohne jedes Schreibrecht: sie beantwortet die
   // Frage "warum kann ich dort nichts speichern" -- sie wegzulassen liesse genau die
@@ -5466,6 +5466,9 @@ async function init() {
   setupWhatsappLink();
   setupWikiFrage();
   setupViewAsControl();
+  // Frueh registrieren: beforeinstallprompt kann jederzeit eintreffen, auch
+  // bevor die Worker-Aufrufe unten zurueck sind.
+  setupAppInstallation();
 
   // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft
   // ein vorhandenes Token) sind voneinander unabhängige Worker-Aufrufe — parallel
@@ -5529,6 +5532,3 @@ document.addEventListener("visibilitychange", () => {
   // ohne manuellen Reload verschwinden sehen.
   if (Date.now() - _testspielplanerStatusLastFetch >= 10000) loadTestspielplanerStatus();
 });
-  // Frueh registrieren: beforeinstallprompt kann jederzeit eintreffen, auch
-  // bevor die Worker-Aufrufe unten zurueck sind.
-  setupAppInstallation();
