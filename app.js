@@ -1099,7 +1099,10 @@ function renderToolGrid() {
           : ""}
         <h3>${escapeHtml(t.name)}</h3>
         <p>${escapeHtml(t.description || "")}</p>
-        ${t.mail ? '<div class="tool-mail-badge" role="img" title="Dieses Werkzeug verschickt E-Mails nach außen" aria-label="Verschickt E-Mails">✉️</div>' : ""}
+        ${t.mail || t.push ? '<div class="tool-hinweis-badges">'
+          + (t.mail ? '<span class="tool-hinweis-badge" role="img" title="Dieses Werkzeug verschickt E-Mails nach außen" aria-label="Verschickt E-Mails">✉️</span>' : "")
+          + (t.push ? '<span class="tool-hinweis-badge" role="img" title="Eine Handlung hier meldet sich als Nachricht auf dem Handy" aria-label="Schickt Nachrichten aufs Handy">🔔</span>' : "")
+          + '</div>' : ""}
       `;
       card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
       card.addEventListener("click", (ev) => { if (card.dataset.justDragged === "1") ev.preventDefault(); });

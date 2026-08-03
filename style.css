@@ -912,15 +912,26 @@ main { flex: 1; min-width: 0; }
 }
 .tool-card h3 { font-size: 16px; color: var(--blue); }
 .tool-card p { font-size: 13px; color: var(--muted); line-height: 1.4; }
-/* Briefumschlag unten links auf der Kachel (Flag mail:true in config.js) -- zeigt vor
-   dem Klick, welches Werkzeug im Betrieb E-Mails nach außen verschickt. Bewusst IM
-   Flex-Fluss mit margin-top:auto statt absolut positioniert: die Beschreibung reicht
-   bei der laengsten Kachel einer Zeile bis ans untere Padding, ein absolut gesetztes
-   Badge laege dort lautlos auf dem Text. Da die Kacheln einer Zeile gleich hoch sind,
-   stehen die Umschlaege trotzdem alle auf einer Linie. */
-.tool-mail-badge {
+/* Hinweis-Symbole unten links auf der Kachel: Briefumschlag (Flag mail:true) und
+   Glocke (Flag push:true, seit 2026-08-03). Sie zeigen vor dem Klick, ueber welche
+   Kanaele eine Handlung hier nach draussen wirkt. Bewusst IM Flex-Fluss mit
+   margin-top:auto statt absolut positioniert: die Beschreibung reicht bei der
+   laengsten Kachel einer Zeile bis ans untere Padding, ein absolut gesetztes Badge
+   laege dort lautlos auf dem Text. Da die Kacheln einer Zeile gleich hoch sind,
+   stehen die Symbole trotzdem alle auf einer Linie.
+
+   ⚠️ Der margin-top:auto sitzt am WRAPPER, nicht an den Symbolen. Zwei Geschwister
+   mit je eigenem auto-Margin bekaemen jeder seinen eigenen Schub nach unten und
+   stuenden untereinander statt nebeneinander -- der Wrapper braucht nur einen Anker
+   und haelt beide in einer Zeile. */
+.tool-hinweis-badges {
   margin-top: auto;
   align-self: flex-start;
+  display: flex;
+  gap: 6px;
+  line-height: 1;
+}
+.tool-hinweis-badge {
   font-size: 16px;
   line-height: 1;
   opacity: 0.8;

@@ -24,6 +24,21 @@ const WHATSAPP_CONTACT = "491778587294";
 // vom Worker sc-heiligenstadt-beleg-upload). Kommt eine Sendestelle dazu oder
 // weg, muss dieses Flag mitgezogen werden -- es gibt keine automatische
 // Verbindung zwischen Worker und Kachel.
+//
+// Optionales Flag `push: true` -> Glocken-Symbol daneben (seit 2026-08-03).
+// Gleiche Logik, anderer Kanal: es markiert Werkzeuge, in denen eine Handlung
+// eine Push-Nachricht auf die Handys der Betroffenen auslöst.
+//
+// ⚠️ Es markiert die AUSLÖSENDE Kachel, nicht die empfangende -- genau wie
+// `mail`, wo `beleg-eingang` das Flag trägt und nicht `geschaeftsstelle`.
+// Deshalb steht es bei `fahrtenbuch-extern` (dort wird eingereicht) und NICHT
+// bei `fahrtenbuch` (dort landet die Meldung nur). Wer das umdreht, muss beide
+// Flags umdrehen, sonst widersprechen sich die beiden Symbole.
+//
+// Maßgeblich sind PUSH_ANLAESSE in admin-worker.js **plus** die Stelle, die den
+// Versand tatsächlich auslöst. Der Anlass "unterschriften" hat bewusst keine
+// Kachel: er gehört zur Tools-Übersicht selbst. Dieselbe Handpflege wie bei
+// `mail` -- es gibt keine automatische Verbindung zwischen Worker und Kachel.
 const TOOLS = [
   {
     id: "trainerdaten",
@@ -51,7 +66,8 @@ const TOOLS = [
     icon: "🗂️",
     category: "Verein",
     devices: ["mobile", "desktop"],
-    mail: true
+    mail: true,
+    push: true
   },
   {
     id: "trainercheckliste",
@@ -125,7 +141,8 @@ const TOOLS = [
     icon: "📅",
     category: "Verein",
     devices: ["mobile", "desktop"],
-    mail: true
+    mail: true,
+    push: true
   },
   {
     id: "platzbelegung",
@@ -206,7 +223,8 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/extern.html",
     icon: "🔗",
     category: "Verein",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    push: true
   },
   {
     id: "spiele",
@@ -224,7 +242,8 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/materialbedarf/",
     icon: "🛒",
     category: "Verein",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    push: true
   },
   {
     id: "raumnutzung",
@@ -243,7 +262,8 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/testspielplaner/",
     icon: "🆚",
     category: "Verein",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    push: true
   },
   {
     id: "personalakte",
@@ -261,7 +281,8 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fotoauftraege/",
     icon: "📸",
     category: "Verein",
-    devices: ["mobile", "desktop"]
+    devices: ["mobile", "desktop"],
+    push: true
   },
   {
     id: "abwesenheitskalender",
@@ -331,6 +352,20 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.4",
+    groups: [
+      {
+        title: "Auf einen Blick, welche Kachel sich meldet",
+        items: [
+          "Werkzeuge, in denen eine Handlung als Nachricht auf dem Handy ankommt, tragen jetzt eine Glocke 🔔 unten links — dasselbe Prinzip wie der Briefumschlag ✉, der schon zeigt, wo eine E-Mail nach außen geht.",
+          "Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Fotoaufträge und der externe Fahrtenbuch-Link. Bei Vereinsaufgaben und Vereinskalender stehen beide Symbole nebeneinander, weil dort beide Wege benutzt werden.",
+          "Das Symbol steht bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
+          "Push-Nachrichten gehen ab sofort mit hoher Dringlichkeit raus. Vorher durfte das Handy sie zurückhalten, solange es im Energiesparmodus lag, und gesammelt zustellen."
+        ]
+      }
+    ]
+  },
   {
     version: "1.3",
     groups: [
