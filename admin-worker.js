@@ -1023,6 +1023,8 @@ export default {
         return handleVaStatus(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-zurueckziehen":
         return handleVaZurueckziehen(request, body, env, authHeader, corsHeaders, ctx);
+      case "vereinsaufgabe-reaktivieren":
+        return handleVaReaktivieren(request, body, env, authHeader, corsHeaders, ctx);
       case "vereinsaufgabe-loeschen":
         return handleVaLoeschen(request, body, env, authHeader, corsHeaders);
       case "vereinsaufgabe-kommentar":
@@ -4847,6 +4849,59 @@ async function handleVaZurueckziehen(request, body, env, authHeader, corsHeaders
     // weiterarbeiten, das es nicht mehr gibt.
     pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
       "Eine Aufgabe wurde zurückgezogen");
+    return json(antwort, 200, corsHeaders);
+  } catch (e) { return vaAntwortFehler(e, corsHeaders); }
+}
+
+// Holt eine abgeschlossene Aufgabe zurueck auf "offen" (seit 2026-08-03,
+// Michel-Wunsch: ein versehentliches Zurueckziehen liess sich nicht heilen).
+// Rechte bewusst wie beim Zurueckziehen (Zuweiser ODER Administrieren) und NICHT
+// wie bei der Abnahme: das Wiedereroeffnen ist eine Korrektur, kein Urteil ueber
+// geleistete Arbeit. Praktisch entscheidend — den Zustand kann ein eingreifender
+// Admin erzeugt haben, dann muss er ihn auch zuruecknehmen koennen.
+//
+// Alle drei Endzustaende sind erlaubt (Michel-Entscheidung, ausdruecklich auch
+// "erledigt"). Damit die wieder offene Aufgabe nichts Widerspruechliches mit sich
+// traegt, werden die Abschluss-Felder geraeumt — ein stehengebliebenes
+// erledigtAm liefe sonst in den CSV-Export und die Grund-Bloecke des Dialogs
+// widersprechen dem Status. Was dabei verloren ginge, wird VORHER in den Verlauf
+// geschrieben: die App ist ein Nachweis, eine Begruendung darf nicht spurlos
+// verschwinden.
+async function handleVaReaktivieren(request, body, env, authHeader, corsHeaders, execCtx) {
+  const ctx = await vaSession(request, env, authHeader, corsHeaders);
+  if (ctx.fehler) return ctx.fehler;
+  try {
+    vaVerlangeEdit(ctx);
+    const { pushAn, ...antwort } = await vaMutiere(authHeader, (doc) => {
+      const a = vaAufgabeHolen(doc, body && body.id);
+      if (a.von !== ctx.session.username && !ctx.canAdmin) {
+        throw new VaFehler("Nur wer die Aufgabe zugewiesen hat, kann sie wieder öffnen", 403);
+      }
+      if (a.status !== "erledigt" && a.status !== "abgelehnt" && a.status !== "zurueckgezogen") {
+        throw new VaFehler("Diese Aufgabe läuft noch", 400);
+      }
+      const alt = a.status;
+      // Erst sichern, was gleich geraeumt wird — sonst ist die Begruendung des
+      // Empfaengers nach einer Reaktivierung nirgends mehr nachlesbar.
+      const grundAlt = a.ablehnGrund || a.zurueckgezogenGrund || "";
+      a.status = "offen";
+      a.erledigtAm = "";
+      a.gemeldetAm = "";
+      a.abgenommenAm = "";
+      a.abgenommenVon = "";
+      a.abgelehntAm = "";
+      a.ablehnGrund = "";
+      a.zurueckgezogenAm = "";
+      a.zurueckgezogenVon = "";
+      a.zurueckgezogenGrund = "";
+      vaVerlauf(a, ctx.session.username, "status", alt, a.status);
+      if (grundAlt) vaVerlauf(a, ctx.session.username, "abschlussgrund", grundAlt, "");
+      return { pushAn: vaPushBeteiligte(a, ctx) };
+    });
+    // Wie beim Zurueckziehen: wer den Auftrag abgehakt hatte, muss erfahren, dass
+    // er wieder auf seinem Tisch liegt.
+    pushSenden(env, authHeader, execCtx, pushAn, "aufgaben",
+      "Eine abgeschlossene Aufgabe wurde wieder geöffnet");
     return json(antwort, 200, corsHeaders);
   } catch (e) { return vaAntwortFehler(e, corsHeaders); }
 }
