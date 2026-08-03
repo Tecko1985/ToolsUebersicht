@@ -7,8 +7,12 @@ const WHATSAPP_CONTACT = "491778587294";
 // Statische Stammdaten aller Tool-Links. Die Sichtbarkeit (visible) wird NICHT
 // hier gepflegt, sondern zur Laufzeit vom Admin-Worker geladen/überschrieben
 // (siehe admin-worker.js) — nur die Existenz eines Tools + seine Metadaten
-// (inkl. version) ändern sich hier, das braucht einen Code-Push und muss von
-// Hand mit der jeweiligen Version des verlinkten Tools synchron gehalten werden.
+// ändern sich hier, das braucht einen Code-Push.
+//
+// Eine Versionsnummer je Tool gibt es hier bewusst NICHT mehr (2026-08-03): die
+// Kacheln zeigen keine, das Badge im Kopfbereich ist weg, und damit hätte das Feld
+// nur noch Pflegeaufwand ohne Anzeige bedeutet. Die einzige Versionsangabe der
+// Übersicht steht im Info-Tab (APP_VERSION + APP_CHANGELOG unten).
 //
 // Optionales Flag `mail: true` -> Briefumschlag-Symbol unten links auf der Kachel
 // (siehe renderToolGrid() in app.js). Es markiert Werkzeuge, die im Betrieb
@@ -28,7 +32,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/Trainerdaten/",
     icon: "📝",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -38,7 +41,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/",
     icon: "👥",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -48,7 +50,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/Vereinsaufgaben/",
     icon: "🗂️",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"],
     mail: true
   },
@@ -59,7 +60,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/TrainerCheckliste/",
     icon: "📋",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -69,7 +69,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/Materialliste/",
     icon: "🎽",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -79,7 +78,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/sc1911-anmeldung/verwaltung.html",
     icon: "🗳️",
     category: "Verein",
-    version: "1.0",
     devices: ["desktop"]
   },
   {
@@ -89,7 +87,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/vereinsbudget.html",
     icon: "💶",
     category: "Verein",
-    version: "1.0",
     devices: ["desktop"]
   },
   {
@@ -99,7 +96,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/beleg-eingang.html",
     icon: "🧾",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile"],
     mail: true
   },
@@ -110,7 +106,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html",
     icon: "📋",
     category: "Verein",
-    version: "1.0",
     devices: ["desktop"]
   },
   {
@@ -120,7 +115,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/spielertool-test/",
     icon: "⚽",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -130,7 +124,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/vereinskalender/",
     icon: "📅",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"],
     mail: true
   },
@@ -141,7 +134,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/platzbelegung/",
     icon: "🏟️",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -151,7 +143,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/spielersichtung/",
     icon: "🔍",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -161,7 +152,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/Personalkosten/",
     icon: "💶",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -171,7 +161,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/kadermanager/",
     icon: "⚽",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -181,7 +170,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/busplan/",
     icon: "🚌",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -191,7 +179,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/digitaler-stempel/",
     icon: "🖋️",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -201,7 +188,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/kleiderbestellung/",
     icon: "👕",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -211,7 +197,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/",
     icon: "🚐",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -221,7 +206,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fahrtenbuch/extern.html",
     icon: "🔗",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -231,7 +215,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/spiele/",
     icon: "🎮",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -241,7 +224,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/materialbedarf/",
     icon: "🛒",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -251,7 +233,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/raumnutzung/",
     icon: "🏛️",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"],
     mail: true
   },
@@ -262,7 +243,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/testspielplaner/",
     icon: "🆚",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -272,7 +252,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/personalakte/",
     icon: "🗂️",
     category: "Verein",
-    version: "1.0",
     devices: ["desktop"]
   },
   {
@@ -282,7 +261,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/fotoauftraege/",
     icon: "📸",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -292,7 +270,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/abwesenheitskalender/",
     icon: "🧳",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   },
   {
@@ -302,7 +279,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/besprechung/",
     icon: "🎙️",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"],
     newTab: true
   },
@@ -313,7 +289,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/dokumentenvorlagen/",
     icon: "📄",
     category: "Verein",
-    version: "1.0",
     devices: ["desktop"]
   },
   {
@@ -323,7 +298,6 @@ const TOOLS = [
     url: "https://sc1911heiligenstadt.github.io/ausbildungsplan/",
     icon: "🎯",
     category: "Verein",
-    version: "1.0",
     devices: ["mobile", "desktop"]
   }
 ];

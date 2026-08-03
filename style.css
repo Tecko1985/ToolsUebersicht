@@ -365,8 +365,6 @@ button.btn:disabled { opacity: 0.6; cursor: default; }
   vertical-align: middle;
   margin-left: 4px;
 }
-.version-badge-link { cursor: pointer; }
-.version-badge-link:hover, .version-badge-link:focus-visible { background: rgba(255, 255, 255, 0.32); }
 
 #changelog-list { display: flex; flex-direction: column; gap: 8px; }
 .changelog-entry { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
@@ -856,15 +854,6 @@ main { flex: 1; min-width: 0; }
   user-select: none;
 }
 .tool-drag-handle:active { cursor: grabbing; }
-.tool-version {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--gray);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 9px;
-}
 .tool-devices {
   font-size: 12px;
   line-height: 1;

@@ -1081,7 +1081,6 @@ function renderToolGrid() {
         <div class="tool-card-badges">
           <span class="tool-drag-handle" title="Verschieben" aria-hidden="true">⠿</span>
           ${deviceIcons(t.devices)}
-          ${t.version ? `<span class="tool-version">v${escapeHtml(t.version)}</span>` : ""}
         </div>
         <div class="tool-icon">${t.icon || "🔗"}</div>
         ${t.wip ? '<div class="badge-wip">🚧 In Bearbeitung</div>' : ""}
@@ -4447,15 +4446,6 @@ function setupTabs() {
     btn.addEventListener("click", () => activateTab(btn.dataset.tab));
   });
 
-  const versionBadgeHeader = document.getElementById("version-badge");
-  // Guard statt nur der entfernten Klasse: der Handler haengt dauerhaft am Badge, und
-  // ohne ihn oeffnete ein Klick den Info-Tab auch dann, wenn er zu sein soll.
-  const openVersionHistory = () => { if (infoTabOffen()) activateTab("info"); };
-  versionBadgeHeader.addEventListener("click", openVersionHistory);
-  versionBadgeHeader.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openVersionHistory(); }
-  });
-
   document.getElementById("btn-empty-login").addEventListener("click", () => activateTab("konto"));
   document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("konto"));
   document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
@@ -4672,20 +4662,6 @@ function renderNavTabs() {
   // haben unterschiedliche Bedingungen, siehe todosTabOffen/dokumenteTabOffen.
   const personalDa = todosTabOffen();
   updateKopfKnoepfe();
-
-  // Das Versionsbadge im Header ist der zweite Weg in den Info-Tab. Ist der zu, muss
-  // auch das Badge aufhoeren wie ein Knopf auszusehen -- sonst klickt man ins Leere.
-  const badge = document.getElementById("version-badge");
-  badge.classList.toggle("version-badge-link", infoOffen);
-  if (infoOffen) {
-    badge.setAttribute("role", "button");
-    badge.setAttribute("tabindex", "0");
-    badge.setAttribute("title", "Versionshistorie ansehen");
-  } else {
-    badge.removeAttribute("role");
-    badge.removeAttribute("tabindex");
-    badge.removeAttribute("title");
-  }
 
   // Wer sich aus einem Admin- oder dem Info-Tab heraus abmeldet, saehe sonst eine
   // Sektion, deren Inhalt gerade komplett ausgeblendet wurde: leere Seite, kein Tab
@@ -5454,7 +5430,6 @@ function escapeHtml(str) {
 }
 
 async function init() {
-  document.getElementById("version-badge").textContent = "v" + APP_VERSION;
   document.getElementById("version-badge-2").textContent = "v" + APP_VERSION;
   renderChangelog();
   setupTabs();
