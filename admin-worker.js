@@ -9152,6 +9152,13 @@ const PUNKTE_IGNORIERT = new Set([
   "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
   "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
   "fahrtenbuch-beleg-file-get",
+  // Die Sammel-Lader der Startseiten-Fenster "Meine ToDos" und "Unterschriften".
+  // ⚠️ Beide laufen beim Seitenaufbau von selbst und werden nach jeder Aenderung
+  // erneut aufgerufen -- sie sind eine Auffrischung, keine Handlung. Die echten
+  // Vorgaenge dahinter (aufgabe-speichern, dokument-unterschreiben, ...) zaehlen
+  // ohnehin je fuer sich. Beide Aktionen ruft NUR dieses Repo auf (per Grep ueber
+  // E:\ geprueft), es haengt also keine andere App daran.
+  "aufgaben-load", "dokumente-load",
   // Die Punkte-Aktionen selbst -- sonst zaehlt das Nachsehen des eigenen Standes
   // als Aktivitaet, und wer oft genug nachschaut, verdient daran.
   "meine-punkte", "punkte-opt-out", "aktivitaet-auswertung"
@@ -9307,6 +9314,18 @@ async function aktivitaetErfassen(request, body, env, authHeader, status) {
     const aktion = String((body && body.action) || "");
     if (!aktion || PUNKTE_IGNORIERT.has(aktion)) return;
 
+    // ⚠️ Vom Client als Hintergrund-Abruf markiert. Noetig, weil `dav-load` je nach
+    // Absender zwei verschiedene Dinge bedeutet: aus dem Repo einer App heisst es
+    // "der Nutzer hat mich geoeffnet", aus den Startseiten-Fenstern der Uebersicht
+    // dagegen nur "ich fuelle eine Kachel". Ohne die Marke buchte allein das Oeffnen
+    // der Uebersicht dem Nutzer eine Nutzung von Vereinskalender UND
+    // Abwesenheitskalender -- Punkte fuers blosse Angemeldetsein, und dazu eine
+    // Nutzungsstatistik, die zwei Tools ausweist, die niemand aufgerufen hat.
+    // Die Marke ist absichtlich nur abschwaechend: wer sie faelschlich mitschickt,
+    // nimmt sich selbst Punkte weg. Wer sie weglaesst, kaeme ohnehin nicht ueber
+    // den Tagesdeckel hinaus.
+    if (body && body.hintergrund === true) return;
+
     // Reine HMAC-Pruefung des Tokens, kein Nextcloud-Read. Der volle
     // getVerifiedSession-Abgleich waere hier Verschwendung: der Handler hat ihn
     // gerade selbst gemacht, sonst waere die Antwort kein 2xx geworden.
@@ -9402,6 +9421,11 @@ function punkteAusEreignissen(ereignisse) {
 
   (Array.isArray(ereignisse) ? ereignisse : []).forEach((e) => {
     if (!e || typeof e.w !== "number" || !Number.isFinite(e.w)) return;
+    // Ignorier-Liste auch beim RECHNEN anwenden, nicht nur beim Schreiben. Sonst
+    // zaehlt eine Aktion, die erst spaeter ausgenommen wurde, aus den alten Rohdaten
+    // weiter mit -- und die Zusage "Regeln lassen sich rueckwirkend neu rechnen"
+    // gaelte ausgerechnet fuer die Liste nicht, die am ehesten nachgezogen wird.
+    if (PUNKTE_IGNORIERT.has(String(e.a || ""))) return;
     const tag = punkteTagKey(e.w);
     if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), tagewerke: new Set(), taten: 0 });
     const t = tage.get(tag);

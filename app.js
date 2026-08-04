@@ -1866,7 +1866,11 @@ async function loadSidebarWidget() {
   let calendarFailed = false, absenceFailed = false;
 
   const calendarPromise = showCalendar
-    ? Promise.all([callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID }), loadBirthdaysToday()])
+    // hintergrund: dieses dav-load laeuft beim Seitenaufbau von selbst, der Nutzer
+    // hat den Vereinskalender NICHT geoeffnet -- ohne die Marke buchte ihm die
+    // Punktezaehlung eine Tool-Nutzung, die nie stattgefunden hat. Wer die App
+    // wirklich oeffnet, schickt sein dav-load aus dem eigenen Repo, ohne Marke.
+    ? Promise.all([callWorker("dav-load", { app: CALENDAR_WIDGET_APP_ID, hintergrund: true }), loadBirthdaysToday()])
         .then(([res, namen]) => {
           const data = res && res.data && typeof res.data === "object" ? res.data : {};
           const termine = Array.isArray(data.termine) ? data.termine : [];
@@ -1890,7 +1894,8 @@ async function loadSidebarWidget() {
     : Promise.resolve();
 
   const absencePromise = showAbsences
-    ? callWorker("dav-load", { app: ABSENCE_WIDGET_APP_ID })
+    // hintergrund: siehe Kalender-Widget darueber, gleicher Grund.
+    ? callWorker("dav-load", { app: ABSENCE_WIDGET_APP_ID, hintergrund: true })
         .then((res) => {
           const data = res && res.data && typeof res.data === "object" ? res.data : {};
           const abwesenheiten = Array.isArray(data.abwesenheiten) ? data.abwesenheiten : [];
