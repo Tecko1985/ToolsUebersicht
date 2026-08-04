@@ -354,6 +354,22 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "2.0",
+    groups: [
+      {
+        title: "Mehr Wege zu Punkten",
+        items: [
+          "Neu: <strong>10 Punkte für jeden Tag</strong>, an dem du überhaupt etwas mit den Werkzeugen gemacht hast — einfach obendrauf, zusätzlich zu allem anderen.",
+          "Neu: <strong>5 Punkte, wenn du einem Termin zu- oder absagst.</strong> Wer früh Bescheid gibt, erspart anderen das Hinterhertelefonieren.",
+          "Neu: <strong>20 Punkte für einen Passwortwechsel</strong>, höchstens alle drei Monate. Mehrmals hintereinander zu wechseln bringt nichts.",
+          "Neu: <strong>10 Punkte, wenn du wiederkommst</strong>, nachdem deine Anmeldung abgelaufen war. Die Anmeldung hält sieben Tage.",
+          "Diese vier Zugaben zählen immer — auch an einem Tag, an dem du die Obergrenze von 60 Punkten schon erreicht hast.",
+          "Beim Öffnen der Übersicht wurden bisher versehentlich Punkte für Vereinskalender und Abwesenheitskalender gutgeschrieben, obwohl niemand sie geöffnet hatte. Das ist behoben."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.9",
     groups: [
       {

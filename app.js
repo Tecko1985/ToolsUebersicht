@@ -6467,9 +6467,28 @@ function punkteRegelnRendern(r) {
   if (r.proTagewerk) {
     zeilen.push([r.proTagewerk, "wenn du an einem Tag in einem Werkzeug wirklich etwas eingetragen hast — einmal je Werkzeug, egal wie oft du speicherst"]);
   }
+  // Seit Regeln 4. Steht bei den Vorgängen, nicht bei den Zugaben — es IST ein
+  // Vorgang, nur ein höher bewerteter.
+  if (r.proTerminAntwort) {
+    zeilen.push([r.proTerminAntwort, "wenn du einem Termin zu- oder absagst — die anderen müssen dir dann nicht hinterhertelefonieren"]);
+  }
+  // Seit Regeln 3 (Michel-Vorgabe). Stehen bewusst UNTER den oberen: die
+  // erklären, wie das Arbeiten selbst zählt, diese drei sind Zugaben obendrauf.
+  if (r.proAktivemTag) {
+    zeilen.push([r.proAktivemTag, "obendrauf für jeden Tag, an dem du überhaupt etwas gemacht hast"]);
+  }
+  if (r.proPasswortwechsel) {
+    zeilen.push([r.proPasswortwechsel, "wenn du dein Passwort wechselst — höchstens alle "
+      + (r.passwortSperreTage || 90) + " Tage, es bringt also nichts, gleich mehrmals zu wechseln"]);
+  }
+  if (r.proRueckkehr) {
+    zeilen.push([r.proRueckkehr, "wenn du dich wieder anmeldest, nachdem deine Anmeldung nach "
+      + (r.rueckkehrNachTagen || 7) + " Tagen abgelaufen war"]);
+  }
+
   const extra = [];
   if (r.tagesdeckel) {
-    extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden nicht gezählt.");
+    extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden nicht gezählt — die drei Zugaben darüber zählen aber immer, sie fallen ohnehin nur selten an.");
   }
   extra.push("Nur angemeldet zu sein gibt nichts — es muss etwas passieren.");
   if (r.aufbewahrungMonate) {

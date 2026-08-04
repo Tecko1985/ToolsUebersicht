@@ -1158,7 +1158,7 @@ export default {
     // Punkte NACH der Antwort mitschreiben (Block "Aktivitaetspunkte" am Dateiende):
     // der Nutzer wartet dadurch keine Millisekunde laenger, und ein Fehler beim
     // Zaehlen kann seine eigentliche Handlung nicht mehr kippen.
-    ctx.waitUntil(aktivitaetErfassen(request, body, env, authHeader, antwort.status));
+    ctx.waitUntil(aktivitaetErfassen(request, body, env, authHeader, antwort));
     return antwort;
 
     } catch (e) {
@@ -1240,6 +1240,10 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
     return json({ error: "Ungültige Anmeldedaten" }, 401, corsHeaders);
   }
 
+  // ⚠️ VOR dem Ueberschreiben lesen: nur hier ist noch bekannt, wann die vorige
+  // Anmeldung war -- und daran haengt der Rueckkehr-Bonus.
+  const vorigeAnmeldung = user.lastLoginAt;
+
   // Für die "Zuletzt angemeldet"-Liste im Admin-Dashboard, best-effort — ein
   // Speicherfehler hier darf den eigentlichen Login nicht verhindern.
   user.lastLoginAt = new Date().toISOString();
@@ -1249,7 +1253,20 @@ async function handleLogin(body, env, authHeader, corsHeaders) {
 
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
   const identity = deriveIdentity(user, usersDoc);
-  return json({ token, username: user.username, ...identity }, 200, corsHeaders);
+  const antwort = json({ token, username: user.username, ...identity }, 200, corsHeaders);
+
+  // Rueckkehr-Bonus (Regelversion 3): die vorige Sitzung war wirklich abgelaufen.
+  // ⚠️ Erstanmeldungen zaehlen nicht -- ohne vorherigen Login gibt es nichts,
+  // wovon man zurueckkehren koennte. Und der zweistufige Login-Flow ruft diesen
+  // Handler zwar zweimal auf, kommt aber nur beim zweiten Mal (mit richtigem
+  // Passwort) ueberhaupt bis hierher.
+  if (vorigeAnmeldung) {
+    const abstand = Date.now() - Date.parse(vorigeAnmeldung);
+    if (Number.isFinite(abstand) && abstand > SESSION_TTL_SECONDS * 1000) {
+      antwort.punkteBonus = { art: "rueckkehr", username: user.username };
+    }
+  }
+  return antwort;
 }
 
 async function handleSetPassword(body, env, authHeader, corsHeaders) {
@@ -1334,10 +1351,22 @@ async function handleChangePassword(request, body, env, authHeader, corsHeaders)
   }
 
   const { hash, salt, iterations } = await hashNewPassword(newPassword);
+  const jetztIso = new Date().toISOString();
   user.passwordHash = hash;
   user.salt = salt;
   user.iterations = iterations;
-  user.passwordSetAt = new Date().toISOString();
+  user.passwordSetAt = jetztIso;
+
+  // Bonus fuer den regelmaessigen Wechsel (Regelversion 3), hoechstens einmal je
+  // PUNKTE_PW_BONUS_TAGE. ⚠️ Ohne diese Sperre waere fuenfmal hintereinander
+  // wechseln die billigste Punktequelle des ganzen Systems. Der Zeitstempel steht
+  // bewusst in nutzer.json und nicht in den Aktivitaetsdaten: er muss den
+  // Widerspruch (punkteOptOut loescht den Aktivitaetsordner) und die Verdichtung
+  // nach 13 Monaten ueberleben, sonst waere die Sperre danach aufgehoben.
+  const letzterBonus = Date.parse(user.punkteBonusPwAt || "");
+  const bonusFaellig = !Number.isFinite(letzterBonus)
+    || (Date.now() - letzterBonus) >= PUNKTE_PW_BONUS_TAGE * 86400000;
+  if (bonusFaellig) user.punkteBonusPwAt = jetztIso;
 
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
@@ -1347,7 +1376,9 @@ async function handleChangePassword(request, body, env, authHeader, corsHeaders)
 
   const token = await signToken(makeSessionPayload(user.username, !!user.isAdmin), env.SESSION_SECRET);
   const identity = deriveIdentity(user, usersDoc);
-  return json({ token, username: user.username, ...identity }, 200, corsHeaders);
+  const antwort = json({ token, username: user.username, ...identity }, 200, corsHeaders);
+  if (bonusFaellig) antwort.punkteBonus = { art: "passwortwechsel", username: user.username };
+  return antwort;
 }
 
 async function handleMe(request, body, env, authHeader, corsHeaders) {
@@ -9115,7 +9146,7 @@ const AKTIVITAET_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + 
 
 // Regelwerk. Die Version wandert in saldo.json mit, damit ein Saldo, der noch nach
 // alten Regeln gerechnet wurde, beim naechsten Zugriff erkennbar ist.
-const PUNKTE_REGELN_VERSION = 2;
+const PUNKTE_REGELN_VERSION = 4;
 const PUNKTE_FENSTER_MS = 5 * 60 * 1000;
 const PUNKTE_PRO_FENSTER = 1;
 const PUNKTE_PRO_APP_START = 2;
@@ -9123,6 +9154,33 @@ const PUNKTE_PRO_TAT = 3;
 const PUNKTE_TAGESDECKEL = 60;
 const PUNKTE_ROHDATEN_MONATE = 13;
 const PUNKTE_PROTOKOLL_TAGE = 30;
+
+// Boni (seit Regelversion 3, Michel-Vorgabe vom 2026-08-04).
+//
+// ⚠️ Alle drei stehen AUSSERHALB des Tagesdeckels. Sie sind durch ihre eigene
+// Haeufigkeit begrenzt (einmal je Tag bzw. einmal je 90 Tage) und damit nicht
+// hochklickbar -- der Deckel bremst nur, was sich wiederholen laesst. Stuenden
+// sie innerhalb, schluckte er an einem fleissigen Tag ausgerechnet die 20 Punkte
+// fuers Passwort, und der Nutzer saehe fuer seinen Wechsel gar nichts.
+const PUNKTE_BONUS_TAG = 10;
+const PUNKTE_BONUS_PASSWORT = 20;
+const PUNKTE_BONUS_RUECKKEHR = 10;
+// Sperrfrist fuer den Passwort-Bonus. ⚠️ Ohne sie waere fuenfmal hintereinander
+// wechseln die billigste Punktequelle des ganzen Systems.
+const PUNKTE_PW_BONUS_TAGE = 90;
+
+// Auf einen Termin antworten (Regelversion 4, Michel-Vorgabe). Hoeher als eine
+// gewoehnliche Tat, weil eine Rueckmeldung anderen Planungsarbeit abnimmt: der
+// Trainer muss nicht hinterhertelefonieren.
+const PUNKTE_TAT_TERMIN_ANTWORT = 5;
+
+// Bonus-Ereignisse. Eigene Aktionsnamen, weil sie NICHT aus einer Gateway-Aktion
+// entstehen, sondern aus einer Bedingung, die nur der jeweilige Handler kennt
+// (der VORIGE lastLoginAt, der vorige Bonus-Zeitpunkt).
+const PUNKTE_BONI = new Map([
+  ["bonus-passwortwechsel", PUNKTE_BONUS_PASSWORT],
+  ["bonus-rueckkehr", PUNKTE_BONUS_RUECKKEHR]
+]);
 // Obergrenze fuer die Admin-Auswertung. Ein Worker darf nur begrenzt viele
 // Unteranfragen stellen -- eine Auswertung ueber alle Konten in EINEM Request
 // waere genau der Rundlauf, an dem der Worker stirbt. Der Client fragt in Bloecken.
@@ -9193,7 +9251,17 @@ const PUNKTE_TATEN = new Map([
   ["vereinsaufgabe-kommentar", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
-  ["vereinskalender-vote", PUNKTE_PRO_TAT],
+  // Zu-/Absage zu einem Terminvorschlag im Vereinskalender (die Oberflaeche dort
+  // nennt es woertlich "Zusagen"/"Absagen"). Seit Regelversion 4 hoeher bewertet.
+  ["vereinskalender-vote", PUNKTE_TAT_TERMIN_ANTWORT],
+  // Zu-/Absage zu Training oder Spiel im Kadermanager. ⚠️ Der Aktionsname traegt
+  // die Unterart, weil `km-self` mehrere Selbstbedienungen bedient (claim,
+  // umfrage, aufgabe, abwesenheit) -- ein pauschaler Wert auf `km-self` wuerde
+  // die alle mitbezahlen. Siehe punkteAktionMitUnterart.
+  // ⚠️ Zahlt in der Praxis fast nie aus: diesen Weg gehen ganz ueberwiegend
+  // SPIELER, und Spielerkonten werden gar nicht erfasst (Michel-Entscheidung vom
+  // 2026-08-04). Es greift nur bei Personal-Konten mit eigenem Kaderplatz.
+  ["km-self:teilnahme", PUNKTE_TAT_TERMIN_ANTWORT],
   ["vereinskalender-termin-push", PUNKTE_PRO_TAT],
   ["raumnutzung-mail-antrag", PUNKTE_PRO_TAT],
   ["fahrtenbuch-extern-submit", PUNKTE_PRO_TAT],
@@ -9226,6 +9294,22 @@ const PUNKTE_APP_PRAEFIXE = [
   ["set-materialcontainer", "materialliste"],
   ["beleg-eingang", "budget"]
 ];
+
+// Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht
+// der Endpunkt, sondern die Unterart aus dem Body -- ein pauschaler Wert auf
+// `km-self` bezahlte sonst auch das Beanspruchen eines Kaderplatzes, das Melden
+// von Urlaub und das Uebernehmen einer Aufgabe mit.
+//
+// ⚠️ Enge Liste UND enger Zeichenvorrat: der Name landet als Schluessel in der
+// Aktivitaetsdatei, dort soll ein Client nichts Beliebiges hineinschreiben koennen.
+const PUNKTE_AKTIONEN_MIT_UNTERART = new Set(["km-self"]);
+
+function punkteAktionMitUnterart(aktion, body) {
+  if (!PUNKTE_AKTIONEN_MIT_UNTERART.has(aktion)) return aktion;
+  const art = String((body && body.art) || "");
+  if (!/^[a-z]{1,20}$/.test(art)) return aktion;
+  return aktion + ":" + art;
+}
 
 function punkteFenster(ms) {
   return Math.floor(ms / PUNKTE_FENSTER_MS);
@@ -9306,10 +9390,23 @@ function aktivitaetSchonGesehen(key, jetzt) {
 // ⚠️ Wirft nie. Punkte sind Beiwerk -- die eigentliche Handlung des Nutzers ist an
 // dieser Stelle laengst beantwortet und darf durch einen Zaehlfehler nicht mehr
 // beruehrt werden.
-async function aktivitaetErfassen(request, body, env, authHeader, status) {
+async function aktivitaetErfassen(request, body, env, authHeader, antwort) {
   try {
     // Nur erfolgreiche Handlungen. Ein 403 ist keine Vereinsarbeit.
-    if (!(Number(status) >= 200 && Number(status) < 400)) return;
+    const status = Number(antwort && antwort.status);
+    if (!(status >= 200 && status < 400)) return;
+
+    // Bonus-Marke ZUERST, vor der Ignorier-Liste. Beide Boni haengen an Aktionen,
+    // die dort stehen (login, change-password) -- und der Login traegt nicht
+    // einmal einen Token, aus dem sich der Nutzer ergaebe. Deshalb entscheidet
+    // der Handler (nur er kennt den VORIGEN lastLoginAt bzw. den vorigen
+    // Bonus-Zeitpunkt) und haengt das Ergebnis an die Response; geschrieben wird
+    // trotzdem erst hier, also nach der Antwort. Die Marke verlaesst den Worker
+    // nie -- sie ist eine Objekt-Eigenschaft, kein Teil des Bodys.
+    const marke = antwort && antwort.punkteBonus;
+    if (marke && PUNKTE_BONI.has("bonus-" + marke.art)) {
+      await aktivitaetBonusSchreiben(marke.username, marke.art, env, authHeader);
+    }
 
     const aktion = String((body && body.action) || "");
     if (!aktion || PUNKTE_IGNORIERT.has(aktion)) return;
@@ -9336,23 +9433,45 @@ async function aktivitaetErfassen(request, body, env, authHeader, status) {
 
     // nutzer.json steckt nach der Handlung praktisch immer im jsonCache (5 s),
     // dieser Read kostet daher im Normalfall keinen Nextcloud-Roundtrip.
-    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
-    const user = getOwn(usersDoc.users, username);
-    if (!user || !istPersonal(user) || user.punkteOptOut) return;
+    if (!(await punkteNutzerZulaessig(username, env, authHeader))) return;
 
     const jetzt = Date.now();
     const fenster = punkteFenster(jetzt);
     const app = punkteApp(body, aktion);
-    const istTat = PUNKTE_TATEN.has(aktion);
+    // Ab hier zaehlt der verfeinerte Name (z.B. "km-self:teilnahme"), nicht der
+    // Endpunkt -- er wird auch so in die Datei geschrieben.
+    const gebucht = punkteAktionMitUnterart(aktion, body);
+    const istTat = PUNKTE_TATEN.has(gebucht);
 
     // Taten gehen am Kurzschluss vorbei: zwei erledigte Aufgaben sind zwei Taten,
     // auch wenn sie in dieselbe Viertelstunde fallen.
-    if (!istTat && aktivitaetSchonGesehen(username + "|" + fenster + "|" + app + "|" + aktion, jetzt)) return;
+    if (!istTat && aktivitaetSchonGesehen(username + "|" + fenster + "|" + app + "|" + gebucht, jetzt)) return;
 
-    await aktivitaetSchreiben(username, fenster, app, aktion, env, authHeader);
+    await aktivitaetSchreiben(username, fenster, app, gebucht, env, authHeader);
   } catch (e) {
     console.error("Aktivitaet erfassen fehlgeschlagen: " + (e && e.message ? e.message : e));
   }
+}
+
+// Darf fuer dieses Konto ueberhaupt erfasst werden? Spielerkonten nie, Konten mit
+// Widerspruch nie. nutzer.json steckt nach der Handlung praktisch immer im
+// jsonCache (5 s), der Read kostet daher im Normalfall keinen Roundtrip.
+async function punkteNutzerZulaessig(username, env, authHeader) {
+  if (!USERNAME_RE.test(username) || username === "__proto__") return false;
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = getOwn(usersDoc.users, username);
+  return !!(user && istPersonal(user) && !user.punkteOptOut);
+}
+
+// Ein Bonus-Ereignis ablegen. App bewusst "uebersicht": Passwort und Anmeldung
+// gehoeren zur Uebersicht, nicht zu einem Werkzeug -- und da Bonus-Ereignisse in
+// punkteAusEreignissen ohnehin aus fenster/apps herausfallen, taucht die
+// Uebersicht dadurch in keiner Nutzungsstatistik faelschlich auf.
+async function aktivitaetBonusSchreiben(username, art, env, authHeader) {
+  const name = normalizeUsername(String(username || ""));
+  if (!name) return;
+  if (!(await punkteNutzerZulaessig(name, env, authHeader))) return;
+  await aktivitaetSchreiben(name, punkteFenster(Date.now()), "uebersicht", "bonus-" + art, env, authHeader);
 }
 
 // Ein Ereignis in die Monatsdatei des Nutzers legen.
@@ -9427,10 +9546,21 @@ function punkteAusEreignissen(ereignisse) {
     // gaelte ausgerechnet fuer die Liste nicht, die am ehesten nachgezogen wird.
     if (PUNKTE_IGNORIERT.has(String(e.a || ""))) return;
     const tag = punkteTagKey(e.w);
-    if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), tagewerke: new Set(), taten: 0 });
+    if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), tagewerke: new Set(), taten: 0, boni: 0 });
     const t = tage.get(tag);
     const app = String(e.app || "uebersicht");
     const aktion = String(e.a || "");
+
+    // ⚠️ Bonus-Ereignisse gehen NICHT in fenster/apps/tagewerke ein. Sonst gaebe
+    // ein Passwortwechsel nebenbei noch einen Fenster- und einen App-Punkt --
+    // und ein Tag, an dem jemand nur sein Passwort gewechselt hat, zaehlte als
+    // aktiver Tag, obwohl mit den Werkzeugen nichts geschehen ist.
+    // n wird hier bewusst NICHT multipliziert: beide Boni sind durch Sperrfrist
+    // bzw. Sitzungsdauer begrenzt, ein n>1 waere eine Anomalie und duerfte sich
+    // nicht auszahlen.
+    const bonus = PUNKTE_BONI.get(aktion);
+    if (bonus) { t.boni += bonus; return; }
+
     t.fenster.add(e.w + "|" + app);
     t.apps.add(app);
     if (aktion === "dav-save") t.tagewerke.add(app);
@@ -9446,7 +9576,11 @@ function punkteAusEreignissen(ereignisse) {
       + t.apps.size * PUNKTE_PRO_APP_START
       + t.tagewerke.size * PUNKTE_PRO_TAT
       + t.taten;
-    const wert = Math.min(roh, PUNKTE_TAGESDECKEL);
+    // Nur das Wiederholbare wird gedeckelt. Der Tagesbonus faellt genau einmal an
+    // und nur, wenn ueberhaupt etwas geschehen ist -- ein Tag, an dem jemand bloss
+    // angemeldet war, hat kein einziges Fenster und bekommt ihn deshalb nicht.
+    const tagesbonus = t.fenster.size > 0 ? PUNKTE_BONUS_TAG : 0;
+    const wert = Math.min(roh, PUNKTE_TAGESDECKEL) + tagesbonus + t.boni;
     proTag[tag] = wert;
     gesamt += wert;
   });
@@ -9591,6 +9725,15 @@ function punkteRegelnFuerAnzeige() {
     // Additiv (Regeln 2). Ein Client, der noch den alten Stand hat, laesst die
     // Zeile einfach weg -- die Punkte bekommt er trotzdem, gerechnet wird hier.
     proTagewerk: PUNKTE_PRO_TAT,
+    // Additiv (Regeln 3). Ein Client mit altem Stand laesst die Zeilen weg --
+    // gerechnet wird hier, die Punkte bekommt er trotzdem.
+    proAktivemTag: PUNKTE_BONUS_TAG,
+    proPasswortwechsel: PUNKTE_BONUS_PASSWORT,
+    passwortSperreTage: PUNKTE_PW_BONUS_TAGE,
+    proRueckkehr: PUNKTE_BONUS_RUECKKEHR,
+    rueckkehrNachTagen: Math.round(SESSION_TTL_SECONDS / 86400),
+    // Additiv (Regeln 4).
+    proTerminAntwort: PUNKTE_TAT_TERMIN_ANTWORT,
     tagesdeckel: PUNKTE_TAGESDECKEL,
     aufbewahrungMonate: PUNKTE_ROHDATEN_MONATE
   };
