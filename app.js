@@ -6456,6 +6456,12 @@ function punkteRegelnRendern(r) {
   if (r.proTat) {
     zeilen.push([r.proTat, "für einen abgeschlossenen Vorgang — eine erledigte Aufgabe, einen gestellten Antrag, eine geleistete Unterschrift"]);
   }
+  // Seit Regeln 2. Ohne diese Zeile bekämen Trainerinnen und Trainer die Punkte
+  // zwar, wüssten aber nicht wofür: in ihren Werkzeugen gibt es keine der oben
+  // genannten Vorgänge, ihre Arbeit besteht aus Eintragen und Speichern.
+  if (r.proTagewerk) {
+    zeilen.push([r.proTagewerk, "wenn du an einem Tag in einem Werkzeug wirklich etwas eingetragen hast — einmal je Werkzeug, egal wie oft du speicherst"]);
+  }
   const extra = [];
   if (r.tagesdeckel) {
     extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden nicht gezählt.");
@@ -6463,6 +6469,10 @@ function punkteRegelnRendern(r) {
   extra.push("Nur angemeldet zu sein gibt nichts — es muss etwas passieren.");
   if (r.aufbewahrungMonate) {
     extra.push("Die einzelnen Aufzeichnungen werden nach " + escapeHtml(String(r.aufbewahrungMonate)) + " Monaten gelöscht.");
+    // Michel-Entscheidung 2026-08-04: das Verwerfen alter Monatssummen bei einem
+    // Regelwechsel bleibt, wird aber benannt statt verschwiegen. Ohne diesen Satz
+    // sähe ein späterer Rückgang des eigenen Standes wie ein Fehler aus.
+    extra.push("Ändern sich die Regeln, wird nur diese Zeit neu berechnet — was davor liegt, behält seinen damaligen Wert nicht.");
   }
 
   el.innerHTML =

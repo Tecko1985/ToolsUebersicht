@@ -9115,7 +9115,7 @@ const AKTIVITAET_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + 
 
 // Regelwerk. Die Version wandert in saldo.json mit, damit ein Saldo, der noch nach
 // alten Regeln gerechnet wurde, beim naechsten Zugriff erkennbar ist.
-const PUNKTE_REGELN_VERSION = 1;
+const PUNKTE_REGELN_VERSION = 2;
 const PUNKTE_FENSTER_MS = 5 * 60 * 1000;
 const PUNKTE_PRO_FENSTER = 1;
 const PUNKTE_PRO_APP_START = 2;
@@ -9371,26 +9371,46 @@ async function aktivitaetSchreiben(username, fenster, app, aktion, env, authHead
 // EINZIGE Stelle mit dem Regelwerk. meine-punkte, die Monatsverdichtung und die
 // Admin-Auswertung rufen alle hier herein, damit die Zahlen nicht auseinanderlaufen.
 //
-// Regeln (Stand PUNKTE_REGELN_VERSION 1):
+// Regeln (Stand PUNKTE_REGELN_VERSION 2):
 //   - je Tag, App und 5-Minuten-Fenster mit mindestens einer gezaehlten Handlung:
 //     PUNKTE_PRO_FENSTER. Das ist zugleich der Deckel fuer alles, was nicht im
 //     Katalog steht -- zwoelf Autosaves in derselben Viertelstunde ergeben einen Punkt.
 //   - je Tag und App zusaetzlich einmalig PUNKTE_PRO_APP_START (belohnt Breite
 //     statt Sitzdauer)
 //   - je Katalog-Tat PUNKTE_PRO_TAT, jedes Vorkommen einzeln
+//   - je Tag und App einmalig PUNKTE_PRO_TAT, wenn darin ueberhaupt gespeichert
+//     wurde ("Tagewerk", seit Version 2 -- Begruendung unten)
 //   - Summe je Tag hoechstens PUNKTE_TAGESDECKEL
+//
+// ⚠️ Das Tagewerk gleicht eine Schieflage aus, die beim Nachrechnen am 2026-08-04
+// auffiel: die Apps der TRAINER (Kadermanager, Testspielplaner, Ausbildungsplan,
+// Platzbelegung, Abwesenheitskalender) sprechen fast nur dav-load/dav-save. Von den
+// 24 Katalog-Taten liegt keine einzige in ihrem Arbeitsbereich -- sie stecken in
+// Vereinsaufgaben, Personalakte, News und Fotoauftraegen, also in Funktionaers- und
+// Geschaeftsstellenarbeit. Gemessen: ein Funktionaer kam mit zehn Aufgaben-Aktionen
+// in zwanzig Minuten auf 36 Punkte, ein Trainer nach einer Stunde Kaderpflege auf 14.
+// Bei einem System, das die Arbeit mit den Tools wuerdigen soll, traf das ausgerechnet
+// die groesste Gruppe.
+//
+// ⚠️ Warum EINMAL je Tag und App und nicht je dav-save: der Grund, aus dem dav-save
+// nicht im Katalog steht, gilt unveraendert weiter -- 15 Apps speichern beim Tippen,
+// ein einziger ausgefuellter Antrag loest ein Dutzend dav-save aus. Gezaehlt wird
+// deshalb nicht, wie oft gespeichert wurde, sondern nur DASS an diesem Tag in dieser
+// App etwas entstanden ist. Wer laenger tippt, gewinnt dadurch nichts.
 function punkteAusEreignissen(ereignisse) {
   const tage = new Map();
 
   (Array.isArray(ereignisse) ? ereignisse : []).forEach((e) => {
     if (!e || typeof e.w !== "number" || !Number.isFinite(e.w)) return;
     const tag = punkteTagKey(e.w);
-    if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), taten: 0 });
+    if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), tagewerke: new Set(), taten: 0 });
     const t = tage.get(tag);
     const app = String(e.app || "uebersicht");
+    const aktion = String(e.a || "");
     t.fenster.add(e.w + "|" + app);
     t.apps.add(app);
-    const wert = PUNKTE_TATEN.get(String(e.a || ""));
+    if (aktion === "dav-save") t.tagewerke.add(app);
+    const wert = PUNKTE_TATEN.get(aktion);
     if (wert) t.taten += wert * Math.max(1, Number(e.n) || 1);
   });
 
@@ -9400,6 +9420,7 @@ function punkteAusEreignissen(ereignisse) {
     const t = tage.get(tag);
     const roh = t.fenster.size * PUNKTE_PRO_FENSTER
       + t.apps.size * PUNKTE_PRO_APP_START
+      + t.tagewerke.size * PUNKTE_PRO_TAT
       + t.taten;
     const wert = Math.min(roh, PUNKTE_TAGESDECKEL);
     proTag[tag] = wert;
@@ -9543,6 +9564,9 @@ function punkteRegelnFuerAnzeige() {
     proFenster: PUNKTE_PRO_FENSTER,
     proAppStart: PUNKTE_PRO_APP_START,
     proTat: PUNKTE_PRO_TAT,
+    // Additiv (Regeln 2). Ein Client, der noch den alten Stand hat, laesst die
+    // Zeile einfach weg -- die Punkte bekommt er trotzdem, gerechnet wird hier.
+    proTagewerk: PUNKTE_PRO_TAT,
     tagesdeckel: PUNKTE_TAGESDECKEL,
     aufbewahrungMonate: PUNKTE_ROHDATEN_MONATE
   };

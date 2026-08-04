@@ -196,12 +196,22 @@
            und ein Teil der Betroffenen ist beim Verein angestellt oder bekommt
            eine Übungsleiterpauschale. Wie beim Push-Absatz gilt der Text nur für
            diese Seite: gezählt wird zwar die Nutzung aller Tools, erfasst und
-           abgeschaltet wird sie aber ausschließlich hier. -->
+           abgeschaltet wird sie aber ausschließlich hier.
+
+           ⚠️ Korrigiert am 2026-08-04. Hier stand "ein Punktestand, den nur du
+           selbst siehst; eine Rangliste oder einen Vergleich zwischen Personen
+           gibt es nicht" -- das war unzutreffend, solange `aktivitaet-auswertung`
+           jedem Admin `username`, Punktzahl UND die Nutzung je Werkzeug liefert.
+           Michel-Entscheidung: die Auswertung bleibt (sie beantwortet "welches
+           Tool nutzt eigentlich niemand"), dafür sagt der Text jetzt, was sie
+           zeigt. Wer die Auswertung je enger zieht, zieht diesen Satz mit. -->
       <p><strong>Aktivitätspunkte.</strong> Für Konten des Vereinspersonals (nicht für
       Spielerkonten) hält der Verein fest, <strong>wann welches Werkzeug benutzt wurde</strong> —
       Zeitpunkt auf fünf Minuten genau, das betroffene Werkzeug und die Art des Vorgangs,
-      nicht dessen Inhalt. Daraus entsteht ein Punktestand, den nur du selbst siehst; eine
-      Rangliste oder einen Vergleich zwischen Personen gibt es nicht. Zweck ist, die Arbeit
+      nicht dessen Inhalt. Daraus entsteht ein Punktestand, den außer dir nur die
+      <strong>Administratoren der Tools-Übersicht</strong> sehen; ihnen wird dabei auch
+      angezeigt, wer welches Werkzeug wie oft benutzt hat. Eine für alle sichtbare
+      Rangliste gibt es nicht. Zweck ist, die Arbeit
       mit den Vereins-Tools zu würdigen und zu erkennen, welche Werkzeuge gebraucht werden.
       Grundlage ist das berechtigte Interesse des Vereins. Die <strong>Einzelaufzeichnungen
       werden nach 13 Monaten gelöscht</strong> und nur noch als Monatssumme fortgeführt. Im
@@ -397,10 +407,17 @@
 
       <!-- Michel-Vorgabe: ohne diesen Satz ist die erste Regeländerung ein
            Vertrauensbruch („der hat mir Punkte weggenommen"). Mit ihm ist sie
-           angekündigt. Nicht entfernen, solange die Regeln nicht feststehen. -->
+           angekündigt. Nicht entfernen, solange die Regeln nicht feststehen.
+           Zweiter Satz seit 2026-08-04: eine Regeländerung rechnet nur die Monate
+           neu, für die es noch Einzelaufzeichnungen gibt (13). Ältere Monate stehen
+           danach mit null da. Michel-Entscheidung, das so zu lassen und stattdessen
+           zu benennen -- ein unerklärter Rückgang wäre schlimmer als ein
+           angekündigter. -->
       <p class="muted punkte-erprobung">
         Das Punktesystem wird gerade erprobt. Die Regeln, nach denen gezählt wird, können
-        sich noch ändern — dann ändert sich auch dein Stand.
+        sich noch ändern — dann ändert sich auch dein Stand. Neu berechnet wird dabei nur
+        die Zeit, für die noch Einzelaufzeichnungen vorliegen; ältere Zeiträume behalten
+        ihren damaligen Wert nicht.
       </p>
 
       <details class="punkte-details">
@@ -1102,6 +1119,6 @@
 
 <script src="signature-pad.js?v=1.0"></script>
 <script src="config.js?v=1.59"></script>
-<script src="app.js?v=1.50"></script>
+<script src="app.js?v=1.51"></script>
 </body>
 </html>
