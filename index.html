@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.39" />
+<link rel="stylesheet" href="style.css?v=1.40" />
 </head>
 <body>
 
@@ -754,87 +754,8 @@
         <div id="aktivitaet-ergebnis"></div>
       </div>
 
-      <div class="card" style="margin-top:20px;">
-        <h3 style="margin-top:0; color:var(--blue);">📦 Exporte</h3>
-        <p class="muted" id="export-hub-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
-        <div class="export-hub-list">
-          <div class="export-hub-row">
-            <span class="export-hub-label">📦 Materialliste</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="materialliste-json">JSON exportieren</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">💶 Personalkosten</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="personalkosten-text">Als Text (.txt)</button>
-              <button type="button" class="btn secondary small" data-export="personalkosten-pdf">Als PDF</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">🚌 Busplan</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="busplan-pdf">Als PDF</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">👕 Kleiderbestellung</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="kleiderbestellung-text">Als Text (.txt)</button>
-              <button type="button" class="btn secondary small" data-export="kleiderbestellung-pdf">Als PDF</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">🛒 Materialbedarf</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="materialbedarf-text">Als Text (.txt)</button>
-              <button type="button" class="btn secondary small" data-export="materialbedarf-pdf">Als PDF</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">⚽ Spielerbewertung</span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-export="spielertool-test-json">JSON exportieren</button>
-            </div>
-          </div>
-        </div>
-
-        <p class="muted" style="margin:16px 0 10px;">Weitere Apps mit eigenem Export — Export-Funktion dort direkt in der App:</p>
-        <div class="export-hub-list">
-          <div class="export-hub-row">
-            <span class="export-hub-label">📝 Trainerdaten <span class="muted" style="font-weight:400;">(Verträge, Führerschein-Sammel-PDF)</span></span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-open-tool="trainerdaten">App öffnen</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">💰 Vereinsbudget <span class="muted" style="font-weight:400;">(CSV, Belege-Druck)</span></span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-open-tool="vereinsbudget">App öffnen</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">📋 Trainerversammlung-Anmeldung <span class="muted" style="font-weight:400;">(Teilnehmerliste CSV, passwortgeschützt)</span></span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-open-tool="sc1911-anmeldung">App öffnen</button>
-            </div>
-          </div>
-          <div class="export-hub-row">
-            <span class="export-hub-label">📒 Kassenbuch <span class="muted" style="font-weight:400;">(JSON/CSV, Belege-ZIP)</span></span>
-            <div class="export-hub-actions">
-              <button type="button" class="btn secondary small" data-open-url="https://sc1911heiligenstadt.github.io/kassenbuch/">App öffnen</button>
-            </div>
-          </div>
-        </div>
-        <p class="muted" style="margin-top:10px; font-size:12px;">Dienstplan läuft rein lokal im Browser ohne Anbindung an dieses Dashboard — Export nur direkt in der App auf dem jeweiligen Gerät.</p>
-      </div>
     </div>
   </section>
-
-  <!-- Versteckter Druckbereich für die PDF-Exporte im Admin-Dashboard (window.print()) —
-       gleiches #print-area/#print-content + body.printing-report-Muster wie Personalkosten/
-       Busplan/Kleiderbestellung/Materialbedarf, siehe style.css. -->
-  <div id="print-area"><div id="print-content"></div></div>
 
   </main>
 </div>
@@ -1140,7 +1061,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.61"></script>
-<script src="app.js?v=1.56"></script>
+<script src="config.js?v=1.62"></script>
+<script src="app.js?v=1.57"></script>
 </body>
 </html>

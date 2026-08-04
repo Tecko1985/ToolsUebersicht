@@ -354,6 +354,17 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "2.2",
+    groups: [
+      {
+        title: "Exporte wieder dort, wo sie hingehören",
+        items: [
+          "Die gesammelten Export-Knöpfe im Admin-Dashboard sind entfallen. Jede App bringt ihren Export selbst mit — dort ist er vollständig, hier war er nur nachgebaut."
+        ]
+      }
+    ]
+  },
+  {
     version: "2.1",
     groups: [
       {
