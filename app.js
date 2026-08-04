@@ -6529,7 +6529,9 @@ function punkteProtokollRendern(zeilen) {
   }).join("");
   // Eigener Scroll-Container: die Tabelle darf am Handy überlaufen, die Seite nicht.
   el.innerHTML =
-    '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+    '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle">' +
+    '<colgroup><col class="spalte-zahl" /><col /><col class="spalte-zahl" /><col class="spalte-zahl" /></colgroup>' +
+    "<thead><tr>" +
     "<th>Tag</th><th>Werkzeug</th>" +
     '<th class="zahl">Vorgänge</th><th class="zahl">davon Abschlüsse</th>' +
     "</tr></thead><tbody>" + rows + "</tbody></table></div>";
@@ -6721,7 +6723,9 @@ function renderAktivitaetsAuswertung(nutzer, personal, monat) {
     ".</p>" +
     (appZeilen
       ? '<h4 class="aktivitaet-titel">Nach Werkzeug</h4>' +
-        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle">' +
+        '<colgroup><col /><col class="spalte-zahl" /><col class="spalte-zahl" /></colgroup>' +
+        "<thead><tr>" +
         "<th>Werkzeug</th><th class=\"zahl\">Personen</th><th class=\"zahl\">Vorgänge</th>" +
         "</tr></thead><tbody>" + appZeilen + "</tbody></table></div>"
       : '<p class="muted">In diesem Monat wurde nichts aufgezeichnet.</p>') +
@@ -6731,7 +6735,9 @@ function renderAktivitaetsAuswertung(nutzer, personal, monat) {
       : "") +
     (personZeilen
       ? '<h4 class="aktivitaet-titel">Nach Person</h4>' +
-        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle">' +
+        '<colgroup><col /><col class="spalte-zahl" /><col /></colgroup>' +
+        "<thead><tr>" +
         "<th>Person</th><th class=\"zahl\">Punkte</th><th>Meistgenutzt</th>" +
         "</tr></thead><tbody>" + personZeilen + "</tbody></table></div>"
       : "");

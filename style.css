@@ -375,9 +375,18 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
   text-align: left;
   overflow-wrap: anywhere;
 }
+/* ⚠️ Polsterung LINKS an jeder Spalte ab der zweiten. Ohne sie klebt eine
+   rechtsbündige Zahl unmittelbar am Text der Folgespalte ("42Vereinskalender",
+   "PunkteMeistgenutzt") -- die Zellen haben nur rechts Polsterung, und .zahl
+   setzt genau die auf 0. Fiel erst in der Auswertung auf, betrifft aber auch
+   zwei benachbarte Zahlenspalten im Protokoll des Konto-Tabs. */
+.punkte-tabelle th + th, .punkte-tabelle td + td { padding-left: 12px; }
 /* Zahlenspalten: die Ausrichtung muss an th UND td stehen, sonst steht die
    Überschrift links und der Wert rechts. */
 .punkte-tabelle th.zahl, .punkte-tabelle td.zahl { text-align: right; padding-right: 0; }
+/* Mit table-layout: fixed bekäme sonst jede Spalte gleich viel Platz und die
+   rechtsbündige Zahl stünde einsam mitten im Feld. */
+.punkte-tabelle col.spalte-zahl { width: 6.5em; }
 
 .punkte-optout { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
 .punkte-optout-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
