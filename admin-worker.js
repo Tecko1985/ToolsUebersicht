@@ -652,6 +652,32 @@ function erkenneMedientyp(b) {
 
 const NEWS_MIME_ERLAUBT = ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm"];
 
+// ---------- Nutzerfotos (seit 2026-08-04) ----------
+//
+// Ein Bild je Konto, hinterlegt im Tab "Mein Konto". Der DATEINAME IST DER
+// NUTZERNAME -- deshalb braucht es keine Datei-Id, kein Feld mit einer Id und
+// keinen Aufräumweg: ein neues Bild überschreibt das alte, es kann gar nichts
+// verwaisen. Denselben Kniff nutzt der abgeschottete dav-restricted-Bereich.
+//
+// ⚠️ Der Preis steht in handleUpdateUser: wird ein Konto umbenannt (passiert bei
+// jeder Namenskorrektur automatisch), muss die Datei mitwandern, sonst ist das
+// Bild weg. Und in handleDeleteUser: ein Foto ist ein Personenbezug und darf ein
+// gelöschtes Konto nicht überleben.
+//
+// Warum nicht base64 in nutzer.json: die Datei wird bei JEDER Session-Prüfung der
+// gesamten Flotte gelesen. 540 Konten mit eingebettetem Bild wären mehrere MB pro
+// Request -- dieselbe Überlegung wie bei den Neuigkeiten-Medien, nur schärfer.
+const NUTZERFOTOS_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + "/nutzerfotos";
+
+// Eigene, viel engere Grenze als MAX_FILE_BYTES (10 MB): der Client liefert ein
+// 320x320-JPEG mit 25-40 KB. 512 KB lassen jedem vernünftigen Bild Luft und
+// verhindern, dass 200 Spielerkonten Rohdateien vom Handy ablegen.
+const NUTZERFOTO_MAX_BYTES = 512 * 1024;
+
+// Nur Standbilder. erkenneMedientyp() kennt auch GIF und die beiden Videoformate --
+// ein animiertes Profilbild ist hier nicht gewollt, und ein Video schon gar nicht.
+const NUTZERFOTO_MIME_ERLAUBT = ["image/jpeg", "image/png", "image/webp"];
+
 // ---------- Vereinsaufgaben (eigene App) ----------
 //
 // Aufgaben, die Funktionären aufgetragen werden — mit Ressorts als dauerhafte
@@ -969,6 +995,17 @@ export default {
         return handleNewsDateiPut(request, body, env, authHeader, corsHeaders);
       case "news-datei-get":
         return handleNewsDateiGet(request, body, env, authHeader, corsHeaders);
+      // Nutzerfotos (seit 2026-08-04). put/loeschen wirken auf das eigene Konto;
+      // ein fremder Nutzername ist nur für Admins erlaubt. get steht jedem
+      // Angemeldeten für jedes Konto offen (Michel-Entscheidung, siehe unten).
+      case "nutzerfoto-put":
+        return handleNutzerfotoPut(request, body, env, authHeader, corsHeaders);
+      case "nutzerfoto-get":
+        return handleNutzerfotoGet(request, body, env, authHeader, corsHeaders);
+      case "nutzerfoto-loeschen":
+        return handleNutzerfotoLoeschen(request, body, env, authHeader, corsHeaders);
+      case "nutzerfoto-versionen":
+        return handleNutzerfotoVersionen(request, body, env, authHeader, corsHeaders);
       case "toggle-news-reaction":
         return handleToggleNewsReaction(request, body, env, authHeader, corsHeaders);
       case "my-news-reactions":
@@ -1332,6 +1369,11 @@ async function buildMeResult(session, env, authHeader, app, cfgPrefetch) {
     // Fuer "Passwort zuletzt geaendert am". Fehlt bei Konten, die seit Einfuehrung
     // des Feldes kein Passwort gesetzt haben -- der Client laesst die Zeile dann weg.
     passwordSetAt: (user && user.passwordSetAt) || null,
+    // Zeitstempel des eigenen Nutzerfotos (seit 2026-08-04), null = keins hinterlegt.
+    // Additiv und kostenlos: nutzer.json steckt ohnehin in der Session. Der Wert ist
+    // zugleich der Cache-Schluessel -- ein neues Bild aendert ihn, und der Client
+    // laedt genau dann neu, statt eine alte Objekt-URL weiterzureichen.
+    fotoVersion: (user && user.fotoVersion) || null,
     // Braucht diese Person einen Trainervertrag? Der Client kann das NICHT selbst
     // ableiten: er sieht in groupIds nur IDs, nicht den Gruppennamen "Trainer", und
     // list-groups ist Admin-only. Trainerdaten blendet daran Bankverbindung/
@@ -1450,7 +1492,11 @@ async function handleListUsers(request, env, authHeader, corsHeaders) {
     groupIds: getUserGroupIds(usersDoc, u.username),
     lizenz: u.lizenz || "",
     mannschaften: Array.isArray(u.mannschaften) ? u.mannschaften : [],
-    vertragBenoetigt: !!u.vertragBenoetigt
+    vertragBenoetigt: !!u.vertragBenoetigt,
+    // Nur der Zeitstempel, nicht das Bild (seit 2026-08-04): daran erkennt das
+    // Nutzer-Panel, ob "Foto entfernen" ueberhaupt etwas zu tun haette. Die Bilder
+    // selbst laedt es nicht -- 540 Abrufe fuer eine Verwaltungsliste.
+    fotoVersion: u.fotoVersion || null
   }));
   return json({ users }, 200, corsHeaders);
 }
@@ -1540,6 +1586,29 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
   }
   const finalUsername = (usernameRename && usernameRename.applied) ? desiredUsername : username;
 
+  // ⚠️ Das Nutzerfoto liegt unter dem Nutzernamen ALS DATEINAME (siehe
+  // NUTZERFOTOS_DIR) -- bei einer Umbenennung muss es mitwandern, sonst ist das
+  // Bild nach einer bloßen Tippfehler-Korrektur im Vornamen verschwunden. Das ist
+  // kein Randfall: umbenannt wird hier automatisch, sobald jemand einen Namen
+  // korrigiert. Scheitert der Umzug, wird fotoVersion geräumt -- lieber gar kein
+  // Bild als ein Verweis ins Leere, dem jeder Client mit einem 404 hinterherläuft.
+  if (usernameRename && usernameRename.applied && user.fotoVersion &&
+      USERNAME_RE.test(username) && USERNAME_RE.test(desiredUsername)) {
+    let bewegt = false;
+    try {
+      const mv = await fetch(nutzerfotoUrl(username), {
+        method: "MOVE",
+        headers: {
+          Authorization: authHeader,
+          Destination: nutzerfotoUrl(desiredUsername),
+          Overwrite: "T"
+        }
+      });
+      bewegt = mv.ok;
+    } catch (_) { /* bewegt bleibt false */ }
+    if (!bewegt) delete user.fotoVersion;
+  }
+
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
   } catch (e) {
@@ -1548,7 +1617,8 @@ async function handleUpdateUser(request, body, env, authHeader, corsHeaders) {
 
   return json({
     username: finalUsername, vorname, nachname, isAdmin,
-    lizenz: user.lizenz, mannschaften: user.mannschaften, usernameRename
+    lizenz: user.lizenz, mannschaften: user.mannschaften,
+    fotoVersion: user.fotoVersion || null, usernameRename
   }, 200, corsHeaders);
 }
 
@@ -1575,6 +1645,16 @@ async function handleDeleteUser(request, body, env, authHeader, corsHeaders) {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
   } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  // Ein Foto ist ein Personenbezug und darf ein gelöschtes Konto nicht überleben.
+  // Bewusst NACH dem Schreiben und ohne Fehlerbehandlung: das Konto ist die
+  // Wahrheit, und wenn der DELETE hier scheitert, ist eine zurückbleibende Datei
+  // das kleinere Übel als ein abgebrochenes Löschen mit bereits entferntem Konto.
+  if (user.fotoVersion && USERNAME_RE.test(username)) {
+    try {
+      await fetch(nutzerfotoUrl(username), { method: "DELETE", headers: { Authorization: authHeader } });
+    } catch (_) { /* best effort */ }
   }
 
   return json({ deleted: username }, 200, corsHeaders);
@@ -5287,6 +5367,199 @@ async function handleNewsDateiGet(request, body, env, authHeader, corsHeaders) {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": mime, "Cache-Control": "private, max-age=300" }
   });
+}
+
+// ---------- Aktionen: Nutzerfotos ----------
+
+// Auf WESSEN Konto wirkt ein schreibender Zugriff. Ohne Angabe im Body immer das
+// eigene.
+//
+// ⚠️ Ein FREMDER Nutzername ist ausschließlich für Admins erlaubt. Ohne diese
+// Schranke könnte jedes der ~200 Spielerkonten das Bild eines beliebigen anderen
+// überschreiben oder löschen -- der Nutzername ist hier ja der Dateiname und damit
+// frei zu erraten. Für alle anderen zählt allein der Name aus dem Token.
+function nutzerfotoZielUser(session, body) {
+  const eigen = normalizeUsername(session.username);
+  const gewuenscht = String((body && body.username) || "").trim();
+  if (!gewuenscht) return { username: eigen };
+  const ziel = normalizeUsername(gewuenscht);
+  if (ziel === eigen) return { username: ziel };
+  if (!session.isAdmin) return { fehler: "Nur das eigene Foto darf geändert werden" };
+  return { username: ziel };
+}
+
+function nutzerfotoUrl(username) {
+  return NUTZERFOTOS_DIR + "/" + username;
+}
+
+// Bild hinterlegen. Der Client schickt ein fertig zugeschnittenes Quadrat; hier
+// wird nur noch geprüft, gespeichert und der Zeitstempel nachgezogen.
+async function handleNutzerfotoPut(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const ziel = nutzerfotoZielUser(session, body);
+  if (ziel.fehler) return json({ error: ziel.fehler }, 403, corsHeaders);
+  // Path-Traversal-Schutz wie bei dav-restricted-put: der Name wird zum Pfad, also
+  // muss er dem strengen Muster genügen, bevor er irgendwo angehängt wird.
+  if (!USERNAME_RE.test(ziel.username)) return json({ error: "Ungültiger Nutzername" }, 400, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, ziel.username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String((body && body.dataBase64) || ""));
+  } catch (_) {
+    return json({ error: "Bild-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > NUTZERFOTO_MAX_BYTES) {
+    return json({ error: "Bild zu groß (max. 512 KB)" }, 413, corsHeaders);
+  }
+
+  // Typ IMMER aus den ersten Bytes, nie aus der Angabe des Clients -- gleiche
+  // Härtung wie bei den Neuigkeiten-Medien, hier zusätzlich auf Standbilder verengt.
+  const typ = erkenneMedientyp(bytes);
+  if (!typ || !NUTZERFOTO_MIME_ERLAUBT.includes(typ.mime)) {
+    return json({ error: "Nur JPEG, PNG oder WebP sind als Foto erlaubt" }, 400, corsHeaders);
+  }
+
+  const headers = { Authorization: authHeader, "Content-Type": typ.mime };
+  let resp;
+  try {
+    resp = await fetch(nutzerfotoUrl(ziel.username), { method: "PUT", headers, body: bytes });
+    // 409 = eine Ordnerebene fehlt, 404 = zwei oder mehr (der Fall beim allerersten
+    // Foto überhaupt). Gleicher MKCOL-Autofix wie bei dav-file-put.
+    if (resp.status === 409 || resp.status === 404) {
+      await ensureCollection(NUTZERFOTOS_DIR, authHeader, 0);
+      resp = await fetch(nutzerfotoUrl(ziel.username), { method: "PUT", headers, body: bytes });
+    }
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+
+  // ⚠️ Reihenfolge bindend: erst die Datei, dann der Zeitstempel. Andersherum
+  // zeigte nutzer.json nach einem gescheiterten Upload auf ein Bild, das es nie
+  // gab -- und jeder Client liefe in einen 404, den niemand erklären kann.
+  user.fotoVersion = Date.now();
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, username: ziel.username, fotoVersion: user.fotoVersion }, 200, corsHeaders);
+}
+
+// Bild ausliefern. Jeder Angemeldete darf jedes Foto abrufen.
+//
+// ⚠️ Das ist eine bewusste Entscheidung von Michel (2026-08-04) und weicht von der
+// Linie ab, die Spielerkonten sonst in diesem Worker aussperrt (Materialcontainer,
+// Aufgaben, list-directory). Die Folge ist ausdrücklich gewollt und benannt: auch
+// die ~200 Spielerkonten können jedes hinterlegte Foto abrufen, einschließlich der
+// Fotos minderjähriger Kadermitglieder. Wer das enger ziehen will, ändert diese
+// Funktion -- nicht den Client, der ist dafür keine Schranke.
+async function handleNutzerfotoGet(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const gewuenscht = String((body && body.username) || "").trim();
+  const username = normalizeUsername(gewuenscht || session.username);
+  if (!USERNAME_RE.test(username)) return json({ error: "Ungültiger Nutzername" }, 400, corsHeaders);
+
+  let resp;
+  try {
+    resp = await fetch(nutzerfotoUrl(username), { method: "GET", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  if (resp.status === 404) return json({ error: "Kein Foto hinterlegt" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+
+  // In diesen Ordner schreibt nur handleNutzerfotoPut, und der setzt den aus den
+  // Bytes erkannten Typ. Die Whitelist ist trotzdem die Schranke, nicht Nextclouds
+  // Angabe -- so kann eine von Hand dort abgelegte Datei nichts Fremdes ausliefern.
+  const gemeldet = String(resp.headers.get("Content-Type") || "").split(";")[0].trim();
+  const mime = NUTZERFOTO_MIME_ERLAUBT.includes(gemeldet) ? gemeldet : "application/octet-stream";
+
+  // Kein max-age: die Aktionen dieses Workers laufen als POST, und POST-Antworten
+  // legt kein Browser in seinen Cache. Wiederverwendet wird clientseitig über den
+  // Blob-Cache, dessen Schlüssel die fotoVersion ist.
+  return new Response(resp.body, {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": mime, "Cache-Control": "private, no-store" }
+  });
+}
+
+// Bild entfernen. Datei UND Zeitstempel -- bliebe fotoVersion stehen, suchte jeder
+// Client weiter nach einem Bild, das es nicht mehr gibt.
+async function handleNutzerfotoLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const ziel = nutzerfotoZielUser(session, body);
+  if (ziel.fehler) return json({ error: ziel.fehler }, 403, corsHeaders);
+  if (!USERNAME_RE.test(ziel.username)) return json({ error: "Ungültiger Nutzername" }, 400, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, ziel.username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  let resp;
+  try {
+    resp = await fetch(nutzerfotoUrl(ziel.username), { method: "DELETE", headers: { Authorization: authHeader } });
+  } catch (_) {
+    return json({ error: "Nextcloud nicht erreichbar" }, 502, corsHeaders);
+  }
+  // 404 = war schon weg. Für das Aufräumen ist das Erfolg, nicht Fehler.
+  if (!resp.ok && resp.status !== 404) {
+    return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
+  }
+
+  delete user.fotoVersion;
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ ok: true, username: ziel.username }, 200, corsHeaders);
+}
+
+// Wer hat überhaupt ein Foto, und in welchem Stand? Das ist der Baustein, mit dem
+// eine Liste von 200 Spielern überhaupt tragbar wird.
+//
+// ⚠️ Diese Aktion liest KEINE einzige Bilddatei und löst deshalb keinen einzigen
+// zusätzlichen Nextcloud-Read aus: nutzer.json steckt bereits in der Session. Eine
+// Sammel-Aktion, die 200 Bilder in einem Aufruf einsammelt, wäre der naheliegende,
+// aber falsche Weg -- ein Worker-Request darf nur begrenzt viele Unteranfragen
+// stellen, und 200 Bilder in einer Antwort wären mehrere Megabyte.
+async function handleNutzerfotoVersionen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  const versionen = {};
+  const gefragt = body && Array.isArray(body.usernames) ? body.usernames : null;
+
+  if (gefragt) {
+    gefragt.slice(0, 1000).forEach((roh) => {
+      const name = normalizeUsername(roh);
+      const u = getOwn(users, name);
+      if (u && u.fotoVersion) versionen[name] = u.fotoVersion;
+    });
+  } else {
+    // Ohne Liste: alle, die eins haben. Reine Nutzernamen, keine Klarnamen --
+    // und wer ein Foto abrufen darf, darf auch wissen, dass es existiert.
+    Object.values(users).forEach((u) => {
+      if (u && u.username && u.fotoVersion) versionen[u.username] = u.fotoVersion;
+    });
+  }
+
+  return json({ versionen }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Feedback & Hilfe ----------

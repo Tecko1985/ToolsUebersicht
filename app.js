@@ -48,7 +48,13 @@ function buildCurrentUser(data) {
     // loadOwnProfile() nachzieht. Fuer die Anzeige reicht das: der einzige Ort, an
     // dem die Art zaehlt (Materialcontainer-Knopf), ist serverseitig ohnehin
     // gegated, und ein Spielerkonto sieht ihn nach dem Nachladen nicht mehr.
-    art: data.art || null
+    art: data.art || null,
+    // Zeitstempel des eigenen Nutzerfotos (seit 2026-08-04), null = keins. Kommt
+    // nur aus "me" -- login/set-password liefern es nicht, dort steht direkt nach
+    // dem Klick also kurz null, bis loadOwnProfile() nachzieht. Das ist harmlos:
+    // die Karte zeigt dann den Buchstaben, das Bild erscheint Sekundenbruchteile
+    // spaeter. Zugleich der Cache-Schluessel, siehe nutzerfotoUrl().
+    fotoVersion: data.fotoVersion || null
   };
 }
 
@@ -200,6 +206,9 @@ function logout() {
   pendingFirstLoginUsername = null;
   pendingLoginUsername = null;
   storeToken(null);
+  // Geladene Fotos freigeben: eine Objekt-URL bleibt sonst gueltig, solange die
+  // Seite offen ist -- auch fuer den naechsten, der sich hier anmeldet.
+  nutzerfotoBlobsLeeren();
   resetPasswortForm(); // sonst stuende das Passwort noch im Feld, wenn sich am selben Geraet jemand anders anmeldet
   renderAdminPanels();
   renderToolGrid();
@@ -395,9 +404,35 @@ function renderUsersList(users) {
             <button type="button" class="btn small" data-save-edit-user="${escapeHtml(username)}">Speichern</button>
           </div>
         </div>
+        <div class="user-foto-zeile">
+          <span class="muted">Foto:</span>
+          <span class="muted">${user.fotoVersion ? "hinterlegt" : "keins"}</span>
+          <button type="button" class="btn secondary small" data-user-foto-setzen>Foto setzen</button>
+          <button type="button" class="btn secondary small" data-user-foto-entfernen ${user.fotoVersion ? "" : 'style="display:none;"'}>Foto entfernen</button>
+        </div>
       `;
       renderGroupCheckboxes(panel.querySelector(".group-picker"), user ? user.groupIds : []);
       panel.style.display = "block";
+
+      // Foto eines fremden Kontos. Setzen deckt den Fall "Spieler ohne eigenes
+      // Geraet" ab, Entfernen ist der Notfallknopf fuer ein unpassendes Bild.
+      // Der Zielname wird gemerkt, weil die Dateiauswahl global ist.
+      panel.querySelector("[data-user-foto-setzen]").addEventListener("click", () => {
+        adminFotoZiel = username;
+        document.getElementById("admin-foto-datei").click();
+      });
+      panel.querySelector("[data-user-foto-entfernen]").addEventListener("click", async () => {
+        if (!confirm(`Foto von ${user.displayName || username} wirklich entfernen?`)) return;
+        const fehler = document.getElementById("users-error");
+        try {
+          await callWorker("nutzerfoto-loeschen", { username });
+          await loadAndRenderUsers();
+        } catch (e) {
+          fehler.textContent = e.message || "Entfernen fehlgeschlagen.";
+          fehler.style.display = "";
+        }
+      });
+
       panel.querySelector("[data-save-edit-user]").addEventListener("click", async () => {
         const art = panel.querySelector("[data-edit-user-art]").value;
         const vorname = panel.querySelector("[data-edit-user-vorname]").value.trim();
@@ -5148,7 +5183,383 @@ function eigeneBearbeitenRechte() {
 
 // Karte "Mein Konto" im gleichnamigen Tab. Sie steht dort zusammen mit den
 // Anmeldewegen; der Einstellungen-Tab ist seit dem Umbau rein administrativ.
+// ---------- Nutzerfoto (seit 2026-08-04) ----------
+//
+// Ein Bild je Konto, hinterlegt im Tab "Mein Konto". Zwei Wege hinein: die normale
+// Dateiauswahl und -- am Handy -- direkt die Frontkamera. Beide landen im selben
+// Zuschnitt-Dialog, aus dem immer ein quadratisches JPEG herauskommt. Das Quadrat
+// entsteht HIER und nicht erst bei der Anzeige, damit jede App, die das Bild
+// spaeter zeigt (Kadermanager), es fertig passend bekommt.
+const FOTO_ZIEL_PX = 320;            // Kantenlaenge des gespeicherten Quadrats
+const FOTO_QUALITAET = 0.85;
+const FOTO_MAX_BYTES = 512 * 1024;   // muss zum Cap in admin-worker.js passen
+
+// "<nutzername>@<fotoVersion>" -> Objekt-URL.
+//
+// ⚠️ Der Schluessel traegt die VERSION mit. Ohne sie bliebe nach dem Hochladen
+// eines neuen Bildes das alte im Cache haengen, und der Nutzer saehe seine eigene
+// Aenderung erst nach einem Seitenaufruf nicht mehr.
+const nutzerfotoBlobs = new Map();
+
+// ⚠️ Der Abruf verlangt den Token, ein schlichtes <img src="..."> geht deshalb
+// nicht -- die Bytes muessen geholt und als Objekt-URL eingehaengt werden. Gleiche
+// Lage wie bei den Neuigkeiten-Medien.
+async function nutzerfotoUrl(username, version) {
+  if (!username || !version) return null;
+  const schluessel = username + "@" + version;
+  const vorhanden = nutzerfotoBlobs.get(schluessel);
+  if (vorhanden) return vorhanden;
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + loadStoredToken() },
+      body: JSON.stringify({ action: "nutzerfoto-get", username })
+    });
+    if (!res.ok) return null;
+    const url = URL.createObjectURL(await res.blob());
+    nutzerfotoBlobs.set(schluessel, url);
+    return url;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Beim Abmelden aufraeumen: eine Objekt-URL bleibt sonst gueltig, solange die Seite
+// offen ist -- auch fuer den naechsten, der sich an diesem Geraet anmeldet.
+function nutzerfotoBlobsLeeren() {
+  nutzerfotoBlobs.forEach((url) => URL.revokeObjectURL(url));
+  nutzerfotoBlobs.clear();
+}
+
+function fotoStatusSetzen(id, text, istFehler) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "" : "none";
+  el.classList.toggle("fehler", !!istFehler);
+}
+
+async function renderKontoFoto() {
+  const kreis = document.getElementById("konto-foto-vorschau");
+  const entfernen = document.getElementById("btn-foto-entfernen");
+  if (!kreis || !entfernen || !currentUser) return;
+
+  const version = currentUser.fotoVersion;
+  entfernen.style.display = version ? "" : "none";
+  // Immer erst auf den Buchstaben zuruecksetzen: sonst bliebe nach dem Entfernen
+  // das alte Bild als Hintergrund stehen.
+  kreis.style.backgroundImage = "";
+  kreis.textContent = ((currentUser.vorname || currentUser.username || "?").trim()[0] || "?").toUpperCase();
+  if (!version) return;
+
+  const url = await nutzerfotoUrl(currentUser.username, version);
+  // ⚠️ Nach dem await kann alles anders sein (abgemeldet, Bild inzwischen ersetzt
+  // oder entfernt). Nur uebernehmen, wenn die Version noch dieselbe ist -- sonst
+  // schreibt eine langsame Antwort einen ueberholten Stand zurueck.
+  if (!url || !currentUser || currentUser.fotoVersion !== version) return;
+  kreis.textContent = "";
+  kreis.style.backgroundImage = 'url("' + url + '")';
+}
+
+// ---- Zuschnitt ----
+//
+// Zustand des offenen Dialogs. `ziel` ist null fuer das eigene Konto und traegt
+// sonst den fremden Nutzernamen (Admin-Weg aus der Nutzerverwaltung).
+let fotoZuschnitt = null;
+
+// Zielkonto des Admin-Wegs, gemerkt zwischen Knopfdruck und Dateiauswahl. Die
+// Eingabe ist global (die Nutzerzeilen werden bei jedem Rendern neu gebaut).
+let adminFotoZiel = null;
+
+// Der Canvas-Puffer ist GENAU so gross wie das Ergebnis (320x320). Dadurch ist
+// "was ich sehe" byte-genau "was gespeichert wird" -- es gibt keine zweite
+// Umrechnung beim Export, in der sich ein Rundungsfehler verstecken koennte.
+function fotoZeichnen(mitMaske) {
+  const z = fotoZuschnitt;
+  if (!z || !z.bild) return;
+  const c = z.ctx;
+  const S = FOTO_ZIEL_PX;
+  c.clearRect(0, 0, S, S);
+  c.fillStyle = "#2b2b2b";
+  c.fillRect(0, 0, S, S);
+
+  const b = z.bild;
+  const m = fotoMassstab();
+  c.save();
+  c.translate(S / 2 + z.x, S / 2 + z.y);
+  c.rotate((z.drehung * Math.PI) / 180);
+  c.drawImage(b, (-b.naturalWidth * m) / 2, (-b.naturalHeight * m) / 2,
+    b.naturalWidth * m, b.naturalHeight * m);
+  c.restore();
+
+  // Runde Hilfsmaske: der Ausschnitt ist quadratisch, angezeigt wird er rund.
+  // Ohne sie schneidet man ein Gesicht zurecht, das in der Kachel dann an den
+  // Ecken abgeschnitten ist.
+  //
+  // ⚠️ Beim Speichern wird OHNE Maske neu gezeichnet -- sonst braenne die
+  // Abdunklung mit ins Bild ein.
+  if (mitMaske === false) return;
+  c.save();
+  c.fillStyle = "rgba(0, 0, 0, 0.45)";
+  c.beginPath();
+  c.rect(0, 0, S, S);
+  // Gegenlaeufiger Kreis => Loch in der Flaeche (nonzero-Fuellregel).
+  c.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2, true);
+  c.fill();
+  c.restore();
+}
+
+// Bildmasse bei 90/270 Grad vertauscht -- sonst laesst eine Drehung Luecken am Rand.
+function fotoGedrehteMasse() {
+  const b = fotoZuschnitt.bild;
+  const quer = Math.abs(fotoZuschnitt.drehung % 180) === 90;
+  return {
+    w: quer ? b.naturalHeight : b.naturalWidth,
+    h: quer ? b.naturalWidth : b.naturalHeight
+  };
+}
+
+// Grundskalierung ist "fuellt den Rahmen" (cover), darauf der Zoom des Reglers.
+function fotoMassstab() {
+  const { w, h } = fotoGedrehteMasse();
+  return Math.max(FOTO_ZIEL_PX / w, FOTO_ZIEL_PX / h) * fotoZuschnitt.zoom;
+}
+
+// Das Bild darf nie so weit wandern, dass ein leerer Rand im Ausschnitt steht.
+function fotoGrenzenHalten() {
+  const z = fotoZuschnitt;
+  if (!z || !z.bild) return;
+  const { w, h } = fotoGedrehteMasse();
+  const m = fotoMassstab();
+  const maxX = Math.max(0, (w * m) / 2 - FOTO_ZIEL_PX / 2);
+  const maxY = Math.max(0, (h * m) / 2 - FOTO_ZIEL_PX / 2);
+  z.x = Math.min(maxX, Math.max(-maxX, z.x));
+  z.y = Math.min(maxY, Math.max(-maxY, z.y));
+}
+
+function oeffneFotoZuschnitt(bild, objektUrl, zielUsername) {
+  const overlay = document.getElementById("foto-zuschnitt-overlay");
+  const canvas = document.getElementById("foto-canvas");
+  const buehne = document.getElementById("foto-buehne");
+
+  // ⚠️ Erst sichtbar machen, DANN messen. Ein Canvas hinter display:none meldet
+  // seine Standardmasse 300x150, und die Buehne daneben clientWidth 0 -- der erste
+  // Zuschnitt kaeme verzerrt und winzig heraus.
+  overlay.style.display = "flex";
+  canvas.width = FOTO_ZIEL_PX;
+  canvas.height = FOTO_ZIEL_PX;
+  const platz = Math.max(180, Math.min(FOTO_ZIEL_PX, buehne.clientWidth || FOTO_ZIEL_PX));
+  canvas.style.width = platz + "px";
+  canvas.style.height = platz + "px";
+
+  fotoZuschnitt = {
+    bild, objektUrl,
+    ziel: zielUsername || null,
+    ctx: canvas.getContext("2d"),
+    zoom: 1, drehung: 0, x: 0, y: 0, zieht: null
+  };
+  document.getElementById("foto-zoom").value = "100";
+  fotoStatusSetzen("foto-zuschnitt-status", "", false);
+  fotoGrenzenHalten();
+  fotoZeichnen(true);
+}
+
+function schliesseFotoZuschnitt() {
+  const overlay = document.getElementById("foto-zuschnitt-overlay");
+  if (overlay) overlay.style.display = "none";
+  if (fotoZuschnitt && fotoZuschnitt.objektUrl) URL.revokeObjectURL(fotoZuschnitt.objektUrl);
+  fotoZuschnitt = null;
+  document.getElementById("btn-foto-speichern").disabled = false;
+}
+
+function fotoZuschnittOffen() {
+  const o = document.getElementById("foto-zuschnitt-overlay");
+  return !!o && o.style.display === "flex";
+}
+
+// Eine gewaehlte Datei in den Zuschnitt bringen. `zielUsername` nur fuer den
+// Admin-Weg; ohne Angabe gilt das eigene Konto.
+function fotoDateiUebernehmen(datei, zielUsername, statusId) {
+  if (!datei) return;
+  if (!/^image\//.test(datei.type || "")) {
+    fotoStatusSetzen(statusId, "Das ist kein Bild — bitte JPEG, PNG oder WebP wählen.", true);
+    return;
+  }
+  fotoStatusSetzen(statusId, "", false);
+  const url = URL.createObjectURL(datei);
+  const bild = new Image();
+  bild.onload = () => oeffneFotoZuschnitt(bild, url, zielUsername);
+  bild.onerror = () => {
+    URL.revokeObjectURL(url);
+    fotoStatusSetzen(statusId, "Das Bild konnte nicht gelesen werden.", true);
+  };
+  bild.src = url;
+}
+
+// toBlob kennt jeder Browser der Flotte, aber sehr alte Safari-Staende nur
+// toDataURL -- ohne den Rueckfallweg schluege das Speichern dort stumm fehl.
+function canvasAlsJpeg(canvas) {
+  return new Promise((resolve, reject) => {
+    if (typeof canvas.toBlob === "function") {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("Das Bild konnte nicht erzeugt werden."))),
+        "image/jpeg", FOTO_QUALITAET
+      );
+      return;
+    }
+    try {
+      const roh = atob(canvas.toDataURL("image/jpeg", FOTO_QUALITAET).split(",")[1]);
+      const bytes = new Uint8Array(roh.length);
+      for (let i = 0; i < roh.length; i++) bytes[i] = roh.charCodeAt(i);
+      resolve(new Blob([bytes], { type: "image/jpeg" }));
+    } catch (_) {
+      reject(new Error("Das Bild konnte nicht erzeugt werden."));
+    }
+  });
+}
+
+async function fotoSpeichern() {
+  const z = fotoZuschnitt;
+  if (!z) return;
+  const btn = document.getElementById("btn-foto-speichern");
+  btn.disabled = true;
+  fotoStatusSetzen("foto-zuschnitt-status", "Wird gespeichert …", false);
+  const canvas = document.getElementById("foto-canvas");
+  try {
+    fotoZeichnen(false);          // ohne Maske: die darf nicht mit eingebrannt werden
+    const blob = await canvasAlsJpeg(canvas);
+    fotoZeichnen(true);
+    const bytes = await dateiAlsBytes(blob);
+    if (bytes.length > FOTO_MAX_BYTES) {
+      throw new Error("Das Bild ist zu groß geworden. Bitte einen kleineren Ausschnitt wählen.");
+    }
+    const nutzlast = { dataBase64: bytesZuBase64(bytes) };
+    if (z.ziel) nutzlast.username = z.ziel;
+    const res = await callWorker("nutzerfoto-put", nutzlast);
+
+    if (z.ziel) {
+      // Admin hat ein fremdes Bild gesetzt: die Nutzerliste traegt die Versionen.
+      schliesseFotoZuschnitt();
+      await loadAndRenderUsers();
+    } else {
+      currentUser.fotoVersion = (res && res.fotoVersion) || Date.now();
+      schliesseFotoZuschnitt();
+      await renderKontoFoto();
+      fotoStatusSetzen("foto-status", "Foto gespeichert.", false);
+    }
+  } catch (e) {
+    fotoZeichnen(true);
+    fotoStatusSetzen("foto-zuschnitt-status", e.message || "Speichern fehlgeschlagen.", true);
+    btn.disabled = false;
+  }
+}
+
+async function eigenesFotoEntfernen() {
+  if (!confirm("Dein Foto wirklich entfernen?")) return;
+  try {
+    await callWorker("nutzerfoto-loeschen", {});
+    currentUser.fotoVersion = null;
+    await renderKontoFoto();
+    fotoStatusSetzen("foto-status", "Foto entfernt.", false);
+  } catch (e) {
+    fotoStatusSetzen("foto-status", e.message || "Entfernen fehlgeschlagen.", true);
+  }
+}
+
+function setupKontoFoto() {
+  const datei = document.getElementById("foto-datei");
+  const kamera = document.getElementById("foto-kamera-datei");
+
+  document.getElementById("btn-foto-waehlen").addEventListener("click", () => datei.click());
+  document.getElementById("btn-foto-kamera").addEventListener("click", () => kamera.click());
+  document.getElementById("btn-foto-entfernen").addEventListener("click", eigenesFotoEntfernen);
+
+  // ⚠️ value danach leeren: waehlt jemand zweimal dieselbe Datei, feuert `change`
+  // sonst kein zweites Mal -- nach einem Abbruch im Zuschnitt kaeme man dann nicht
+  // mehr an dasselbe Bild heran.
+  [datei, kamera].forEach((eingabe) => {
+    eingabe.addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = "";
+      fotoDateiUebernehmen(f, null, "foto-status");
+    });
+  });
+
+  // Admin-Weg: dieselbe Zuschnitt-Strecke, nur mit fremdem Zielkonto.
+  document.getElementById("admin-foto-datei").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    fotoDateiUebernehmen(f, adminFotoZiel, "users-error");
+  });
+
+  document.getElementById("btn-foto-speichern").addEventListener("click", fotoSpeichern);
+  document.getElementById("btn-foto-abbrechen").addEventListener("click", schliesseFotoZuschnitt);
+  document.getElementById("btn-foto-zuschnitt-close").addEventListener("click", schliesseFotoZuschnitt);
+  document.getElementById("foto-zuschnitt-overlay").addEventListener("click", (e) => {
+    if (e.target.id === "foto-zuschnitt-overlay") schliesseFotoZuschnitt();
+  });
+  document.addEventListener("keydown", (e) => {
+    // Gleiche Staffelung wie bei den anderen Dialogen: die Markierung setzen, damit
+    // ein darunterliegendes Fenster nicht auf denselben Tastendruck mit zuklappt.
+    if (e.key !== "Escape" || !fotoZuschnittOffen() || e.escapeVerbraucht) return;
+    e.escapeVerbraucht = true;
+    schliesseFotoZuschnitt();
+  });
+
+  document.getElementById("foto-zoom").addEventListener("input", (e) => {
+    if (!fotoZuschnitt) return;
+    fotoZuschnitt.zoom = Math.max(1, Number(e.target.value) / 100);
+    fotoGrenzenHalten();
+    fotoZeichnen(true);
+  });
+  document.getElementById("btn-foto-drehen").addEventListener("click", () => {
+    if (!fotoZuschnitt) return;
+    fotoZuschnitt.drehung = (fotoZuschnitt.drehung + 90) % 360;
+    // Verschiebung zuruecksetzen: nach einer Drehung zeigt der alte Versatz in eine
+    // andere Richtung als vorher und wirkt wie ein Sprung.
+    fotoZuschnitt.x = 0;
+    fotoZuschnitt.y = 0;
+    fotoGrenzenHalten();
+    fotoZeichnen(true);
+  });
+
+  // Ziehen ueber Pointer-Events mit setPointerCapture -- dasselbe Muster wie das
+  // Taktikboard im Kadermanager, das damit auf Touch UND Maus einheitlich laeuft.
+  const canvas = document.getElementById("foto-canvas");
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!fotoZuschnitt) return;
+    fotoZuschnitt.zieht = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    canvas.setPointerCapture(e.pointerId);
+    canvas.classList.add("zieht");
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    const z = fotoZuschnitt;
+    if (!z || !z.zieht || z.zieht.id !== e.pointerId) return;
+    // Der Canvas wird kleiner angezeigt, als sein Puffer gross ist: die
+    // Mausbewegung muss in Puffer-Pixel umgerechnet werden, sonst wandert das Bild
+    // am Handy spuerbar langsamer als der Finger.
+    const rect = canvas.getBoundingClientRect();
+    const faktor = rect.width ? FOTO_ZIEL_PX / rect.width : 1;
+    z.x += (e.clientX - z.zieht.x) * faktor;
+    z.y += (e.clientY - z.zieht.y) * faktor;
+    z.zieht.x = e.clientX;
+    z.zieht.y = e.clientY;
+    fotoGrenzenHalten();
+    fotoZeichnen(true);
+  });
+  ["pointerup", "pointercancel"].forEach((typ) => {
+    canvas.addEventListener(typ, (e) => {
+      if (fotoZuschnitt) fotoZuschnitt.zieht = null;
+      canvas.classList.remove("zieht");
+      if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+    });
+  });
+}
+
 function renderKontoKarte() {
+  renderKontoFoto();
   const rows = [];
   const name = [currentUser.vorname, currentUser.nachname].filter(Boolean).join(" ");
   if (name) rows.push(["Name", escapeHtml(name)]);
@@ -5983,6 +6394,7 @@ async function init() {
   setupAufgabenZuweisenDialog();
   setupDokumenteTab();
   setupAuthForms();
+  setupKontoFoto();
   setupWhatsappLink();
   setupWikiFrage();
   setupViewAsControl();

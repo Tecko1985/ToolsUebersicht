@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.35" />
+<link rel="stylesheet" href="style.css?v=1.36" />
 </head>
 <body>
 
@@ -279,6 +279,30 @@
       <h2>Mein Konto</h2>
       <p class="muted" style="margin-bottom:14px;">Diese Angaben pflegt die Vereinsverwaltung. Stimmt etwas nicht, gib im Tab „Feedback &amp; Hilfe“ Bescheid.</p>
       <dl class="konto-grid" id="konto-details"></dl>
+
+      <!-- Nutzerfoto. Steht bewusst UNTER der Angabenliste: der Hinweis darüber
+           ("pflegt die Vereinsverwaltung") gilt für das Foto gerade nicht — das
+           hinterlegt jeder selbst. -->
+      <div class="konto-foto">
+        <div class="konto-foto-vorschau" id="konto-foto-vorschau"></div>
+        <div class="konto-foto-text">
+          <h3>Mein Foto</h3>
+          <p class="muted">Ein Bild von dir, das in den Tools neben deinem Namen erscheint — im Kadermanager zum Beispiel in Kaderliste und Aufstellung.</p>
+          <div class="konto-foto-btns">
+            <button type="button" class="btn secondary small" id="btn-foto-waehlen">Bild auswählen</button>
+            <!-- Nur auf Geräten mit grobem Zeiger sichtbar (CSS): am Rechner ohne
+                 Kamera führte der Knopf bloß in denselben Dateidialog. -->
+            <button type="button" class="btn secondary small nur-touch" id="btn-foto-kamera">📷 Foto aufnehmen</button>
+            <button type="button" class="btn secondary small" id="btn-foto-entfernen" style="display:none;">Entfernen</button>
+          </div>
+          <!-- Zwei getrennte Eingaben: capture="user" springt direkt in die
+               Frontkamera, ohne Umweg über die Mediathek. Ein einzelnes Feld
+               könnte nur eines von beidem. -->
+          <input type="file" id="foto-datei" accept="image/*" style="display:none;" />
+          <input type="file" id="foto-kamera-datei" accept="image/*" capture="user" style="display:none;" />
+          <p class="muted foto-status" id="foto-status" style="display:none;"></p>
+        </div>
+      </div>
 
       <div class="konto-passwort">
         <button type="button" class="btn secondary small" id="btn-passwort-aendern">Passwort ändern</button>
@@ -974,8 +998,41 @@
   </p>
 </footer>
 
+<!-- Dateiauswahl für den Admin-Weg (fremdes Foto setzen). Bewusst eine eigene,
+     globale Eingabe statt einer je Nutzerzeile: die Zeilen werden bei jedem
+     Neu-Rendern verworfen, ein Listener daran wäre danach verwaist. -->
+<input type="file" id="admin-foto-datei" accept="image/*" style="display:none;" />
+
+<!-- Zuschnitt des Nutzerfotos. Steht bewusst als LETZTES Overlay im Markup: bei
+     gleichem z-index entscheidet die DOM-Reihenfolge, und dieser Dialog geht immer
+     über allem auf, was ihn geöffnet hat (Konto-Tab oder Nutzer-Panel). -->
+<div class="code-overlay" id="foto-zuschnitt-overlay" style="display:none;">
+  <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="foto-zuschnitt-titel">
+    <div class="code-dialog-head">
+      <h2 id="foto-zuschnitt-titel">Bild zuschneiden</h2>
+      <button type="button" class="code-dialog-close" id="btn-foto-zuschnitt-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+    <p class="muted" id="foto-zuschnitt-hinweis">Zieh das Bild im Rahmen zurecht und stell die Größe ein. Gespeichert wird genau der sichtbare Ausschnitt.</p>
+    <div class="foto-buehne" id="foto-buehne">
+      <canvas id="foto-canvas"></canvas>
+    </div>
+    <div class="foto-regler">
+      <label for="foto-zoom">Größe</label>
+      <input type="range" id="foto-zoom" min="100" max="400" value="100" />
+      <!-- Handyfotos tragen ihre Ausrichtung im EXIF. Statt sie im Code zu raten,
+           sieht man die Schieflage hier und dreht sie mit einem Tipp gerade. -->
+      <button type="button" class="btn secondary small" id="btn-foto-drehen" title="Bild um 90° drehen">↻ Drehen</button>
+    </div>
+    <p class="muted foto-status" id="foto-zuschnitt-status" style="display:none;"></p>
+    <div class="foto-dialog-btns">
+      <button type="button" class="btn secondary small" id="btn-foto-abbrechen">Abbrechen</button>
+      <button type="button" class="btn" id="btn-foto-speichern">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.57"></script>
-<script src="app.js?v=1.48"></script>
+<script src="config.js?v=1.58"></script>
+<script src="app.js?v=1.49"></script>
 </body>
 </html>

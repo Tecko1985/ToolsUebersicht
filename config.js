@@ -354,6 +354,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.8",
+    groups: [
+      {
+        title: "Eigenes Foto im Konto",
+        items: [
+          "Unter „Mein Konto“ lässt sich jetzt ein Bild von dir hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen.",
+          "Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein. Liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
+          "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts mehr für dich hochladen.",
+          "Hat ein Trainer dort schon ein Bild von dir eingestellt, gilt ab jetzt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
+          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.7",
     groups: [
       {

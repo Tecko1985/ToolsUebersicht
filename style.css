@@ -298,6 +298,74 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 .konto-passwort { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
 .konto-passwort form { max-width: 340px; }
 
+/* Nutzerfoto (seit 2026-08-04) */
+.konto-foto {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.konto-foto-vorschau {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg) center / cover no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+}
+/* min-width: 0 -- ohne das schiebt ein langer Hinweistext die Karte breiter,
+   statt umzubrechen, und die ganze Seite laeuft am Handy seitlich ueber. */
+.konto-foto-text { flex: 1 1 240px; min-width: 0; }
+.konto-foto-text h3 { margin: 0 0 4px; font-size: 15px; }
+.konto-foto-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.foto-status { margin-top: 10px; font-size: 13px; }
+.foto-status.fehler { color: #c0392b; }
+
+/* Der Kamera-Knopf ergibt nur dort Sinn, wo es auch eine Kamera gibt.
+   pointer: coarse ist der verlaessliche Hinweis auf ein Touch-Geraet; am Rechner
+   oeffnete capture="user" bloss denselben Dateidialog wie der Knopf daneben und
+   verspraeche etwas, das nicht passiert. */
+.nur-touch { display: none; }
+@media (pointer: coarse) {
+  .nur-touch { display: inline-block; }
+}
+
+/* Zuschnitt-Dialog. Die Buehne ist der Canvas selbst -- seine Groesse setzt
+   oeffneFotoZuschnitt() beim Oeffnen, weil ein Canvas hinter display:none auf
+   seinen Standardmassen 300x150 haengenbleibt und der erste Zuschnitt sonst
+   verzerrt herauskaeme. Deshalb hier bewusst KEIN aspect-ratio: das kennen die
+   aelteren iOS-Geraete der Flotte nicht. */
+.foto-buehne { display: flex; justify-content: center; margin-top: 14px; }
+#foto-canvas {
+  background: #2b2b2b;
+  border-radius: 8px;
+  max-width: 100%;
+  cursor: grab;
+  /* Ohne das scrollt beim Ziehen die Seite statt das Bild zu wandern. */
+  touch-action: none;
+}
+#foto-canvas.zieht { cursor: grabbing; }
+.foto-regler { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.foto-regler label { font-size: 13px; color: var(--muted); }
+/* min-width: 0 am Flex-Kind, sonst haelt der Regler seine intrinsische Breite
+   und drueckt den Drehen-Knopf aus dem Dialog. */
+.foto-regler input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.foto-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* Foto-Zeile im Nutzer-Bearbeiten-Panel (Admin-Weg). flex-wrap, damit die beiden
+   Knoepfe am Handy umbrechen statt die Zeile breiter zu machen als die Karte. */
+.user-foto-zeile { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
 /* Push-Benachrichtigungen (seit 2026-08-03) */
 .push-titel { margin-top: 18px; }
 .push-titel:first-child { margin-top: 0; }
