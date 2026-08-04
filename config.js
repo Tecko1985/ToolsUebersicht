@@ -354,6 +354,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "2.1",
+    groups: [
+      {
+        title: "Punkte fürs Dranbleiben — und fürs Erledigen",
+        items: [
+          "Neu: <strong>40 Punkte einmalig, sobald deine Trainer-Unterlagen vollständig sind</strong> — Vertrag, Kodex, Jugendschutz und der Rest. Der höchste Einzelwert, den es gibt.",
+          "Neu: <strong>10 Punkte für jede Woche, in der du drangeblieben bist</strong>, also auch in der Woche davor schon aktiv warst. Bewusst wochenweise: eine Tagesserie würde jeden Urlaub bestrafen.",
+          "Neu: <strong>10 Punkte für jede Woche, in der du mindestens drei verschiedene Werkzeuge benutzt hast.</strong>",
+          "Neu: je <strong>15 Punkte einmalig</strong> fürs Hinterlegen eines Fotos und fürs Einschalten der Benachrichtigungen.",
+          "Die Serie hält auch über Silvester — Kalenderwochen werden nach der amtlichen Zählung gerechnet, nicht nach Jahresanfang."
+        ]
+      }
+    ]
+  },
+  {
     version: "2.0",
     groups: [
       {

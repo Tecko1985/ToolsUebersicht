@@ -2768,7 +2768,36 @@ async function handleMyTrainerdatenStatus(request, env, authHeader, corsHeaders)
     );
   }
 
-  return json({ ...summary, trainerdatenGesamtOk, vertragspflichtig }, 200, corsHeaders);
+  // Einmal-Bonus fuer vollstaendige Trainer-Pflichten (Regelversion 5).
+  //
+  // Haengt bewusst HIER und nicht an einer eigenen Aktion: dieser Handler laeuft bei
+  // jedem Seitenaufbau der Uebersicht und hat die Bedingung gerade ausgerechnet --
+  // er kostet also keinen einzigen zusaetzlichen Lesevorgang, und der Bonus faellt
+  // beim ersten Aufruf nach dem Vollstaendigwerden.
+  //
+  // ⚠️ Nur bei `=== true`. `trainerdatenGesamtOk` ist absichtlich dreiwertig: `null`
+  // heisst "betrifft dich gar nicht" (kein Badge), und wer nicht vertragspflichtig
+  // ist, erfuellt schon mit einer hinterlegten E-Mail. Beides ist gewollt -- die
+  // Ampel und der Bonus muessen dasselbe sagen, sonst erklaert niemand die Differenz.
+  //
+  // ⚠️ Ein Schreibfehler darf die Statusanzeige nicht kippen: sie ist die eigentliche
+  // Aufgabe dieser Aktion, der Bonus ist Beiwerk.
+  let pflichtenBonus = false;
+  if (trainerdatenGesamtOk === true) {
+    pflichtenBonus = punkteEinmalBonusFaellig(user, "punkteBonusPflichtenAt");
+    if (pflichtenBonus) {
+      try {
+        await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, session.usersDoc);
+      } catch (e) {
+        pflichtenBonus = false;
+        console.error("Pflichten-Bonus-Sperre schreiben fehlgeschlagen: " + (e && e.message ? e.message : e));
+      }
+    }
+  }
+
+  const antwort = json({ ...summary, trainerdatenGesamtOk, vertragspflichtig }, 200, corsHeaders);
+  if (pflichtenBonus) antwort.punkteBonus = { art: "pflichten", username: session.username };
+  return antwort;
 }
 
 // E-Mail-Benachrichtigung an einen anderen Nutzer, siehe Doku-Kommentar bei
@@ -5497,13 +5526,20 @@ async function handleNutzerfotoPut(request, body, env, authHeader, corsHeaders) 
   // zeigte nutzer.json nach einem gescheiterten Upload auf ein Bild, das es nie
   // gab -- und jeder Client liefe in einen 404, den niemand erklären kann.
   user.fotoVersion = Date.now();
+  // Einmal-Bonus fuers Hinterlegen (Regelversion 5). ⚠️ Nur fuers EIGENE Konto:
+  // laedt ein Admin ein Bild fuer jemand anderen hoch, hat der dafuer nichts
+  // getan. Die Sperre reist im selben writeJson mit, das ohnehin faellig ist.
+  const bonusFaellig = normalizeUsername(session.username) === ziel.username
+    && punkteEinmalBonusFaellig(user, "punkteBonusFotoAt");
   try {
     await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
   } catch (e) {
     return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
   }
 
-  return json({ ok: true, username: ziel.username, fotoVersion: user.fotoVersion }, 200, corsHeaders);
+  const antwort = json({ ok: true, username: ziel.username, fotoVersion: user.fotoVersion }, 200, corsHeaders);
+  if (bonusFaellig) antwort.punkteBonus = { art: "foto", username: ziel.username };
+  return antwort;
 }
 
 // Bild ausliefern. Jeder Angemeldete darf jedes Foto abrufen.
@@ -8667,10 +8703,29 @@ async function handlePushAboAnlegen(request, body, env, authHeader, corsHeaders)
     neueId = eintrag.id;
   });
 
+  // Einmal-Bonus fuers Einschalten (Regelversion 5). ⚠️ Anders als beim Foto ist
+  // hier ein EIGENER Schreibvorgang auf nutzer.json noetig -- dieser Handler fasst
+  // sonst nur push-abos.json an. Er faellt genau einmal im Leben eines Kontos an;
+  // danach steht die Sperre und der Zweig wird nie wieder betreten. Ein Fehlschlag
+  // beim Setzen der Sperre darf das Abo nicht kippen: das Einschalten hat
+  // funktioniert, nur der Bonus faellt dann aus.
+  const bonusNutzer = getOwn(session.usersDoc.users, session.username);
+  let bonusFaellig = punkteEinmalBonusFaellig(bonusNutzer, "punkteBonusPushAt");
+  if (bonusFaellig) {
+    try {
+      await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, session.usersDoc);
+    } catch (e) {
+      bonusFaellig = false;
+      console.error("Push-Bonus-Sperre schreiben fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  }
+
   // Die Id zurueck: der Client merkt sie sich lokal und kann seinen eigenen
   // Eintrag in der Geraeteliste als "dieses Geraet" kennzeichnen. Ohne das
   // waere die Liste eine Reihe ununterscheidbarer Namen.
-  return json({ ok: true, id: neueId }, 200, corsHeaders);
+  const antwort = json({ ok: true, id: neueId }, 200, corsHeaders);
+  if (bonusFaellig) antwort.punkteBonus = { art: "push", username: session.username };
+  return antwort;
 }
 
 async function handlePushAboLoeschen(request, body, env, authHeader, corsHeaders) {
@@ -9146,7 +9201,7 @@ const AKTIVITAET_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + 
 
 // Regelwerk. Die Version wandert in saldo.json mit, damit ein Saldo, der noch nach
 // alten Regeln gerechnet wurde, beim naechsten Zugriff erkennbar ist.
-const PUNKTE_REGELN_VERSION = 4;
+const PUNKTE_REGELN_VERSION = 5;
 const PUNKTE_FENSTER_MS = 5 * 60 * 1000;
 const PUNKTE_PRO_FENSTER = 1;
 const PUNKTE_PRO_APP_START = 2;
@@ -9174,12 +9229,35 @@ const PUNKTE_PW_BONUS_TAGE = 90;
 // Trainer muss nicht hinterhertelefonieren.
 const PUNKTE_TAT_TERMIN_ANTWORT = 5;
 
+// Wochen-Boni (Regelversion 5, Michel-Vorgabe vom 2026-08-04).
+//
+// ⚠️ Bewusst WOCHEN, nicht Tage. Eine Tagesserie ist im Ehrenamt unrealistisch und
+// bestrafte jeden Urlaub -- sie wuerde genau die Leute treffen, die man halten will.
+const PUNKTE_BONUS_SERIE = 10;       // je Woche, die an eine aktive Vorwoche anschliesst
+const PUNKTE_BONUS_VIELSEITIG = 10;  // je Woche mit mindestens ... verschiedenen Werkzeugen
+const PUNKTE_VIELSEITIG_APPS = 3;
+// Wie viele Wochen der Saldo mitfuehrt. Begrenzt, damit die Datei nicht unbegrenzt
+// waechst; laenger als das Aufbewahrungsfenster der Rohdaten waere ohnehin sinnlos.
+const PUNKTE_WOCHEN_HISTORIE = 60;
+
+// Einmalige Einrichtungs-Boni (Regelversion 5). Anders als der Passwort-Bonus
+// EINMAL ueberhaupt, nicht alle 90 Tage -- ein Foto hinterlegt man einmal.
+const PUNKTE_BONUS_FOTO = 15;
+const PUNKTE_BONUS_PUSH = 15;
+// Vertrag, Kodex, Jugendschutz und der Rest der Pflichten vollstaendig. Der hoechste
+// Einzelwert des Systems, und der einzige, der auf eine echte Vereinspflicht einzahlt
+// statt auf Nutzung.
+const PUNKTE_BONUS_PFLICHTEN = 40;
+
 // Bonus-Ereignisse. Eigene Aktionsnamen, weil sie NICHT aus einer Gateway-Aktion
 // entstehen, sondern aus einer Bedingung, die nur der jeweilige Handler kennt
 // (der VORIGE lastLoginAt, der vorige Bonus-Zeitpunkt).
 const PUNKTE_BONI = new Map([
   ["bonus-passwortwechsel", PUNKTE_BONUS_PASSWORT],
-  ["bonus-rueckkehr", PUNKTE_BONUS_RUECKKEHR]
+  ["bonus-rueckkehr", PUNKTE_BONUS_RUECKKEHR],
+  ["bonus-foto", PUNKTE_BONUS_FOTO],
+  ["bonus-push", PUNKTE_BONUS_PUSH],
+  ["bonus-pflichten", PUNKTE_BONUS_PFLICHTEN]
 ]);
 // Obergrenze fuer die Admin-Auswertung. Ein Worker darf nur begrenzt viele
 // Unteranfragen stellen -- eine Auswertung ueber alle Konten in EINEM Request
@@ -9327,6 +9405,91 @@ function punkteMonatKey(fenster) {
   return punkteTagKey(fenster).slice(0, 7);
 }
 
+// ISO-Kalenderwoche eines Tages ("2026-08-04" -> "2026-W32").
+//
+// ⚠️ Nach ISO 8601 gerechnet, nicht naiv: das Jahr der Woche bestimmt ihr
+// DONNERSTAG, nicht ihr erster Tag. Der 1. Januar 2027 liegt dadurch in Woche
+// 2026-W53, und der 31. Dezember 2029 in 2030-W01. Wer das nicht so rechnet,
+// zerreisst die Serie ausgerechnet ueber Silvester -- also genau dann, wenn im
+// Verein am wenigsten passiert und eine Serie am ehesten reisst.
+function punkteWocheKey(tagIso) {
+  const teile = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(tagIso || ""));
+  if (!teile) return "";
+  const d = new Date(Date.UTC(Number(teile[1]), Number(teile[2]) - 1, Number(teile[3])));
+  // Auf den Donnerstag derselben Woche schieben (Montag = 0).
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 3);
+  const jahr = d.getUTCFullYear();
+  // Der 4. Januar liegt per Definition immer in Woche 1.
+  const jan4 = new Date(Date.UTC(jahr, 0, 4));
+  jan4.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + 3);
+  const nummer = 1 + Math.round((d.getTime() - jan4.getTime()) / (7 * 86400000));
+  return jahr + "-W" + String(nummer).padStart(2, "0");
+}
+
+// Die Woche davor. Ueber das Montagsdatum gerechnet statt ueber die Nummer --
+// "W01 minus eins" ist je nach Jahr W52 oder W53, das laesst sich nicht rechnen.
+function punkteWocheDavor(wocheKey) {
+  const teile = /^(\d{4})-W(\d{2})$/.exec(String(wocheKey || ""));
+  if (!teile) return "";
+  const jan4 = new Date(Date.UTC(Number(teile[1]), 0, 4));
+  const montagKw1 = new Date(jan4.getTime() - ((jan4.getUTCDay() + 6) % 7) * 86400000);
+  const montag = new Date(montagKw1.getTime() + (Number(teile[2]) - 1) * 7 * 86400000);
+  return punkteWocheKey(new Date(montag.getTime() - 7 * 86400000).toISOString().slice(0, 10));
+}
+
+// Welche Werkzeuge in welcher Woche benutzt wurden. Grundlage beider Wochen-Boni.
+// Bonus-Ereignisse und ignorierte Aktionen bleiben draussen -- ein Passwortwechsel
+// macht keine Woche aktiv und schon gar nicht vielseitig.
+function punkteWochenAusEreignissen(ereignisse) {
+  const wochen = {};
+  (Array.isArray(ereignisse) ? ereignisse : []).forEach((e) => {
+    if (!e || typeof e.w !== "number" || !Number.isFinite(e.w)) return;
+    const aktion = String(e.a || "");
+    if (PUNKTE_IGNORIERT.has(aktion) || PUNKTE_BONI.has(aktion)) return;
+    const woche = punkteWocheKey(punkteTagKey(e.w));
+    if (!woche) return;
+    const app = String(e.app || "uebersicht");
+    if (!wochen[woche]) wochen[woche] = [];
+    if (!wochen[woche].includes(app)) wochen[woche].push(app);
+  });
+  return wochen;
+}
+
+// Serie und Vielseitigkeit ueber alle bekannten Wochen.
+//
+// Die Serie zaehlt NICHT die Laenge der laengsten Strecke, sondern jede Woche, die
+// an eine aktive Vorwoche anschliesst. Das ist leichter zu erklaeren ("jede Woche,
+// in der du drangeblieben bist"), es waechst gleichmaessig statt sprunghaft, und es
+// sinkt nie rueckwirkend, wenn jemand eine Woche aussetzt.
+function punkteWochenBoni(wochen) {
+  const keys = Object.keys(wochen || {}).sort();
+  let serie = 0, vielseitig = 0;
+  keys.forEach((k) => {
+    const apps = wochen[k] || [];
+    if (apps.length >= PUNKTE_VIELSEITIG_APPS) vielseitig += PUNKTE_BONUS_VIELSEITIG;
+    const davor = punkteWocheDavor(k);
+    if (davor && Object.prototype.hasOwnProperty.call(wochen, davor)) serie += PUNKTE_BONUS_SERIE;
+  });
+  return { serie, vielseitig, gesamt: serie + vielseitig };
+}
+
+// Zwei Wochen-Bestaende vereinen (Saldo + laufender Monat) und auf die juengsten
+// PUNKTE_WOCHEN_HISTORIE Wochen kuerzen.
+function punkteWochenVereinen(a, b) {
+  const zusammen = {};
+  [a || {}, b || {}].forEach((quelle) => {
+    Object.keys(quelle).forEach((w) => {
+      if (!zusammen[w]) zusammen[w] = [];
+      (quelle[w] || []).forEach((app) => { if (!zusammen[w].includes(app)) zusammen[w].push(app); });
+    });
+  });
+  const keys = Object.keys(zusammen).sort();
+  if (keys.length <= PUNKTE_WOCHEN_HISTORIE) return zusammen;
+  const gekuerzt = {};
+  keys.slice(keys.length - PUNKTE_WOCHEN_HISTORIE).forEach((w) => { gekuerzt[w] = zusammen[w]; });
+  return gekuerzt;
+}
+
 // Monat als YYYY-MM um n Monate zurueckversetzen. Rein auf dem String gerechnet,
 // damit keine Zeitzonen-Kante mitspielt.
 function punkteMonatMinus(monat, n) {
@@ -9451,6 +9614,24 @@ async function aktivitaetErfassen(request, body, env, authHeader, antwort) {
   } catch (e) {
     console.error("Aktivitaet erfassen fehlgeschlagen: " + (e && e.message ? e.message : e));
   }
+}
+
+// Einmal-Bonus vorbereiten: true, wenn er faellig ist. Setzt die Sperre direkt am
+// Nutzer-Datensatz -- der AUFRUFER muss usersDoc anschliessend schreiben, sonst ist
+// die Sperre weg und der Bonus beim naechsten Mal erneut faellig.
+//
+// ⚠️ Anders als der Passwort-Bonus gilt die Sperre EINMAL ueberhaupt, nicht alle
+// 90 Tage: ein Foto hinterlegt man einmal, Benachrichtigungen schaltet man einmal
+// ein. Ohne sie waeren zehn Uploads zehn Boni.
+//
+// Spielerkonten und Konten mit Widerspruch bekommen nichts -- und ihre Sperre wird
+// auch nicht gesetzt, damit ein spaeterer Widerruf des Widerspruchs den Bonus nicht
+// stillschweigend verbraucht hat.
+function punkteEinmalBonusFaellig(user, feld) {
+  if (!user || !istPersonal(user) || user.punkteOptOut) return false;
+  if (user[feld]) return false;
+  user[feld] = new Date().toISOString();
+  return true;
 }
 
 // Darf fuer dieses Konto ueberhaupt erfasst werden? Spielerkonten nie, Konten mit
@@ -9609,7 +9790,9 @@ async function punkteStand(username, env, authHeader, mitProtokoll) {
   if (Number(saldo.regeln) !== PUNKTE_REGELN_VERSION) {
     saldo.regeln = PUNKTE_REGELN_VERSION;
     saldo.monate = {};
+    saldo.wochen = {};
   }
+  if (!saldo.wochen || typeof saldo.wochen !== "object") saldo.wochen = {};
 
   // Abgeschlossene Monate rueckwaerts nachtragen, bis einer schon dasteht.
   let saldoGeaendert = false;
@@ -9618,6 +9801,11 @@ async function punkteStand(username, env, authHeader, mitProtokoll) {
     if (Object.prototype.hasOwnProperty.call(saldo.monate, monat)) break;
     const doc = await readJson(aktivitaetMonatUrl(username, monat), authHeader, null);
     saldo.monate[monat] = doc ? punkteAusEreignissen(doc.ereignisse).gesamt : 0;
+    // ⚠️ Die Wochen dieses Monats mitnehmen, BEVOR die Rohdatei verdichtet wird.
+    // Serie und Vielseitigkeit laufen ueber Monatsgrenzen hinweg; ohne diesen
+    // Mitschnitt risse jede Serie beim Monatswechsel, und eine Woche, die auf zwei
+    // Monate faellt, saehe nie ihre volle Zahl an Werkzeugen.
+    if (doc) saldo.wochen = punkteWochenVereinen(saldo.wochen, punkteWochenAusEreignissen(doc.ereignisse));
     saldoGeaendert = true;
     // Verdichtung: die Rohdatei dieses Monats faellt aus dem Aufbewahrungsfenster,
     // sobald ihr Wert im Saldo steht und sie alt genug ist.
@@ -9644,10 +9832,21 @@ async function punkteStand(username, env, authHeader, mitProtokoll) {
     }
   }
 
-  const erarbeitet = abgeschlossen + aktuell.gesamt;
+  // Wochen-Boni stehen bewusst NICHT in punkteAusEreignissen: die Funktion sieht
+  // immer nur einen Monat, Serie und Vielseitigkeit laufen aber darueber hinweg.
+  // Gerechnet wird deshalb hier, auf dem vereinten Bestand aus Saldo und laufendem
+  // Monat -- dessen Wochen werden absichtlich nicht mitgespeichert, der Monat ist
+  // ja noch nicht fertig.
+  const wochen = punkteWochenVereinen(saldo.wochen, punkteWochenAusEreignissen(aktuellDoc ? aktuellDoc.ereignisse : []));
+  const wochenBoni = punkteWochenBoni(wochen);
+
+  const erarbeitet = abgeschlossen + aktuell.gesamt + wochenBoni.gesamt;
   const eingeloest = Number(saldo.eingeloest) || 0;
 
-  const ergebnis = { erarbeitet, eingeloest, verfuegbar: Math.max(0, erarbeitet - eingeloest) };
+  const ergebnis = {
+    erarbeitet, eingeloest, verfuegbar: Math.max(0, erarbeitet - eingeloest),
+    serie: wochenBoni.serie, vielseitigkeit: wochenBoni.vielseitig
+  };
   if (mitProtokoll) {
     ergebnis.protokoll = punkteProtokoll(aktuellDoc ? aktuellDoc.ereignisse : [], aktuell.proTag);
   }
@@ -9734,6 +9933,13 @@ function punkteRegelnFuerAnzeige() {
     rueckkehrNachTagen: Math.round(SESSION_TTL_SECONDS / 86400),
     // Additiv (Regeln 4).
     proTerminAntwort: PUNKTE_TAT_TERMIN_ANTWORT,
+    // Additiv (Regeln 5).
+    proSerienwoche: PUNKTE_BONUS_SERIE,
+    proVielseitigeWoche: PUNKTE_BONUS_VIELSEITIG,
+    vielseitigAbWerkzeugen: PUNKTE_VIELSEITIG_APPS,
+    einmalFoto: PUNKTE_BONUS_FOTO,
+    einmalPush: PUNKTE_BONUS_PUSH,
+    einmalPflichten: PUNKTE_BONUS_PFLICHTEN,
     tagesdeckel: PUNKTE_TAGESDECKEL,
     aufbewahrungMonate: PUNKTE_ROHDATEN_MONATE
   };

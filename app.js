@@ -6494,10 +6494,31 @@ function punkteRegelnRendern(r) {
     zeilen.push([r.proRueckkehr, "wenn du dich wieder anmeldest, nachdem deine Anmeldung nach "
       + (r.rueckkehrNachTagen || 7) + " Tagen abgelaufen war"]);
   }
+  // Seit Regeln 5. Wochen statt Tage — eine Tagesserie bestrafte jeden Urlaub.
+  if (r.proSerienwoche) {
+    zeilen.push([r.proSerienwoche, "für jede Woche, in der du drangeblieben bist — also auch in der Woche davor schon aktiv warst"]);
+  }
+  if (r.proVielseitigeWoche) {
+    zeilen.push([r.proVielseitigeWoche, "für jede Woche, in der du mindestens "
+      + (r.vielseitigAbWerkzeugen || 3) + " verschiedene Werkzeuge benutzt hast"]);
+  }
+  if (r.einmalPflichten) {
+    zeilen.push([r.einmalPflichten, "einmalig, sobald deine Trainer-Unterlagen vollständig sind — Vertrag, Kodex, Jugendschutz und der Rest"]);
+  }
+  if (r.einmalFoto) {
+    zeilen.push([r.einmalFoto, "einmalig, wenn du ein Foto hinterlegst"]);
+  }
+  if (r.einmalPush) {
+    zeilen.push([r.einmalPush, "einmalig, wenn du Benachrichtigungen aufs Handy einschaltest"]);
+  }
 
   const extra = [];
   if (r.tagesdeckel) {
-    extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden nicht gezählt — die drei Zugaben darüber zählen aber immer, sie fallen ohnehin nur selten an.");
+    // ⚠️ Zahl im Text bewusst vermieden: der Deckel gilt fürs laufende Sammeln
+    // (Fenster, Werkzeug-Start, Vorgänge, Tagewerk), alle Zugaben und einmaligen
+    // Boni stehen außerhalb. Stünde hier eine Anzahl, wäre sie beim nächsten
+    // neuen Bonus still falsch — genau so war es nach Regelversion 5.
+    extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden fürs laufende Sammeln nicht gezählt. Zugaben und einmalige Boni zählen davon unabhängig immer.");
   }
   extra.push("Nur angemeldet zu sein gibt nichts — es muss etwas passieren.");
   if (r.aufbewahrungMonate) {
