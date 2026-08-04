@@ -354,180 +354,6 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
-    version: "2.2",
-    groups: [
-      {
-        title: "Exporte wieder dort, wo sie hingehören",
-        items: [
-          "Die gesammelten Export-Knöpfe im Admin-Dashboard sind entfallen. Jede App bringt ihren Export selbst mit — dort ist er vollständig, hier war er nur nachgebaut."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.1",
-    groups: [
-      {
-        title: "Punkte fürs Dranbleiben — und fürs Erledigen",
-        items: [
-          "Neu: <strong>40 Punkte einmalig, sobald deine Trainer-Unterlagen vollständig sind</strong> — Vertrag, Kodex, Jugendschutz und der Rest. Der höchste Einzelwert, den es gibt.",
-          "Neu: <strong>10 Punkte für jede Woche, in der du drangeblieben bist</strong>, also auch in der Woche davor schon aktiv warst. Bewusst wochenweise: eine Tagesserie würde jeden Urlaub bestrafen.",
-          "Neu: <strong>10 Punkte für jede Woche, in der du mindestens drei verschiedene Werkzeuge benutzt hast.</strong>",
-          "Neu: je <strong>15 Punkte einmalig</strong> fürs Hinterlegen eines Fotos und fürs Einschalten der Benachrichtigungen.",
-          "Die Serie hält auch über Silvester — Kalenderwochen werden nach der amtlichen Zählung gerechnet, nicht nach Jahresanfang."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.0",
-    groups: [
-      {
-        title: "Mehr Wege zu Punkten",
-        items: [
-          "Neu: <strong>10 Punkte für jeden Tag</strong>, an dem du überhaupt etwas mit den Werkzeugen gemacht hast — einfach obendrauf, zusätzlich zu allem anderen.",
-          "Neu: <strong>5 Punkte, wenn du einem Termin zu- oder absagst.</strong> Wer früh Bescheid gibt, erspart anderen das Hinterhertelefonieren.",
-          "Neu: <strong>20 Punkte für einen Passwortwechsel</strong>, höchstens alle drei Monate. Mehrmals hintereinander zu wechseln bringt nichts.",
-          "Neu: <strong>10 Punkte, wenn du wiederkommst</strong>, nachdem deine Anmeldung abgelaufen war. Die Anmeldung hält sieben Tage.",
-          "Diese vier Zugaben zählen immer — auch an einem Tag, an dem du die Obergrenze von 60 Punkten schon erreicht hast.",
-          "Beim Öffnen der Übersicht wurden bisher versehentlich Punkte für Vereinskalender und Abwesenheitskalender gutgeschrieben, obwohl niemand sie geöffnet hatte. Das ist behoben."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.9",
-    groups: [
-      {
-        title: "Punkte für die Arbeit mit den Werkzeugen",
-        items: [
-          "Unter „Mein Konto“ gibt es jetzt einen Punktestand: Wer mit den Vereins-Werkzeugen arbeitet, sammelt dabei Punkte.",
-          "Punkte gibt es fürs Tun, nicht fürs Angemeldetsein — ein offener Tab allein zählt nicht. Am meisten bringt ein abgeschlossener Vorgang: eine erledigte Aufgabe, ein gestellter Antrag, eine geleistete Unterschrift.",
-          "Deinen Stand siehst nur du selbst. Es gibt keine Rangliste und keinen Vergleich mit anderen.",
-          "Wozu die Punkte einmal gut sein werden, entscheidet der Verein später. Das System wird gerade erprobt, die Regeln können sich also noch ändern.",
-          "In der Karte lässt sich einsehen, was gespeichert ist. Wer nicht mitzählen möchte, schaltet die Erfassung dort ab — die bisherigen Aufzeichnungen werden dabei gelöscht.",
-          "Spielerkonten nehmen nicht teil und werden auch nicht erfasst."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.8",
-    groups: [
-      {
-        title: "Eigenes Foto im Konto",
-        items: [
-          "Unter „Mein Konto“ lässt sich jetzt ein Bild von dir hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen.",
-          "Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein. Liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
-          "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts mehr für dich hochladen.",
-          "Hat ein Trainer dort schon ein Bild von dir eingestellt, gilt ab jetzt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
-          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.7",
-    groups: [
-      {
-        title: "Raumnutzung meldet sich jetzt auch",
-        items: [
-          "Neuer Schalter „Raumnutzung“ unter „Mein Konto“: eine Nachricht, sobald ein Antrag fertig ausgefüllt ist und eingereicht werden kann — und für den Ausfüllenden, sobald sein Antrag beim Amt ist oder der Landkreis entschieden hat.",
-          "Die Kachel „Raumnutzung“ trägt dafür jetzt das Glockensymbol 🔔, wie die anderen Werkzeuge, die sich aufs Handy melden.",
-          "Wer benachrichtigt wird, lässt sich in der Raumnutzung selbst einstellen (Reiter „Einstellungen“, nur mit der Stufe Administrieren)."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.6",
-    groups: [
-      {
-        title: "Vereinsaufgaben meldet sich bei mehr Gelegenheiten",
-        items: [
-          "Der Schalter „Vereinsaufgaben“ unter „Mein Konto“ umfasst jetzt auch Rückfragen und Statusmeldungen — bisher kam eine Nachricht nur, wenn eine Aufgabe neu zugewiesen wurde.",
-          "Gemeldet wird an die jeweils andere Seite eines Vorgangs: eine Rückfrage erreicht den, der die Aufgabe gestellt hat, dessen Antwort erreicht den Empfänger. Dasselbe gilt für erledigt, zur Abnahme, abgenommen, abgelehnt, zurückgegeben und zurückgezogen.",
-          "Titel, Namen und der Wortlaut stehen nie in der Nachricht. Wer den Schalter ausschaltet, bekommt von dort weiterhin gar nichts."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.5",
-    groups: [
-      {
-        title: "Bilder und Videos in den Neuigkeiten",
-        items: [
-          "An eine Meldung lassen sich jetzt bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
-          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
-          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
-          "Gepflegt wird alles wie gewohnt unter Einstellungen → Neuigkeiten."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.4",
-    groups: [
-      {
-        title: "Auf einen Blick, welche Kachel sich meldet",
-        items: [
-          "Werkzeuge, in denen eine Handlung als Nachricht auf dem Handy ankommt, tragen jetzt eine Glocke 🔔 unten links — dasselbe Prinzip wie der Briefumschlag ✉, der schon zeigt, wo eine E-Mail nach außen geht.",
-          "Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Fotoaufträge und der externe Fahrtenbuch-Link. Bei Vereinsaufgaben und Vereinskalender stehen beide Symbole nebeneinander, weil dort beide Wege benutzt werden.",
-          "Das Symbol steht bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
-          "Push-Nachrichten gehen ab sofort mit hoher Dringlichkeit raus. Vorher durfte das Handy sie zurückhalten, solange es im Energiesparmodus lag, und gesammelt zustellen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
-      {
-        title: "Mehr Anlässe für Benachrichtigungen",
-        items: [
-          "Vier weitere Werkzeuge melden sich jetzt aufs Handy: Testspielplaner, Materialbedarf, Fahrtenbuch und Fotoaufträge. Jedes lässt sich einzeln an- und abschalten.",
-          "Testspielplaner: Wer anfragt, erfährt es, sobald entschieden wurde — wer entscheidet, erfährt von neuen Anfragen.",
-          "Materialbedarf: dasselbe für gemeldeten Bedarf und die Entscheidung darüber.",
-          "Fahrtenbuch: Wird eine Fahrt über den externen Link eingereicht, erfahren es die Zuständigen. Bisher musste jemand von sich aus nachsehen.",
-          "Fotoaufträge: Ein neuer Auftrag meldet sich bei den Trainer:innen der betroffenen Mannschaft — nicht bei allen. Ist zu der Mannschaft niemand hinterlegt, gehen die Zuständigen nicht leer aus.",
-          "Die Schalter im Konto-Tab werden jetzt vom Server geliefert. Kommt künftig ein Anlass dazu, erscheint er dort von selbst."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Benachrichtigungen aufs Handy",
-        items: [
-          "Die App kann sich jetzt direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Tab „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
-          "Drei Anlässe, jeder einzeln an- und abschaltbar: ein im Vereinskalender mit dir geteilter Termin, eine neue Aufgabe in den Vereinsaufgaben, und ein Dokument, das auf deine Unterschrift wartet.",
-          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
-          "Die E-Mails bleiben unverändert bestehen. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
-          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
-          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
-          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Anmelden",
-        items: [
-          "Zum Anmelden genügt jetzt auch die eigene E-Mail-Adresse. Der bisherige Nutzername funktioniert unverändert weiter — es kommt nur ein Weg dazu, es fällt keiner weg.",
-          "Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Michel Brunner“, „michel.brunner“, „michel_brunner“, „michel-brunner“ oder „MichelBrunner“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
-          "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
-          "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet."
-        ]
-      }
-    ]
-  },
-  {
     version: "1.0",
     groups: [
       {
@@ -536,6 +362,8 @@ const APP_CHANGELOG = [
           "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
           "Die Kacheln lassen sich am Greifpunkt frei verschieben und innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger. Die eigene Reihenfolge merkt sich der Browser.",
           "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
+          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge und der externe Fahrtenbuch-Link.",
+          "Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
           "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung.",
           "Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",
           "Kacheln, Verlinkungen aus Neuigkeiten und das Termine-Widget öffnen im selben Tab; jedes Werkzeug hat oben einen Weg zurück zum Dashboard."
@@ -556,6 +384,9 @@ const APP_CHANGELOG = [
           "Gepflegt werden sie im Reiter „Einstellungen“ — anlegen, ändern, löschen, mit Typ, Datum, Titel, Text und wahlweise einer Verknüpfung zu einem Werkzeug.",
           "Jede Meldung lässt sich mit einem Emoji bereagieren. Eine Reaktion je Person und Meldung; ein erneuter Klick nimmt sie zurück, ein anderes Emoji wechselt.",
           "Wer mit der Maus über ein Emoji fährt, sieht die Namen der Personen, die so reagiert haben. Am Handy gibt es kein Überfahren, dort bleibt es beim Zähler.",
+          "An eine Meldung lassen sich bis zu vier Bilder oder Videos hängen (JPEG, PNG, GIF, WebP, MP4, WebM — je bis 10 MB). Sie erscheinen als kleine Vorschau unter der Meldung; ein Klick öffnet sie formatfüllend.",
+          "Für längere Videos gibt es zusätzlich ein Link-Feld — etwa für YouTube oder eine Nextcloud-Freigabe. Der Link wird als Knopf angezeigt und erst auf Klick geöffnet, nie ungefragt eingebettet.",
+          "Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar — genau wie die Meldungen selbst. Wird eine Meldung gelöscht, sind ihre Bilder sofort nicht mehr erreichbar.",
           "Neuigkeiten sind Vereinsinterna und erscheinen erst nach dem Anmelden, samt Zählern und Namen. Wer nicht angemeldet ist, bekommt sie gar nicht erst übertragen."
         ]
       },
@@ -602,11 +433,53 @@ const APP_CHANGELOG = [
         items: [
           "Echte Nutzerkonten statt eines geteilten Zugangs. Angelegt wird über Vor- und Nachname, der Nutzername entsteht daraus; das Passwort vergibt sich jeder beim ersten Anmelden selbst.",
           "Die Anmeldung läuft zweistufig: erst der Nutzername, danach je nach Konto entweder das Passwortfeld oder das Formular „Konto einrichten“. Beide Schritte haben einen Weg zurück.",
+          "Zum Anmelden genügt auch die eigene E-Mail-Adresse. Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Michel Brunner“, „michel.brunner“, „michel_brunner“, „michel-brunner“ oder „MichelBrunner“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
+          "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
+          "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet.",
           "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen.",
           "Passwörter werden nie im Klartext gespeichert. Die Anmeldung gilt sieben Tage, danach ist eine neue nötig.",
           "„Abmelden“ steht oben rechts neben dem eigenen Namen und ist damit aus jedem Reiter erreichbar.",
           "Der Reiter „Mein Konto“ zeigt Name, Nutzername, Trainerlizenz und Mannschaften, die eigenen Gruppen im Klartext, in welchen Werkzeugen man mehr als zusehen darf, wann das Passwort zuletzt geändert wurde und bis wann die Anmeldung gilt. Solange niemand angemeldet ist, heißt derselbe Reiter „Anmelden“.",
           "Dort lässt sich auch das eigene Passwort ändern. Dabei werden alle Geräte abgemeldet — auch das eigene; eine neue Anmeldung danach ist normal."
+        ]
+      },
+      {
+        title: "Benachrichtigungen aufs Handy",
+        items: [
+          "Die Toolbox kann sich direkt auf dem Gerät melden, ohne den Umweg über eine E-Mail. Eingeschaltet wird das im Reiter „Mein Konto“ unter „Benachrichtigungen aufs Handy“ — für jedes Gerät einmal.",
+          "Jeder Anlass ist einzeln an- und abschaltbar: ein im Vereinskalender geteilter oder geänderter Termin, eine Vereinsaufgabe samt Rückfragen und Statusmeldungen, ein Dokument, das auf deine Unterschrift wartet, sowie Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge und das Fahrtenbuch.",
+          "Die Nachricht nennt nie einen Namen, einen Termin- oder Dokumenttitel — nur, worum es geht. Sie steht auf dem Sperrbildschirm, wo auch andere mitlesen können. Was drinsteht, sieht man nach dem Antippen in der App.",
+          "Nachrichten gehen mit hoher Dringlichkeit raus, damit das Handy sie nicht im Energiesparmodus zurückhält und gesammelt zustellt.",
+          "Die E-Mails bestehen unverändert weiter. Benachrichtigungen kommen dazu, sie ersetzen nichts — wer sie nicht einschaltet, merkt keinen Unterschied.",
+          "In der Liste der angemeldeten Geräte lässt sich jedes einzeln wieder abmelden, auch von einem anderen Gerät aus.",
+          "Auf dem iPhone geht es nur, wenn die Übersicht als App auf dem Startbildschirm liegt — Apple bietet Benachrichtigungen im normalen Safari-Fenster nicht an. Nötig ist außerdem iOS 16.4 oder neuer, also ein iPhone 8 oder jünger. Auf Android und am Rechner genügt der Browser.",
+          "Wird die Abfrage einmal abgelehnt, lässt sie sich nicht erneut stellen — das erlaubt nur der Browser selbst. In dem Fall steht in der Karte, wo es sich wieder freischalten lässt.",
+          "Die Schalter werden vom Server geliefert. Kommt ein Anlass dazu, erscheint er dort von selbst."
+        ]
+      },
+      {
+        title: "Eigenes Foto im Konto",
+        items: [
+          "Unter „Mein Konto“ lässt sich ein Bild von dir hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen.",
+          "Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein. Liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
+          "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts für dich hochladen. Hat er dort schon ein Bild von dir eingestellt, gilt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
+          "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen.",
+          "Administratoren können im Nutzer-Bereich ein Bild setzen oder entfernen — für Spieler ohne eigenes Gerät und als Notfallknopf bei einem unpassenden Bild."
+        ]
+      },
+      {
+        title: "Aktivitätspunkte",
+        items: [
+          "Unter „Mein Konto“ steht ein Punktestand: Wer mit den Vereins-Werkzeugen arbeitet, sammelt dabei Punkte.",
+          "Punkte gibt es fürs Tun, nicht fürs Angemeldetsein — ein offener Tab allein zählt nicht. Am meisten bringt ein abgeschlossener Vorgang: eine erledigte Aufgabe, ein gestellter Antrag, eine geleistete Unterschrift.",
+          "Dazu kommen: <strong>10 Punkte für jeden Tag</strong>, an dem überhaupt etwas passiert ist, <strong>5 Punkte fürs Zu- oder Absagen eines Termins</strong>, <strong>20 Punkte für einen Passwortwechsel</strong> (höchstens alle drei Monate) und <strong>10 Punkte fürs Wiederkommen</strong>, nachdem die Anmeldung abgelaufen war.",
+          "Wochenweise: <strong>10 Punkte für jede Woche, in der du drangeblieben bist</strong> — also auch in der Woche davor schon aktiv warst —, und <strong>10 Punkte für jede Woche mit mindestens drei verschiedenen Werkzeugen</strong>. Bewusst wochenweise: eine Tagesserie würde jeden Urlaub bestrafen. Die Serie hält auch über Silvester, weil nach der amtlichen Kalenderwoche gerechnet wird.",
+          "Einmalig: <strong>40 Punkte, sobald die Trainer-Unterlagen vollständig sind</strong> — Vertrag, Kodex, Jugendschutz und der Rest, der höchste Einzelwert überhaupt —, sowie je <strong>15 Punkte</strong> fürs Hinterlegen eines Fotos und fürs Einschalten der Benachrichtigungen.",
+          "Diese Zugaben zählen immer, auch an einem Tag, an dem die Obergrenze von 60 Punkten schon erreicht ist.",
+          "Deinen Stand siehst nur du selbst; es gibt keine für alle sichtbare Rangliste. Administratoren sehen zusätzlich, wer welches Werkzeug wie oft nutzt — daran hängt die Frage, welches Werkzeug eigentlich niemand mehr braucht.",
+          "Wozu die Punkte einmal gut sein werden, entscheidet der Verein später. Das System wird erprobt, die Regeln können sich also noch ändern; neu gerechnet wird dabei die Zeit, für die noch Einzelaufzeichnungen vorliegen.",
+          "In der Karte lässt sich einsehen, was gespeichert ist. Wer nicht mitzählen möchte, schaltet die Erfassung dort ab — die bisherigen Aufzeichnungen werden dabei gelöscht.",
+          "Spielerkonten nehmen nicht teil und werden auch nicht erfasst."
         ]
       },
       {
