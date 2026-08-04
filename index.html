@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.36" />
+<link rel="stylesheet" href="style.css?v=1.37" />
 </head>
 <body>
 
@@ -191,6 +191,23 @@
       verschlüsselt und erst auf dem Gerät wieder entschlüsselt. Die Nachrichten
       selbst nennen weder Namen noch Termin- oder Dokumenttitel. Das Abmelden ist
       jederzeit an derselben Stelle möglich und löscht die Geräteadresse.</p>
+      <!-- Aktivitätspunkte (seit 2026-08-04). Muss stehen, BEVOR das erste
+           Ereignis geschrieben wird -- es ist eine Verhaltensdatenverarbeitung,
+           und ein Teil der Betroffenen ist beim Verein angestellt oder bekommt
+           eine Übungsleiterpauschale. Wie beim Push-Absatz gilt der Text nur für
+           diese Seite: gezählt wird zwar die Nutzung aller Tools, erfasst und
+           abgeschaltet wird sie aber ausschließlich hier. -->
+      <p><strong>Aktivitätspunkte.</strong> Für Konten des Vereinspersonals (nicht für
+      Spielerkonten) hält der Verein fest, <strong>wann welches Werkzeug benutzt wurde</strong> —
+      Zeitpunkt auf fünf Minuten genau, das betroffene Werkzeug und die Art des Vorgangs,
+      nicht dessen Inhalt. Daraus entsteht ein Punktestand, den nur du selbst siehst; eine
+      Rangliste oder einen Vergleich zwischen Personen gibt es nicht. Zweck ist, die Arbeit
+      mit den Vereins-Tools zu würdigen und zu erkennen, welche Werkzeuge gebraucht werden.
+      Grundlage ist das berechtigte Interesse des Vereins. Die <strong>Einzelaufzeichnungen
+      werden nach 13 Monaten gelöscht</strong> und nur noch als Monatssumme fortgeführt. Im
+      Tab „Mein Konto“ lässt sich einsehen, was gespeichert ist, und die Erfassung mit dem
+      Schalter <em>Nicht mitzählen</em> jederzeit beenden — die bis dahin gespeicherten
+      Aufzeichnungen werden dabei gelöscht.</p>
       <p><a href="https://www.sc1911-heiligenstadt.de/datenschutz/" target="_blank" rel="noopener">Datenschutzerklärung des Vereins</a>
       &middot;
       <a href="https://www.sc1911-heiligenstadt.de/impressum-2/" target="_blank" rel="noopener">Impressum</a></p>
@@ -357,6 +374,58 @@
       </div>
 
       <p class="muted" id="push-meldung" style="display:none; margin-top:10px;"></p>
+    </div>
+
+    <!-- Aktivitätspunkte (seit 2026-08-04). Steht bewusst unter den
+         Benachrichtigungen: das hier ist nichts, was man einstellt, sondern etwas,
+         das man sich ansieht. Für Spielerkonten bleibt die Karte ausgeblendet —
+         sie werden gar nicht erst erfasst. -->
+    <div class="card" id="punkte-panel" style="display:none;">
+      <h2>Meine Punkte</h2>
+      <p class="muted" style="margin-bottom:14px;">
+        Für die Arbeit mit den Vereins-Tools sammelst du Punkte. Wozu sie einmal gut sein
+        werden, entscheidet der Verein später — im Moment geht es erst einmal ums Sammeln.
+      </p>
+
+      <div class="punkte-stand">
+        <div class="punkte-zahl" id="punkte-zahl">–</div>
+        <div class="punkte-zahl-text">
+          <strong id="punkte-zahl-label">Punkte erarbeitet</strong>
+          <span class="muted" id="punkte-verfuegbar"></span>
+        </div>
+      </div>
+
+      <!-- Michel-Vorgabe: ohne diesen Satz ist die erste Regeländerung ein
+           Vertrauensbruch („der hat mir Punkte weggenommen"). Mit ihm ist sie
+           angekündigt. Nicht entfernen, solange die Regeln nicht feststehen. -->
+      <p class="muted punkte-erprobung">
+        Das Punktesystem wird gerade erprobt. Die Regeln, nach denen gezählt wird, können
+        sich noch ändern — dann ändert sich auch dein Stand.
+      </p>
+
+      <details class="punkte-details">
+        <summary>Wie kommen die Punkte zustande?</summary>
+        <ul class="punkte-regeln" id="punkte-regeln"></ul>
+      </details>
+
+      <!-- Auskunftsrecht in Klickform: hier steht, was über einen gespeichert ist. -->
+      <details class="punkte-details">
+        <summary>Was ist über mich gespeichert?</summary>
+        <div id="punkte-protokoll"></div>
+      </details>
+
+      <!-- ⚠️ KEIN .form-field um das Kästchen: dort greift input{width:100%} und
+           macht aus der Checkbox einen Balken (gleiche Falle wie bei den
+           Push-Schaltern darüber). -->
+      <div class="punkte-optout">
+        <label class="punkte-optout-label">
+          <input type="checkbox" id="punkte-opt-out" />
+          <span>Nicht mitzählen</span>
+        </label>
+        <small class="muted">Für dein Konto wird dann nichts mehr erfasst. Dein bisher gespeichertes Protokoll wird dabei gelöscht.</small>
+      </div>
+
+      <p class="muted" id="punkte-meldung" style="display:none; margin-top:10px;"></p>
     </div>
 
   </section>
@@ -1032,7 +1101,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.58"></script>
-<script src="app.js?v=1.49"></script>
+<script src="config.js?v=1.59"></script>
+<script src="app.js?v=1.50"></script>
 </body>
 </html>

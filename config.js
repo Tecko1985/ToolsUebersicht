@@ -354,6 +354,22 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.9",
+    groups: [
+      {
+        title: "Punkte für die Arbeit mit den Werkzeugen",
+        items: [
+          "Unter „Mein Konto“ gibt es jetzt einen Punktestand: Wer mit den Vereins-Werkzeugen arbeitet, sammelt dabei Punkte.",
+          "Punkte gibt es fürs Tun, nicht fürs Angemeldetsein — ein offener Tab allein zählt nicht. Am meisten bringt ein abgeschlossener Vorgang: eine erledigte Aufgabe, ein gestellter Antrag, eine geleistete Unterschrift.",
+          "Deinen Stand siehst nur du selbst. Es gibt keine Rangliste und keinen Vergleich mit anderen.",
+          "Wozu die Punkte einmal gut sein werden, entscheidet der Verein später. Das System wird gerade erprobt, die Regeln können sich also noch ändern.",
+          "In der Karte lässt sich einsehen, was gespeichert ist. Wer nicht mitzählen möchte, schaltet die Erfassung dort ab — die bisherigen Aufzeichnungen werden dabei gelöscht.",
+          "Spielerkonten nehmen nicht teil und werden auch nicht erfasst."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.8",
     groups: [
       {

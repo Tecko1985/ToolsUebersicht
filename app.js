@@ -5611,6 +5611,7 @@ function renderAdminPanels() {
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
+  document.getElementById("punkte-panel").style.display = "none";
   document.getElementById("btn-admin-dashboard-open").style.display = "none";
   // Der Knopf im Kopfbereich haengt nicht an isAdmin, sondern am Angemeldetsein --
   // ihn sehen alle ausser Spielerkonten. Der Worker prueft dasselbe noch einmal.
@@ -5623,6 +5624,8 @@ function renderAdminPanels() {
     // Laeuft nebenher: der Aufbau fragt den Server und darf den Rest des
     // Konto-Tabs nicht aufhalten. Fehler landen sichtbar in der Karte selbst.
     pushPanelAufbauen();
+    // Ebenfalls nebenher, aus demselben Grund.
+    punktePanelAufbauen();
     if (currentUser.isAdmin) {
       document.getElementById("admin-users-panel").style.display = "block";
       document.getElementById("admin-groups-panel").style.display = "block";
@@ -6376,6 +6379,152 @@ async function pushGeraetAbmelden(id) {
   await pushPanelAufbauen();
 }
 
+// ---------- Aktivitätspunkte (seit 2026-08-04) ----------
+//
+// ⚠️ Der Client rechnet NICHTS. Punktzahl, Regelwerte und Protokoll kommen fertig
+// aus der Worker-Aktion `meine-punkte`. Eine zweite Kopie der Regeln hier liefe
+// mit der ersten Regeländerung auseinander — und geändert werden sie, das ist der
+// erklärte Zweck der Erprobungsphase.
+
+function punkteMeldung(text, fehler) {
+  const el = document.getElementById("punkte-meldung");
+  if (!el) return;
+  if (!text) { el.style.display = "none"; return; }
+  el.textContent = text;
+  el.style.color = fehler ? "#c0392b" : "#2d8c4e";
+  el.style.display = "";
+}
+
+async function punktePanelAufbauen() {
+  const panel = document.getElementById("punkte-panel");
+  if (!panel) return;
+  // Spielerkonten werden gar nicht erst erfasst — der Worker antwortet ihnen mit
+  // 403. Die Karte bleibt weg, statt ihnen eine dauerhafte Null zu zeigen.
+  if (!currentUser || currentUser.art === "spieler") { panel.style.display = "none"; return; }
+
+  let daten;
+  try {
+    daten = await callWorker("meine-punkte", {});
+  } catch (e) {
+    // Die Karte ist rein informativ und additiv. Kennt der Worker die Aktion noch
+    // nicht (Pages geht bewusst VOR dem Worker live, damit der Datenschutz-Text
+    // vor dem ersten Ereignis dasteht), gibt es sie eben noch nicht — das ist
+    // kein Fehler, den der Nutzer sehen müsste.
+    panel.style.display = "none";
+    return;
+  }
+
+  panel.style.display = "block";
+  punkteMeldung("");
+
+  const optOut = !!daten.optOut;
+  document.getElementById("punkte-opt-out").checked = optOut;
+
+  const zahl = document.getElementById("punkte-zahl");
+  const label = document.getElementById("punkte-zahl-label");
+  const verfuegbar = document.getElementById("punkte-verfuegbar");
+  const erarbeitet = Number(daten.erarbeitet) || 0;
+
+  if (optOut) {
+    zahl.textContent = "–";
+    label.textContent = "Wird nicht mitgezählt";
+    verfuegbar.textContent = "Für dein Konto wird nichts erfasst.";
+  } else {
+    zahl.textContent = String(erarbeitet);
+    label.textContent = erarbeitet === 1 ? "Punkt erarbeitet" : "Punkte erarbeitet";
+    // Das Einlösen gibt es noch nicht. Die Zeile erscheint erst, wenn wirklich
+    // etwas abgezogen wurde — bis dahin wäre "0 eingelöst" nur Rauschen.
+    verfuegbar.textContent = Number(daten.eingeloest)
+      ? ("davon " + daten.eingeloest + " eingelöst · " + (Number(daten.verfuegbar) || 0) + " verfügbar")
+      : "";
+  }
+
+  punkteRegelnRendern(daten.regeln || {});
+  punkteProtokollRendern(Array.isArray(daten.protokoll) ? daten.protokoll : []);
+}
+
+function punkteRegelnRendern(r) {
+  const el = document.getElementById("punkte-regeln");
+  if (!el) return;
+  const zeilen = [];
+  if (r.proFenster) {
+    zeilen.push([r.proFenster, "für je " + (r.fensterMinuten || 5) + " Minuten, in denen du wirklich etwas tust"]);
+  }
+  if (r.proAppStart) {
+    zeilen.push([r.proAppStart, "wenn du ein Werkzeug an einem Tag zum ersten Mal öffnest"]);
+  }
+  if (r.proTat) {
+    zeilen.push([r.proTat, "für einen abgeschlossenen Vorgang — eine erledigte Aufgabe, einen gestellten Antrag, eine geleistete Unterschrift"]);
+  }
+  const extra = [];
+  if (r.tagesdeckel) {
+    extra.push("Mehr als <strong>" + escapeHtml(String(r.tagesdeckel)) + "</strong> Punkte an einem Tag werden nicht gezählt.");
+  }
+  extra.push("Nur angemeldet zu sein gibt nichts — es muss etwas passieren.");
+  if (r.aufbewahrungMonate) {
+    extra.push("Die einzelnen Aufzeichnungen werden nach " + escapeHtml(String(r.aufbewahrungMonate)) + " Monaten gelöscht.");
+  }
+
+  el.innerHTML =
+    zeilen.map(([n, t]) => "<li><strong>" + escapeHtml(String(n)) + "</strong> " + escapeHtml(t) + "</li>").join("") +
+    extra.map((t) => '<li class="muted">' + t + "</li>").join("");
+}
+
+function punkteProtokollRendern(zeilen) {
+  const el = document.getElementById("punkte-protokoll");
+  if (!el) return;
+  if (!zeilen.length) {
+    el.innerHTML = '<p class="muted">Für die letzten 30 Tage ist nichts gespeichert.</p>';
+    return;
+  }
+  const rows = zeilen.map((z) => {
+    const tool = toolById(z.app);
+    const name = tool ? tool.name : (z.app === "uebersicht" ? "Tools-Übersicht" : z.app);
+    return "<tr><td>" + escapeHtml(z.tag) + "</td><td>" + escapeHtml(name) + "</td>" +
+      '<td class="zahl">' + escapeHtml(String(z.handlungen)) + "</td>" +
+      '<td class="zahl">' + escapeHtml(String(z.taten)) + "</td></tr>";
+  }).join("");
+  // Eigener Scroll-Container: die Tabelle darf am Handy überlaufen, die Seite nicht.
+  el.innerHTML =
+    '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+    "<th>Tag</th><th>Werkzeug</th>" +
+    '<th class="zahl">Vorgänge</th><th class="zahl">davon Abschlüsse</th>' +
+    "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+}
+
+function setupPunktePanel() {
+  const schalter = document.getElementById("punkte-opt-out");
+  if (!schalter) return;
+
+  schalter.addEventListener("change", async () => {
+    const aus = schalter.checked;
+    // Nachfragen, weil das Einschalten die eigenen Aufzeichnungen mit löscht und
+    // sich nicht rückgängig machen lässt.
+    if (aus && !window.confirm(
+      "Ab jetzt wird für dein Konto nichts mehr erfasst, und dein bisher gespeichertes Protokoll wird gelöscht.\n\n" +
+      "Das lässt sich nicht rückgängig machen. Fortfahren?"
+    )) {
+      schalter.checked = false;
+      return;
+    }
+
+    schalter.disabled = true;
+    let meldung = null;
+    try {
+      await callWorker("punkte-opt-out", { optOut: aus });
+      meldung = [aus ? "Erfassung beendet, gespeicherte Aufzeichnungen gelöscht." : "Erfassung wieder eingeschaltet.", false];
+    } catch (e) {
+      schalter.checked = !aus;
+      meldung = ["Hat nicht geklappt: " + (e && e.message ? e.message : e), true];
+    } finally {
+      schalter.disabled = false;
+    }
+    // Erst neu aufbauen, dann melden — der Aufbau leert die Meldezeile.
+    await punktePanelAufbauen();
+    if (meldung) punkteMeldung(meldung[0], meldung[1]);
+  });
+}
+
 function escapeHtml(str) {
   return String(str == null ? "" : str)
     .replace(/&/g, "&amp;")
@@ -6395,6 +6544,7 @@ async function init() {
   setupDokumenteTab();
   setupAuthForms();
   setupKontoFoto();
+  setupPunktePanel();
   setupWhatsappLink();
   setupWikiFrage();
   setupViewAsControl();

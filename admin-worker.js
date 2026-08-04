@@ -897,6 +897,12 @@ export default {
       return json({ error: "Ungültiges JSON" }, 400, corsHeaders);
     }
 
+    // Die Aktions-Weiche steckt in einer sofort aufgerufenen Funktion, damit ihre
+    // Antwort noch durch die Aktivitaets-Erfassung laufen kann, bevor sie
+    // zurueckgeht. Bewusst KEINE ausgelagerte dispatchAction()-Funktion: so bleiben
+    // die rund 200 case-Zeilen darunter Byte fuer Byte unveraendert -- ein
+    // Verrutschen an dieser Stelle traefe jede einzelne Aktion der ganzen Flotte.
+    const antwort = await (async () => {
     switch (body.action) {
       case "bootstrap-admin":
         return handleBootstrapAdmin(body, env, authHeader, corsHeaders);
@@ -1136,9 +1142,24 @@ export default {
         return handleLivekitKick(request, body, env, authHeader, corsHeaders);
       case "livekit-mute":
         return handleLivekitMute(request, body, env, authHeader, corsHeaders);
+      // Aktivitaetspunkte (seit 2026-08-04). Alle drei wirken nur auf das eigene
+      // Konto; die Auswertung ueber fremde Konten ist admin-only.
+      case "meine-punkte":
+        return handleMeinePunkte(request, body, env, authHeader, corsHeaders);
+      case "punkte-opt-out":
+        return handlePunkteOptOut(request, body, env, authHeader, corsHeaders);
+      case "aktivitaet-auswertung":
+        return handleAktivitaetAuswertung(request, body, env, authHeader, corsHeaders);
       default:
         return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
     }
+    })();
+
+    // Punkte NACH der Antwort mitschreiben (Block "Aktivitaetspunkte" am Dateiende):
+    // der Nutzer wartet dadurch keine Millisekunde laenger, und ein Fehler beim
+    // Zaehlen kann seine eigentliche Handlung nicht mehr kippen.
+    ctx.waitUntil(aktivitaetErfassen(request, body, env, authHeader, antwort.status));
+    return antwort;
 
     } catch (e) {
       if (e instanceof NextcloudError) {
@@ -9060,4 +9081,564 @@ async function pushToteAbosEntfernen(authHeader, ids) {
   } catch (e) {
     console.error("Aufraeumen toter Push-Abos fehlgeschlagen: " + (e && e.message ? e.message : e));
   }
+}
+
+// =============================================================================
+// Aktivitaetspunkte (seit 2026-08-04)
+//
+// Bewusst als geschlossener Block am Dateiende, wie die Push-Nachrichten darueber:
+// die Erfassung haengt an genau EINER Stelle in fetch() und laesst sich am Stueck
+// wieder herausloesen.
+//
+// Tragender Gedanke: gespeichert werden EREIGNISSE, nicht Punkte. Die Punktzahl
+// ist eine Auswertung obendrauf (punkteAusEreignissen), deren Regeln jederzeit
+// geaendert und ueber den vorhandenen Rohbestand neu gerechnet werden koennen.
+// Ein blosser Zaehler waere nach der ersten Regelaenderung nicht mehr nachrechenbar
+// -- und genau das ist der Zweck: erst sammeln, spaeter entscheiden.
+//
+// Entscheidungen mit Michel am 2026-08-04:
+//   - nur art === "personal". Spielerkonten werden gar nicht erst erfasst
+//     (Minderjaehrige, und sie erreichen ohnehin nur den Kadermanager)
+//   - jeder sieht nur den EIGENEN Stand, keine Rangliste, kein Vergleich
+//   - Erfassung serverseitig, damit keines der 30 App-Repos angefasst werden muss
+//   - eine Datei je Nutzer und Monat -> Schreibkonflikte zwischen verschiedenen
+//     Nutzern sind strukturell unmoeglich, jeder schreibt nur in seine eigene
+//   - Lebenszeit-Konto ohne Verfall
+//   - Rohereignisse 13 Monate, danach zu Monatssummen verdichtet
+//   - Opt-out im eigenen Konto, loescht den eigenen Bestand mit
+//
+// Blinde Flecken, bewusst hingenommen: was nicht ueber diesen Worker laeuft, wird
+// nicht gezaehlt -- Vereinsverwaltung (eigenes D1), Spiele/Agelan (eigene Firebase).
+// =============================================================================
+
+const AKTIVITAET_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + "/Aktivitaet";
+
+// Regelwerk. Die Version wandert in saldo.json mit, damit ein Saldo, der noch nach
+// alten Regeln gerechnet wurde, beim naechsten Zugriff erkennbar ist.
+const PUNKTE_REGELN_VERSION = 1;
+const PUNKTE_FENSTER_MS = 5 * 60 * 1000;
+const PUNKTE_PRO_FENSTER = 1;
+const PUNKTE_PRO_APP_START = 2;
+const PUNKTE_PRO_TAT = 3;
+const PUNKTE_TAGESDECKEL = 60;
+const PUNKTE_ROHDATEN_MONATE = 13;
+const PUNKTE_PROTOKOLL_TAGE = 30;
+// Obergrenze fuer die Admin-Auswertung. Ein Worker darf nur begrenzt viele
+// Unteranfragen stellen -- eine Auswertung ueber alle Konten in EINEM Request
+// waere genau der Rundlauf, an dem der Worker stirbt. Der Client fragt in Bloecken.
+const PUNKTE_AUSWERTUNG_MAX_NUTZER = 20;
+
+// Aktionen, die NIE zaehlen.
+//
+// ⚠️ Diese Liste ist der Kern der Zusage "keine Punkte fuers blosse Eingeloggtsein".
+// `me` laeuft bei jedem Seitenaufruf UND bei jedem visibilitychange -- wer nur
+// zwischen zwei offenen Tabs hin und her wechselt, loeste sonst in jedem neuen
+// 5-Minuten-Fenster einen Punkt aus, ohne irgendetwas zu tun. Dasselbe gilt fuer
+// die Status-Abfragen, die beim Seitenaufbau automatisch mitlaufen, und fuer die
+// Datei-GETs, die eine Liste beim Rendern von sich aus nachlaedt (Nutzerfotos!).
+// Wer hier etwas HERAUSNIMMT, baut genau die Anwesenheitspunkte wieder ein, die
+// ausdruecklich nicht gewollt sind.
+const PUNKTE_IGNORIERT = new Set([
+  // Anmeldung und Sitzung
+  "bootstrap-admin", "login", "set-password", "change-password", "me", "set-view-as",
+  "check-edit-permission", "verify-action-password",
+  // Spieler-Registrierung (laeuft ohne Sitzung; Spieler zaehlen ohnehin nicht mit)
+  "km-reg-oeffnen", "km-reg-info", "km-reg-abschliessen",
+  // Status-Abfragen, die beim Seitenaufbau von selbst kommen
+  "push-status", "my-trainerdaten-status", "my-trainercheckliste-status",
+  "my-testspielplaner-status", "my-news-reactions", "list-birthdays-today",
+  "list-trainer-profiles", "list-tool-editors", "trainerdaten-list-groups",
+  // Dateien, die eine Liste beim Rendern selbsttaetig nachlaedt
+  "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
+  "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
+  "fahrtenbuch-beleg-file-get",
+  // Die Punkte-Aktionen selbst -- sonst zaehlt das Nachsehen des eigenen Standes
+  // als Aktivitaet, und wer oft genug nachschaut, verdient daran.
+  "meine-punkte", "punkte-opt-out", "aktivitaet-auswertung"
+]);
+
+// Katalog echter Abschluesse -> volle Punkte je Vorkommen. Alles, was hier NICHT
+// steht, faellt auf die grobe Regel zurueck (ein Fensterpunkt je App und
+// 5-Minuten-Fenster). Der Katalog hebt also nur an, er ist keine Schranke: eine
+// neue App, die hier vergessen wird, geht nicht leer aus.
+//
+// ⚠️ `dav-save` steht bewusst NICHT drin. 15 Apps der Flotte speichern beim Tippen
+// automatisch (raumnutzung an 15 Stellen, Trainerdaten an 13) -- ein einziger
+// ausgefuellter Antrag loest ein Dutzend dav-save aus. Als Tat gezaehlt gewaenne,
+// wer am laengsten in einem Formular herumtippt.
+//
+// ⚠️ `toggle-news-reaction` fehlt aus demselben Grund: die Aktion schaltet um, ein
+// Klick hin und her waere eine beliebig oft nachfuellbare Punktequelle.
+//
+// ⚠️ Loeschende Aktionen stehen bewusst nicht drin. Sie sind Arbeit und bekommen
+// ihren Fensterpunkt, aber es soll sich nicht lohnen, etwas wegzuraeumen.
+const PUNKTE_TATEN = new Map([
+  ["aufgabe-speichern", PUNKTE_PRO_TAT],
+  ["aufgabe-zuweisen", PUNKTE_PRO_TAT],
+  ["aufgabe-zurueckziehen", PUNKTE_PRO_TAT],
+  ["dokument-anlegen", PUNKTE_PRO_TAT],
+  ["dokument-unterschreiben", PUNKTE_PRO_TAT],
+  ["dokument-ablehnen", PUNKTE_PRO_TAT],
+  ["vereinsaufgabe-anlegen", PUNKTE_PRO_TAT],
+  ["vereinsaufgabe-status", PUNKTE_PRO_TAT],
+  ["vereinsaufgabe-zurueckziehen", PUNKTE_PRO_TAT],
+  ["vereinsaufgabe-reaktivieren", PUNKTE_PRO_TAT],
+  ["vereinsaufgabe-kommentar", PUNKTE_PRO_TAT],
+  ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
+  ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
+  ["vereinskalender-vote", PUNKTE_PRO_TAT],
+  ["vereinskalender-termin-push", PUNKTE_PRO_TAT],
+  ["raumnutzung-mail-antrag", PUNKTE_PRO_TAT],
+  ["fahrtenbuch-extern-submit", PUNKTE_PRO_TAT],
+  ["fotoauftrag-ordner-anlegen", PUNKTE_PRO_TAT],
+  ["fotoauftrag-spielbericht-hochladen", PUNKTE_PRO_TAT],
+  ["beleg-eingang-notify", PUNKTE_PRO_TAT],
+  ["submit-feedback", PUNKTE_PRO_TAT],
+  ["save-news", PUNKTE_PRO_TAT],
+  ["archive-trainer", PUNKTE_PRO_TAT],
+  ["reactivate-trainer", PUNKTE_PRO_TAT]
+]);
+
+// Welcher App ein Ereignis zugeschlagen wird. dav-load/dav-save tragen die App im
+// Body; alles andere wird ueber das Praefix der Aktion zugeordnet. Reihenfolge
+// egal, die Praefixe ueberschneiden sich nicht ueber App-Grenzen hinweg.
+const PUNKTE_APP_PRAEFIXE = [
+  ["vereinsaufgabe", "vereinsaufgaben"],
+  ["raumnutzung", "raumnutzung"],
+  ["fahrtenbuch", "fahrtenbuch"],
+  ["fotoauftrag", "fotoauftraege"],
+  ["vereinskalender", "vereinskalender"],
+  ["livekit", "besprechung"],
+  ["km-", "kadermanager"],
+  ["dokument", "personalakte"],
+  ["personalakte", "personalakte"],
+  ["archive-trainer", "personalakte"],
+  ["reactivate-trainer", "personalakte"],
+  ["materialcontainer", "materialliste"],
+  ["get-materialcontainer", "materialliste"],
+  ["set-materialcontainer", "materialliste"],
+  ["beleg-eingang", "budget"]
+];
+
+function punkteFenster(ms) {
+  return Math.floor(ms / PUNKTE_FENSTER_MS);
+}
+
+// Tag eines Fensters in Europe/Berlin. sv-SE liefert genau das ISO-Format
+// YYYY-MM-DD -- gleiche Technik wie bei den Geburtstagen weiter oben. Ohne
+// Zeitzonen-Bezug liefe der Tageswechsel (und damit der Tagesdeckel) um 02:00
+// Ortszeit, nicht um Mitternacht.
+function punkteTagKey(fenster) {
+  return new Date(fenster * PUNKTE_FENSTER_MS).toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+}
+
+function punkteMonatKey(fenster) {
+  return punkteTagKey(fenster).slice(0, 7);
+}
+
+// Monat als YYYY-MM um n Monate zurueckversetzen. Rein auf dem String gerechnet,
+// damit keine Zeitzonen-Kante mitspielt.
+function punkteMonatMinus(monat, n) {
+  const jahr = Number(monat.slice(0, 4));
+  const m = Number(monat.slice(5, 7));
+  const gesamt = jahr * 12 + (m - 1) - n;
+  const nj = Math.floor(gesamt / 12);
+  const nm = gesamt - nj * 12 + 1;
+  return String(nj).padStart(4, "0") + "-" + String(nm).padStart(2, "0");
+}
+
+function aktivitaetNutzerDir(username) {
+  return AKTIVITAET_DIR + "/" + username;
+}
+
+function aktivitaetMonatUrl(username, monat) {
+  return aktivitaetNutzerDir(username) + "/" + monat + ".json";
+}
+
+function aktivitaetSaldoUrl(username) {
+  return aktivitaetNutzerDir(username) + "/saldo.json";
+}
+
+function leeresAktivitaetsDoc(username, monat) {
+  return { version: 1, username, monat, ereignisse: [] };
+}
+
+function leeresSaldoDoc(username) {
+  return { version: 1, regeln: PUNKTE_REGELN_VERSION, username, monate: {}, eingeloest: 0 };
+}
+
+function punkteApp(body, aktion) {
+  const ausBody = String((body && body.app) || "").trim();
+  if (ausBody && Object.prototype.hasOwnProperty.call(DAV_APPS, ausBody)) return ausBody;
+  for (const [praefix, ziel] of PUNKTE_APP_PRAEFIXE) {
+    if (aktion.startsWith(praefix)) return ziel;
+  }
+  // Alles, was zur Uebersicht selbst gehoert (Neuigkeiten, Konto, Verwaltung).
+  return "uebersicht";
+}
+
+// Isolate-lokaler Kurzschluss gegen Klick-Burst: dieselbe nicht-Tat in derselben
+// App im selben 5-Minuten-Fenster braucht kein zweites Mal geschrieben zu werden,
+// sie aendert an der Punktzahl nichts. Gleiches Muster wie jsonCache weiter oben --
+// ueberlebt nur auf einem warmen Isolate, und mehr ist auch nicht noetig: schlaegt
+// der Kurzschluss fehl, wird lediglich einmal mehr geschrieben, nie falsch gezaehlt.
+const aktivitaetGesehen = new Map();
+const AKTIVITAET_GESEHEN_TTL_MS = 15 * 60 * 1000;
+
+function aktivitaetSchonGesehen(key, jetzt) {
+  const bis = aktivitaetGesehen.get(key);
+  if (bis && bis > jetzt) return true;
+  // Harte Obergrenze, damit ein langlebiges Isolate nicht unbegrenzt waechst.
+  if (aktivitaetGesehen.size > 5000) aktivitaetGesehen.clear();
+  aktivitaetGesehen.set(key, jetzt + AKTIVITAET_GESEHEN_TTL_MS);
+  return false;
+}
+
+// Der Einhaengepunkt aus fetch(). Laeuft in ctx.waitUntil, also NACH der Antwort.
+//
+// ⚠️ Wirft nie. Punkte sind Beiwerk -- die eigentliche Handlung des Nutzers ist an
+// dieser Stelle laengst beantwortet und darf durch einen Zaehlfehler nicht mehr
+// beruehrt werden.
+async function aktivitaetErfassen(request, body, env, authHeader, status) {
+  try {
+    // Nur erfolgreiche Handlungen. Ein 403 ist keine Vereinsarbeit.
+    if (!(Number(status) >= 200 && Number(status) < 400)) return;
+
+    const aktion = String((body && body.action) || "");
+    if (!aktion || PUNKTE_IGNORIERT.has(aktion)) return;
+
+    // Reine HMAC-Pruefung des Tokens, kein Nextcloud-Read. Der volle
+    // getVerifiedSession-Abgleich waere hier Verschwendung: der Handler hat ihn
+    // gerade selbst gemacht, sonst waere die Antwort kein 2xx geworden.
+    const payload = await getSession(request, env);
+    if (!tokenAfterCutoff(payload)) return;
+    const username = String((payload && payload.username) || "");
+    if (!USERNAME_RE.test(username) || username === "__proto__") return;
+
+    // nutzer.json steckt nach der Handlung praktisch immer im jsonCache (5 s),
+    // dieser Read kostet daher im Normalfall keinen Nextcloud-Roundtrip.
+    const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+    const user = getOwn(usersDoc.users, username);
+    if (!user || !istPersonal(user) || user.punkteOptOut) return;
+
+    const jetzt = Date.now();
+    const fenster = punkteFenster(jetzt);
+    const app = punkteApp(body, aktion);
+    const istTat = PUNKTE_TATEN.has(aktion);
+
+    // Taten gehen am Kurzschluss vorbei: zwei erledigte Aufgaben sind zwei Taten,
+    // auch wenn sie in dieselbe Viertelstunde fallen.
+    if (!istTat && aktivitaetSchonGesehen(username + "|" + fenster + "|" + app + "|" + aktion, jetzt)) return;
+
+    await aktivitaetSchreiben(username, fenster, app, aktion, env, authHeader);
+  } catch (e) {
+    console.error("Aktivitaet erfassen fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
+}
+
+// Ein Ereignis in die Monatsdatei des Nutzers legen.
+//
+// If-Match mit Wiederholung, obwohl in diese Datei nur ein einziger Mensch
+// schreibt: derselbe Mensch kann in zwei Tabs sitzen, und zwei Isolates schreiben
+// dann gleichzeitig. Zwischen VERSCHIEDENEN Nutzern kann es hier keinen Konflikt
+// geben -- das ist der eigentliche Grund fuer den Schnitt "eine Datei je Nutzer".
+async function aktivitaetSchreiben(username, fenster, app, aktion, env, authHeader) {
+  const monat = punkteMonatKey(fenster);
+  const url = aktivitaetMonatUrl(username, monat);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const gelesen = await readJsonWithRev(url, authHeader, leeresAktivitaetsDoc(username, monat));
+    const doc = (gelesen.data && Array.isArray(gelesen.data.ereignisse))
+      ? gelesen.data
+      : leeresAktivitaetsDoc(username, monat);
+
+    const treffer = doc.ereignisse.find((e) => e && e.w === fenster && e.app === app && e.a === aktion);
+    if (treffer) treffer.n = (Number(treffer.n) || 1) + 1;
+    else doc.ereignisse.push({ w: fenster, app, a: aktion, n: 1 });
+
+    try {
+      // Ohne rev (Datei gibt es noch nicht) legt writeJson die fehlenden
+      // Ordnerebenen selbst an -- der Nutzerordner entsteht so beim ersten Ereignis.
+      await writeJson(url, authHeader, doc, gelesen.rev || undefined);
+      return;
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      throw e;
+    }
+  }
+}
+
+// EINZIGE Stelle mit dem Regelwerk. meine-punkte, die Monatsverdichtung und die
+// Admin-Auswertung rufen alle hier herein, damit die Zahlen nicht auseinanderlaufen.
+//
+// Regeln (Stand PUNKTE_REGELN_VERSION 1):
+//   - je Tag, App und 5-Minuten-Fenster mit mindestens einer gezaehlten Handlung:
+//     PUNKTE_PRO_FENSTER. Das ist zugleich der Deckel fuer alles, was nicht im
+//     Katalog steht -- zwoelf Autosaves in derselben Viertelstunde ergeben einen Punkt.
+//   - je Tag und App zusaetzlich einmalig PUNKTE_PRO_APP_START (belohnt Breite
+//     statt Sitzdauer)
+//   - je Katalog-Tat PUNKTE_PRO_TAT, jedes Vorkommen einzeln
+//   - Summe je Tag hoechstens PUNKTE_TAGESDECKEL
+function punkteAusEreignissen(ereignisse) {
+  const tage = new Map();
+
+  (Array.isArray(ereignisse) ? ereignisse : []).forEach((e) => {
+    if (!e || typeof e.w !== "number" || !Number.isFinite(e.w)) return;
+    const tag = punkteTagKey(e.w);
+    if (!tage.has(tag)) tage.set(tag, { fenster: new Set(), apps: new Set(), taten: 0 });
+    const t = tage.get(tag);
+    const app = String(e.app || "uebersicht");
+    t.fenster.add(e.w + "|" + app);
+    t.apps.add(app);
+    const wert = PUNKTE_TATEN.get(String(e.a || ""));
+    if (wert) t.taten += wert * Math.max(1, Number(e.n) || 1);
+  });
+
+  const proTag = {};
+  let gesamt = 0;
+  Array.from(tage.keys()).sort().forEach((tag) => {
+    const t = tage.get(tag);
+    const roh = t.fenster.size * PUNKTE_PRO_FENSTER
+      + t.apps.size * PUNKTE_PRO_APP_START
+      + t.taten;
+    const wert = Math.min(roh, PUNKTE_TAGESDECKEL);
+    proTag[tag] = wert;
+    gesamt += wert;
+  });
+
+  return { gesamt, proTag };
+}
+
+// Punktestand eines Nutzers. Kostet im Normalfall zwei Reads (saldo + laufender
+// Monat) -- NICHT einen Read je Monat seit Beginn, deshalb ueberhaupt das saldo.json.
+//
+// Beim ersten Aufruf in einem neuen Monat werden die inzwischen abgeschlossenen
+// Monate nachgetragen und dabei die Rohdateien geloescht, die aelter als
+// PUNKTE_ROHDATEN_MONATE sind. Kein Cron noetig, keine neue Infrastruktur.
+async function punkteStand(username, env, authHeader, mitProtokoll) {
+  const jetztFenster = punkteFenster(Date.now());
+  const aktuellerMonat = punkteMonatKey(jetztFenster);
+
+  const saldoGelesen = await readJsonWithRev(aktivitaetSaldoUrl(username), authHeader, leeresSaldoDoc(username));
+  const saldo = (saldoGelesen.data && typeof saldoGelesen.data === "object" && saldoGelesen.data.monate)
+    ? saldoGelesen.data
+    : leeresSaldoDoc(username);
+  // Regelwechsel: der gespeicherte Saldo wurde nach anderen Regeln gerechnet und
+  // wird verworfen. Die Rohdaten der letzten PUNKTE_ROHDATEN_MONATE tragen sich
+  // unten von selbst wieder ein -- aeltere Monate behalten ihren historischen Wert
+  // nicht, das ist der bewusst in Kauf genommene Preis der Verdichtung.
+  if (Number(saldo.regeln) !== PUNKTE_REGELN_VERSION) {
+    saldo.regeln = PUNKTE_REGELN_VERSION;
+    saldo.monate = {};
+  }
+
+  // Abgeschlossene Monate rueckwaerts nachtragen, bis einer schon dasteht.
+  let saldoGeaendert = false;
+  for (let i = 1; i <= PUNKTE_ROHDATEN_MONATE; i++) {
+    const monat = punkteMonatMinus(aktuellerMonat, i);
+    if (Object.prototype.hasOwnProperty.call(saldo.monate, monat)) break;
+    const doc = await readJson(aktivitaetMonatUrl(username, monat), authHeader, null);
+    saldo.monate[monat] = doc ? punkteAusEreignissen(doc.ereignisse).gesamt : 0;
+    saldoGeaendert = true;
+    // Verdichtung: die Rohdatei dieses Monats faellt aus dem Aufbewahrungsfenster,
+    // sobald ihr Wert im Saldo steht und sie alt genug ist.
+    if (doc && i >= PUNKTE_ROHDATEN_MONATE) {
+      await aktivitaetRohdateiLoeschen(username, monat, authHeader);
+    }
+  }
+
+  const aktuellDoc = await readJson(aktivitaetMonatUrl(username, aktuellerMonat), authHeader, null);
+  const aktuell = punkteAusEreignissen(aktuellDoc ? aktuellDoc.ereignisse : []);
+
+  let abgeschlossen = 0;
+  Object.keys(saldo.monate).forEach((m) => {
+    if (m !== aktuellerMonat) abgeschlossen += Number(saldo.monate[m]) || 0;
+  });
+
+  if (saldoGeaendert) {
+    try {
+      await writeJson(aktivitaetSaldoUrl(username), authHeader, saldo, saldoGelesen.rev || undefined);
+    } catch (e) {
+      // Nur ein Zwischenspeicher. Schlaegt er fehl, wird beim naechsten Mal neu
+      // gerechnet -- die Zahl unten stimmt trotzdem.
+      console.error("Punkte-Saldo schreiben fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  const erarbeitet = abgeschlossen + aktuell.gesamt;
+  const eingeloest = Number(saldo.eingeloest) || 0;
+
+  const ergebnis = { erarbeitet, eingeloest, verfuegbar: Math.max(0, erarbeitet - eingeloest) };
+  if (mitProtokoll) {
+    ergebnis.protokoll = punkteProtokoll(aktuellDoc ? aktuellDoc.ereignisse : [], aktuell.proTag);
+  }
+  return ergebnis;
+}
+
+// Das eigene Protokoll der letzten Tage: was habe ich wann in welcher App getan.
+// Auskunftsrecht in Klickform -- und zugleich die Erklaerung, wie die Zahl zustande
+// kommt. Nur der laufende Monat, das reicht fuer PUNKTE_PROTOKOLL_TAGE.
+function punkteProtokoll(ereignisse, proTag) {
+  const grenze = new Date(Date.now() - PUNKTE_PROTOKOLL_TAGE * 86400000)
+    .toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const proTagApp = new Map();
+
+  (Array.isArray(ereignisse) ? ereignisse : []).forEach((e) => {
+    if (!e || typeof e.w !== "number") return;
+    const tag = punkteTagKey(e.w);
+    if (tag < grenze) return;
+    const app = String(e.app || "uebersicht");
+    const key = tag + "|" + app;
+    if (!proTagApp.has(key)) proTagApp.set(key, { tag, app, handlungen: 0, taten: 0 });
+    const z = proTagApp.get(key);
+    const anzahl = Math.max(1, Number(e.n) || 1);
+    z.handlungen += anzahl;
+    if (PUNKTE_TATEN.has(String(e.a || ""))) z.taten += anzahl;
+  });
+
+  return Array.from(proTagApp.values())
+    .sort((a, b) => (a.tag === b.tag ? a.app.localeCompare(b.app) : b.tag.localeCompare(a.tag)))
+    .map((z) => ({ ...z, tagespunkte: Number(proTag[z.tag]) || 0 }));
+}
+
+async function aktivitaetRohdateiLoeschen(username, monat, authHeader) {
+  try {
+    await fetch(aktivitaetMonatUrl(username, monat), {
+      method: "DELETE",
+      headers: { Authorization: authHeader }
+    });
+  } catch (e) {
+    console.error("Alte Aktivitaets-Rohdatei loeschen fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
+}
+
+// ---------- Aktionen: Aktivitaetspunkte ----------
+
+async function handleMeinePunkte(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Spielerkonten werden nicht erfasst und bekommen deshalb auch keine Anzeige --
+  // eine dauerhafte Null waere nur verwirrend.
+  if (session.art === USER_ART_SPIELER) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const user = getOwn(session.usersDoc.users, session.username) || {};
+  if (user.punkteOptOut) {
+    return json({
+      optOut: true, erarbeitet: 0, verfuegbar: 0, eingeloest: 0, protokoll: [],
+      regeln: punkteRegelnFuerAnzeige()
+    }, 200, corsHeaders);
+  }
+
+  const stand = await punkteStand(session.username, env, authHeader, true);
+  return json({ optOut: false, ...stand, regeln: punkteRegelnFuerAnzeige() }, 200, corsHeaders);
+}
+
+// Die Regeln wandern mit in die Antwort, damit die Karte im Konto-Tab sie anzeigen
+// kann, ohne sie ein zweites Mal im Client zu fuehren. Zwei Kopien liefen mit der
+// ersten Regelaenderung auseinander.
+function punkteRegelnFuerAnzeige() {
+  return {
+    version: PUNKTE_REGELN_VERSION,
+    fensterMinuten: PUNKTE_FENSTER_MS / 60000,
+    proFenster: PUNKTE_PRO_FENSTER,
+    proAppStart: PUNKTE_PRO_APP_START,
+    proTat: PUNKTE_PRO_TAT,
+    tagesdeckel: PUNKTE_TAGESDECKEL,
+    aufbewahrungMonate: PUNKTE_ROHDATEN_MONATE
+  };
+}
+
+// Widerspruch gegen die Erfassung.
+//
+// ⚠️ Das Einschalten loescht den gesamten eigenen Bestand mit (ein DELETE auf den
+// Nutzerordner nimmt Monatsdateien und Saldo in einem Zug). Das ist die ehrliche
+// Lesart von "nicht mitzaehlen" -- Widerspruch, bei dem die alten Daten liegen
+// bleiben, ist keiner. Der Client fragt vorher nach, weil es nicht umkehrbar ist.
+async function handlePunkteOptOut(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  const user = getOwn(usersDoc.users, session.username);
+  if (!user) return json({ error: "Unbekannter Nutzer" }, 404, corsHeaders);
+
+  const aus = !!(body && body.optOut);
+
+  // ⚠️ Reihenfolge bindend: erst das Flag setzen, dann loeschen. Andersherum
+  // koennte eine Handlung zwischen Loeschung und Flag noch eine neue Datei
+  // anlegen -- der Nutzer haette widersprochen und trotzdem wieder Daten.
+  if (aus) user.punkteOptOut = true;
+  else delete user.punkteOptOut;
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  if (aus) {
+    try {
+      await fetch(aktivitaetNutzerDir(session.username), {
+        method: "DELETE",
+        headers: { Authorization: authHeader }
+      });
+    } catch (e) {
+      console.error("Aktivitaetsdaten loeschen fehlgeschlagen: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  return json({ ok: true, optOut: aus }, 200, corsHeaders);
+}
+
+// Auswertung fuer das Admin-Dashboard: wer nutzt welche App, und wie oft.
+//
+// ⚠️ Bewusst blockweise statt "alle auf einmal": bei ueber hundert Personal-Konten
+// waere eine Auswertung in EINEM Request ein Rundlauf mit hundert Nextcloud-Reads --
+// genau die Bauform, an der ein Worker stirbt. Der Client fragt in Bloecken von
+// hoechstens PUNKTE_AUSWERTUNG_MAX_NUTZER und zaehlt selbst zusammen.
+async function handleAktivitaetAuswertung(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Nur fuer Administratoren" }, 403, corsHeaders);
+
+  const monat = String((body && body.monat) || "").trim() || punkteMonatKey(punkteFenster(Date.now()));
+  if (!/^\d{4}-\d{2}$/.test(monat)) return json({ error: "Ungueltiger Monat" }, 400, corsHeaders);
+
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  let namen = Array.isArray(body && body.usernames) ? body.usernames : null;
+  if (!namen) {
+    namen = Object.values(users).filter((u) => u && u.username && istPersonal(u)).map((u) => u.username);
+  }
+  const block = namen
+    .map((n) => normalizeUsername(n))
+    .filter((n) => USERNAME_RE.test(n) && n !== "__proto__")
+    .slice(0, PUNKTE_AUSWERTUNG_MAX_NUTZER);
+
+  const nutzer = [];
+  for (const name of block) {
+    const u = getOwn(users, name);
+    if (!u || !istPersonal(u)) continue;
+    if (u.punkteOptOut) {
+      nutzer.push({ username: name, optOut: true, punkte: 0, proApp: {} });
+      continue;
+    }
+    const doc = await readJson(aktivitaetMonatUrl(name, monat), authHeader, null);
+    const ereignisse = doc && Array.isArray(doc.ereignisse) ? doc.ereignisse : [];
+    const proApp = {};
+    ereignisse.forEach((e) => {
+      if (!e) return;
+      const app = String(e.app || "uebersicht");
+      proApp[app] = (proApp[app] || 0) + Math.max(1, Number(e.n) || 1);
+    });
+    nutzer.push({
+      username: name,
+      optOut: false,
+      punkte: punkteAusEreignissen(ereignisse).gesamt,
+      proApp
+    });
+  }
+
+  // rest: was der Client im naechsten Block nachfragen muss. Ohne diese Angabe
+  // sieht eine abgeschnittene Auswertung aus wie eine vollstaendige.
+  const rest = namen.length > block.length ? namen.length - block.length : 0;
+  return json({ monat, nutzer, rest, blockgroesse: PUNKTE_AUSWERTUNG_MAX_NUTZER }, 200, corsHeaders);
 }
