@@ -445,7 +445,7 @@ const APP_CHANGELOG = [
         items: [
           "Echte Nutzerkonten statt eines geteilten Zugangs. Angelegt wird über Vor- und Nachname, der Nutzername entsteht daraus; das Passwort vergibt sich jeder beim ersten Anmelden selbst.",
           "Die Anmeldung läuft zweistufig: erst der Nutzername, danach je nach Konto entweder das Passwortfeld oder das Formular „Konto einrichten“. Beide Schritte haben einen Weg zurück.",
-          "Zum Anmelden genügt auch die eigene E-Mail-Adresse. Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Michel Brunner“, „michel.brunner“, „michel_brunner“, „michel-brunner“ oder „MichelBrunner“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
+          "Zum Anmelden genügt auch die eigene E-Mail-Adresse. Ebenso werden die üblichen Schreibweisen des Namens erkannt: „Max Mustermann“, „max.mustermann“, „max_mustermann“, „max-mustermann“ oder „MaxMustermann“ führen alle zum selben Konto. Groß- und Kleinschreibung sowie Umlaute spielen keine Rolle.",
           "Steht die E-Mail-Adresse in den Trainerdaten, wird das Konto auch dann gefunden, wenn die Adresse nichts mit dem Namen zu tun hat.",
           "Passt eine Eingabe auf mehr als ein Konto, wird bewusst nicht geraten — die Anmeldung wird dann abgelehnt, damit niemand im fremden Konto landet.",
           "Ein neues Passwort braucht mindestens 12 Zeichen mit Groß- und Kleinbuchstaben sowie einer Zahl oder einem Sonderzeichen.",
