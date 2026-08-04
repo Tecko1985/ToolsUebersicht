@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.37" />
+<link rel="stylesheet" href="style.css?v=1.38" />
 </head>
 <body>
 
@@ -732,6 +732,28 @@
         <ol id="admin-dashboard-recent-list" class="recent-activity-list"></ol>
       </div>
 
+      <!-- Aktivitäts-Auswertung (seit 2026-08-04). Bewusst NICHT beim Öffnen des
+           Dashboards mitgeladen, sondern erst auf Knopfdruck: sie kostet einen
+           Worker-Aufruf je 20 Konten, das soll niemand ungefragt auslösen. -->
+      <div class="card" style="margin-top:20px;">
+        <h3 style="margin-top:0; color:var(--blue);">🏅 Aktivität und Punkte</h3>
+        <p class="muted" style="margin-bottom:14px;">
+          Wer hat in einem Monat mit welchem Werkzeug gearbeitet. Grundlage ist dieselbe
+          Aufzeichnung, aus der auch die Punkte im Konto entstehen. Erfasst wird nur, was
+          über die Anmeldung dieser Übersicht läuft — Vereinsverwaltung, Spiele und Age-Lan
+          haben eigene Zugänge und tauchen hier nicht auf.
+        </p>
+        <div class="aktivitaet-steuerung">
+          <div class="form-field" style="max-width:190px; margin:0;">
+            <label for="aktivitaet-monat">Monat</label>
+            <input type="month" id="aktivitaet-monat" />
+          </div>
+          <button type="button" class="btn secondary small" id="btn-aktivitaet-laden">Auswerten</button>
+        </div>
+        <p class="muted" id="aktivitaet-status" style="display:none; margin-top:12px;"></p>
+        <div id="aktivitaet-ergebnis"></div>
+      </div>
+
       <div class="card" style="margin-top:20px;">
         <h3 style="margin-top:0; color:var(--blue);">📦 Exporte</h3>
         <p class="muted" id="export-hub-error" style="display:none; color:#c0392b; margin-bottom:10px;"></p>
@@ -1119,6 +1141,6 @@
 
 <script src="signature-pad.js?v=1.0"></script>
 <script src="config.js?v=1.60"></script>
-<script src="app.js?v=1.53"></script>
+<script src="app.js?v=1.54"></script>
 </body>
 </html>

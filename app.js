@@ -4698,6 +4698,15 @@ function setupTabs() {
   document.getElementById("btn-feedback-empty-login").addEventListener("click", () => activateTab("konto"));
   document.getElementById("btn-admin-dashboard-back").addEventListener("click", () => activateTab("uebersicht"));
   document.getElementById("btn-admin-dashboard-refresh").addEventListener("click", () => loadAndRenderAdminStats());
+
+  // Aktivitäts-Auswertung. Eigener Knopf statt Mitladen beim Dashboard-Öffnen —
+  // sie kostet einen Worker-Aufruf je 20 Konten.
+  const aktivitaetKnopf = document.getElementById("btn-aktivitaet-laden");
+  if (aktivitaetKnopf) {
+    aktivitaetKnopf.addEventListener("click", ladeAktivitaetsAuswertung);
+    const monatEl = document.getElementById("aktivitaet-monat");
+    if (monatEl && !monatEl.value) monatEl.value = aktuellerMonatIso();
+  }
   document.getElementById("btn-admin-dashboard-open").addEventListener("click", () => {
     activateTab("admin-dashboard");
     loadAndRenderAdminStats();
@@ -6557,6 +6566,175 @@ function setupPunktePanel() {
     await punktePanelAufbauen();
     if (meldung) punkteMeldung(meldung[0], meldung[1]);
   });
+}
+
+// ---------- Aktivitäts-Auswertung im Admin-Dashboard (seit 2026-08-04) ----------
+//
+// ⚠️ Der Worker beantwortet höchstens 20 Konten je Aufruf (PUNKTE_AUSWERTUNG_MAX_NUTZER).
+// Das ist Absicht: bei über hundert Personal-Konten wäre eine Auswertung in EINEM
+// Request ein Rundlauf mit hundert Nextcloud-Lesevorgängen — die Bauform, an der ein
+// Worker stirbt. Deshalb blättert der Client hier durch und zählt selbst zusammen.
+
+function aktivitaetStatus(text, fehler) {
+  const el = document.getElementById("aktivitaet-status");
+  if (!el) return;
+  if (!text) { el.style.display = "none"; return; }
+  el.textContent = text;
+  el.style.color = fehler ? "#c0392b" : "";
+  el.style.display = "";
+}
+
+async function ladeAktivitaetsAuswertung() {
+  const knopf = document.getElementById("btn-aktivitaet-laden");
+  const ziel = document.getElementById("aktivitaet-ergebnis");
+  const monatEl = document.getElementById("aktivitaet-monat");
+  if (!knopf || !ziel || !monatEl) return;
+
+  const monat = monatEl.value || aktuellerMonatIso();
+  monatEl.value = monat;
+  knopf.disabled = true;
+  ziel.innerHTML = "";
+  aktivitaetStatus("Hole die Nutzerliste…");
+
+  try {
+    // usersState steht nur, wenn der Einstellungen-Tab schon geladen wurde —
+    // das Dashboard ist über den Kopf-Knopf auch direkt erreichbar.
+    let alle = Array.isArray(usersState) && usersState.length ? usersState : null;
+    if (!alle) {
+      const data = await callWorker("list-users", {});
+      alle = Array.isArray(data && data.users) ? data.users : [];
+    }
+    // Spielerkonten werden gar nicht erst erfasst — sie hier mitzufragen wäre je
+    // 20 Stück ein Worker-Aufruf für garantiert leere Antworten.
+    const personal = alle.filter((u) => u && u.username && u.art !== "spieler");
+    if (!personal.length) {
+      aktivitaetStatus("Keine Personal-Konten gefunden.");
+      knopf.disabled = false;
+      return;
+    }
+
+    const bloecke = [];
+    for (let i = 0; i < personal.length; i += 20) bloecke.push(personal.slice(i, i + 20));
+
+    const nutzer = [];
+    for (let i = 0; i < bloecke.length; i++) {
+      aktivitaetStatus("Werte aus… Block " + (i + 1) + " von " + bloecke.length
+        + " (" + personal.length + " Konten)");
+      const res = await callWorker("aktivitaet-auswertung", {
+        monat,
+        usernames: bloecke[i].map((u) => u.username)
+      });
+      if (res && Array.isArray(res.nutzer)) nutzer.push(...res.nutzer);
+    }
+
+    aktivitaetStatus("");
+    renderAktivitaetsAuswertung(nutzer, personal, monat);
+  } catch (e) {
+    aktivitaetStatus("Auswertung fehlgeschlagen: " + (e && e.message ? e.message : e), true);
+  } finally {
+    knopf.disabled = false;
+  }
+}
+
+function aktuellerMonatIso() {
+  // sv-SE liefert YYYY-MM-DD, Europe/Berlin wie serverseitig — sonst zeigte der
+  // Vorschlag in der Nacht zum Monatsersten den falschen Monat.
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" }).slice(0, 7);
+}
+
+// "2026-08" -> "August 2026". Der Monat kommt aus einem <input type="month">,
+// also immer in dieser Form; ein unerwarteter Wert wird unverändert durchgereicht.
+function monatLesbar(monat) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(monat || ""));
+  if (!m) return String(monat || "");
+  const namen = ["Januar", "Februar", "März", "April", "Mai", "Juni",
+                 "Juli", "August", "September", "Oktober", "November", "Dezember"];
+  const i = Number(m[2]) - 1;
+  return (namen[i] || m[2]) + " " + m[1];
+}
+
+function renderAktivitaetsAuswertung(nutzer, personal, monat) {
+  const ziel = document.getElementById("aktivitaet-ergebnis");
+  if (!ziel) return;
+
+  const namen = {};
+  personal.forEach((u) => { namen[u.username] = u.displayName || u.username; });
+
+  const widersprochen = nutzer.filter((n) => n && n.optOut);
+  const gezaehlt = nutzer.filter((n) => n && !n.optOut);
+  const aktive = gezaehlt.filter((n) => (Number(n.punkte) || 0) > 0 || Object.keys(n.proApp || {}).length);
+
+  // Je Werkzeug: wie viele Vorgänge, und von wie vielen Personen. Die Personenzahl
+  // ist die wichtigere Spalte — ein einzelner Vielnutzer soll ein Werkzeug nicht
+  // gebraucht aussehen lassen.
+  const proApp = new Map();
+  gezaehlt.forEach((n) => {
+    Object.keys(n.proApp || {}).forEach((app) => {
+      if (!proApp.has(app)) proApp.set(app, { vorgaenge: 0, personen: 0 });
+      const z = proApp.get(app);
+      z.vorgaenge += Number(n.proApp[app]) || 0;
+      z.personen += 1;
+    });
+  });
+
+  const appZeilen = Array.from(proApp.entries())
+    .sort((a, b) => b[1].personen - a[1].personen || b[1].vorgaenge - a[1].vorgaenge)
+    .map(([app, z]) => {
+      const tool = toolById(app);
+      const name = tool ? tool.name : (app === "uebersicht" ? "Tools-Übersicht" : app);
+      return "<tr><td>" + escapeHtml(name) + "</td>" +
+        '<td class="zahl">' + escapeHtml(String(z.personen)) + "</td>" +
+        '<td class="zahl">' + escapeHtml(String(z.vorgaenge)) + "</td></tr>";
+    }).join("");
+
+  const personZeilen = aktive
+    .slice()
+    .sort((a, b) => (Number(b.punkte) || 0) - (Number(a.punkte) || 0))
+    .map((n) => {
+      const apps = Object.keys(n.proApp || {})
+        .sort((a, b) => (n.proApp[b] || 0) - (n.proApp[a] || 0))
+        .slice(0, 3)
+        .map((a) => { const t = toolById(a); return t ? t.name : (a === "uebersicht" ? "Übersicht" : a); });
+      return "<tr><td>" + escapeHtml(namen[n.username] || n.username) + "</td>" +
+        '<td class="zahl">' + escapeHtml(String(Number(n.punkte) || 0)) + "</td>" +
+        "<td>" + escapeHtml(apps.join(", ") || "—") + "</td></tr>";
+    }).join("");
+
+  // ⚠️ Die Werkzeuge, die NIEMAND benutzt hat, sind der eigentliche Zweck dieser
+  // Auswertung — sie stehen in keiner Zeile und wären sonst genau das, was man
+  // übersieht. Deshalb ausdrücklich aufzählen.
+  const ungenutzt = TOOLS
+    .filter((t) => t && t.id && !proApp.has(t.id))
+    .map((t) => t.name);
+
+  const stille = gezaehlt.length - aktive.length;
+
+  ziel.innerHTML =
+    '<p class="muted" style="margin-top:14px;">' +
+      escapeHtml(String(aktive.length)) + " von " + escapeHtml(String(gezaehlt.length)) +
+      " erfassten Konten waren im " + escapeHtml(monatLesbar(monat)) + " aktiv" +
+      (stille ? ", " + escapeHtml(String(stille)) + " ohne einen einzigen Vorgang" : "") +
+      (widersprochen.length
+        ? " · " + escapeHtml(String(widersprochen.length))
+          + (widersprochen.length === 1 ? " hat" : " haben") + " der Erfassung widersprochen"
+        : "") +
+    ".</p>" +
+    (appZeilen
+      ? '<h4 class="aktivitaet-titel">Nach Werkzeug</h4>' +
+        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+        "<th>Werkzeug</th><th class=\"zahl\">Personen</th><th class=\"zahl\">Vorgänge</th>" +
+        "</tr></thead><tbody>" + appZeilen + "</tbody></table></div>"
+      : '<p class="muted">In diesem Monat wurde nichts aufgezeichnet.</p>') +
+    (ungenutzt.length
+      ? '<p class="muted aktivitaet-ungenutzt"><strong>Von niemandem benutzt:</strong> '
+        + escapeHtml(ungenutzt.join(", ")) + "</p>"
+      : "") +
+    (personZeilen
+      ? '<h4 class="aktivitaet-titel">Nach Person</h4>' +
+        '<div class="punkte-tabelle-scroll"><table class="punkte-tabelle"><thead><tr>' +
+        "<th>Person</th><th class=\"zahl\">Punkte</th><th>Meistgenutzt</th>" +
+        "</tr></thead><tbody>" + personZeilen + "</tbody></table></div>"
+      : "");
 }
 
 function escapeHtml(str) {
