@@ -223,7 +223,7 @@ header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: cente
   letter-spacing: 4px;
   text-align: center;
   color: var(--blue);
-  background: var(--bg);
+  background: var(--gray);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px 12px;
@@ -314,7 +314,18 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
   height: 96px;
   border-radius: 50%;
   border: 1px solid var(--border);
-  background: var(--bg) center / cover no-repeat;
+  /* ⚠️ BEWUSST vier Einzeleigenschaften statt der Kurzform. Hier stand
+     `background: var(--bg) center / cover no-repeat` — und `--bg` gibt es in
+     dieser Datei gar nicht. Eine Kurzform mit einer unauflösbaren var() ist als
+     GANZES ungültig ("invalid at computed-value time") und fällt auf die
+     Startwerte zurück: 0% 0% / auto / repeat. Das 320px-Foto lag dadurch
+     ungeskaliert in der linken oberen Ecke des 96px-Kreises, man sah also nur
+     dessen Ecke. Getrennt notiert kostet ein Fehler in der Farbe nur die Farbe,
+     nie den Bildausschnitt. */
+  background-color: var(--gray);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;

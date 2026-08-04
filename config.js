@@ -354,6 +354,18 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Mein Foto",
+        items: [
+          "Behoben: Das eigene Bild saß im runden Rahmen unter „Mein Foto“ nicht mittig, sondern zeigte nur einen vergrößerten Ausschnitt aus der linken oberen Ecke. Der gewählte Zuschnitt war dabei die ganze Zeit richtig gespeichert — nur die Vorschau hat ihn falsch angezeigt. Wer sein Bild deshalb neu zugeschnitten hat, kann es unverändert lassen.",
+          "Das hinterlegte Foto erscheint jetzt auch in der Besprechung: In der Teilnehmerkachel steht es an der Stelle, an der bisher nur die Initialen standen. Wer kein Bild hinterlegt hat, sieht dort weiterhin seine Initialen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {
