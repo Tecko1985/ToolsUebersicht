@@ -365,7 +365,7 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
-    version: "1.3",
+    version: "1.0",
     groups: [
       {
         title: "Neues Werkzeug: Schulsport",
@@ -376,37 +376,7 @@ const APP_CHANGELOG = [
           "Daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den Behörden und Fördermittelgeber verlangen. Die Schule kann ihn zusätzlich über einen Link digital gegenzeichnen — ohne eigenen Zugang zu den Vereins-Werkzeugen.",
           "Von den teilnehmenden Kindern wird ausschließlich die Anzahl erfasst. Namen von Schülerinnen und Schülern werden dort nicht gespeichert."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
-      {
-        title: "Aktivitätspunkte",
-        items: [
-          "Die Tagesobergrenze fürs laufende Sammeln steigt von 60 auf <strong>100 Punkte</strong>. Wer an einem Tag viel mit den Werkzeugen arbeitet, lief bisher in die Grenze und bekam für den Rest des Tages nichts mehr dazu.",
-          "Die Zugaben und die einmaligen Boni stehen wie bisher außerhalb dieser Grenze und zählen immer.",
-          "Die Punktestände sind mit der neuen Grenze neu berechnet worden — für die Zeit, für die noch Einzelaufzeichnungen vorliegen. Dein Stand kann dadurch höher sein als gestern."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
-      {
-        title: "Mein Foto",
-        items: [
-          "Behoben: Das eigene Bild saß im runden Rahmen unter „Mein Foto“ nicht mittig, sondern zeigte nur einen vergrößerten Ausschnitt aus der linken oberen Ecke. Der gewählte Zuschnitt war dabei die ganze Zeit richtig gespeichert — nur die Vorschau hat ihn falsch angezeigt. Wer sein Bild deshalb neu zugeschnitten hat, kann es unverändert lassen.",
-          "Das hinterlegte Foto erscheint jetzt auch in der Besprechung: In der Teilnehmerkachel steht es an der Stelle, an der bisher nur die Initialen standen. Wer kein Bild hinterlegt hat, sieht dort weiterhin seine Initialen."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.0",
-    groups: [
+      },
       {
         title: "Die Übersicht",
         items: [
@@ -514,6 +484,7 @@ const APP_CHANGELOG = [
           "Unter „Mein Konto“ lässt sich ein Bild von dir hinterlegen — aus deinen Fotos ausgewählt oder am Handy direkt mit der Kamera aufgenommen.",
           "Vor dem Speichern ziehst du den Ausschnitt zurecht und stellst die Größe ein. Liegt ein Handyfoto quer, dreht ein Tipp es gerade.",
           "Im Kadermanager erscheint dein Foto damit von selbst in der Kaderliste und auf dem Aufstellungsfeld — der Trainer muss nichts für dich hochladen. Hat er dort schon ein Bild von dir eingestellt, gilt deines. Für Spieler ohne eigenen Zugang bleibt der Weg über den Trainer bestehen.",
+          "In der Besprechung steht es auf deiner Teilnehmerkachel an der Stelle, an der sonst die Initialen stehen. Wer kein Bild hinterlegt hat, sieht dort weiterhin seine Initialen.",
           "Wer angemeldet ist, kann die hinterlegten Fotos sehen. Ein Foto ist freiwillig, und du kannst deines jederzeit wieder entfernen.",
           "Administratoren können im Nutzer-Bereich ein Bild setzen oder entfernen — für Spieler ohne eigenes Gerät und als Notfallknopf bei einem unpassenden Bild."
         ]
