@@ -354,6 +354,19 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.2",
+    groups: [
+      {
+        title: "Aktivitätspunkte",
+        items: [
+          "Die Tagesobergrenze fürs laufende Sammeln steigt von 60 auf <strong>100 Punkte</strong>. Wer an einem Tag viel mit den Werkzeugen arbeitet, lief bisher in die Grenze und bekam für den Rest des Tages nichts mehr dazu.",
+          "Die Zugaben und die einmaligen Boni stehen wie bisher außerhalb dieser Grenze und zählen immer.",
+          "Die Punktestände sind mit der neuen Grenze neu berechnet worden — für die Zeit, für die noch Einzelaufzeichnungen vorliegen. Dein Stand kann dadurch höher sein als gestern."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.1",
     groups: [
       {
@@ -487,7 +500,7 @@ const APP_CHANGELOG = [
           "Dazu kommen: <strong>10 Punkte für jeden Tag</strong>, an dem überhaupt etwas passiert ist, <strong>5 Punkte fürs Zu- oder Absagen eines Termins</strong>, <strong>20 Punkte für einen Passwortwechsel</strong> (höchstens alle drei Monate) und <strong>10 Punkte fürs Wiederkommen</strong>, nachdem die Anmeldung abgelaufen war.",
           "Wochenweise: <strong>10 Punkte für jede Woche, in der du drangeblieben bist</strong> — also auch in der Woche davor schon aktiv warst —, und <strong>10 Punkte für jede Woche mit mindestens drei verschiedenen Werkzeugen</strong>. Bewusst wochenweise: eine Tagesserie würde jeden Urlaub bestrafen. Die Serie hält auch über Silvester, weil nach der amtlichen Kalenderwoche gerechnet wird.",
           "Einmalig: <strong>40 Punkte, sobald die Trainer-Unterlagen vollständig sind</strong> — Vertrag, Kodex, Jugendschutz und der Rest, der höchste Einzelwert überhaupt —, sowie je <strong>15 Punkte</strong> fürs Hinterlegen eines Fotos und fürs Einschalten der Benachrichtigungen.",
-          "Diese Zugaben zählen immer, auch an einem Tag, an dem die Obergrenze von 60 Punkten schon erreicht ist.",
+          "Diese Zugaben zählen immer, auch an einem Tag, an dem die Obergrenze von 100 Punkten schon erreicht ist.",
           "Deinen Stand siehst nur du selbst; es gibt keine für alle sichtbare Rangliste. Administratoren sehen zusätzlich, wer welches Werkzeug wie oft nutzt — daran hängt die Frage, welches Werkzeug eigentlich niemand mehr braucht.",
           "Wozu die Punkte einmal gut sein werden, entscheidet der Verein später. Das System wird erprobt, die Regeln können sich also noch ändern; neu gerechnet wird dabei die Zeit, für die noch Einzelaufzeichnungen vorliegen.",
           "In der Karte lässt sich einsehen, was gespeichert ist. Wer nicht mitzählen möchte, schaltet die Erfassung dort ab — die bisherigen Aufzeichnungen werden dabei gelöscht.",

@@ -9201,12 +9201,18 @@ const AKTIVITAET_DIR = DOKUMENTE_URL.slice(0, DOKUMENTE_URL.lastIndexOf("/")) + 
 
 // Regelwerk. Die Version wandert in saldo.json mit, damit ein Saldo, der noch nach
 // alten Regeln gerechnet wurde, beim naechsten Zugriff erkennbar ist.
-const PUNKTE_REGELN_VERSION = 5;
+const PUNKTE_REGELN_VERSION = 6;
 const PUNKTE_FENSTER_MS = 5 * 60 * 1000;
 const PUNKTE_PRO_FENSTER = 1;
 const PUNKTE_PRO_APP_START = 2;
 const PUNKTE_PRO_TAT = 3;
-const PUNKTE_TAGESDECKEL = 60;
+// Von 60 auf 100 angehoben (Michel-Vorgabe vom 2026-08-05, Regelversion 6). Der
+// Deckel bremst nur das Wiederholbare -- Fenster, Werkzeug-Start, Katalog-Taten
+// und Tagewerk; Zugaben und Einmal-Boni stehen ohnehin ausserhalb. Bei 60 lief
+// ein Hauptamtlicher an einem vollen Tag hinein, ein Ehrenamtlicher nie: der
+// Deckel wirkte damit nur auf eine Gruppe und nahm ihr genau die Arbeit, die er
+// wuerdigen soll.
+const PUNKTE_TAGESDECKEL = 100;
 const PUNKTE_ROHDATEN_MONATE = 13;
 const PUNKTE_PROTOKOLL_TAGE = 30;
 
