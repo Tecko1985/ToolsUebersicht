@@ -321,6 +321,17 @@ const TOOLS = [
     icon: "🎯",
     category: "Verein",
     devices: ["mobile", "desktop"]
+  },
+  {
+    id: "schulsport",
+    name: "Schulsport",
+    description: "Wochenplan und Nachweis der Sport- und Fußball-AGs an Schulen und im Hort sowie der Ferien-Camps: Eine AG wird einmal als Serie angelegt, die Termine des Schuljahres entstehen daraus von selbst und lassen Ferien automatisch aus. Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren — daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den die Schule über einen Link auch digital gegenzeichnen kann.",
+    url: "https://sc1911heiligenstadt.github.io/schulsport/",
+    icon: "🏫",
+    category: "Verein",
+    devices: ["mobile", "desktop"],
+    mail: true,
+    push: true
   }
 ];
 
@@ -353,6 +364,21 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.3",
+    groups: [
+      {
+        title: "Neues Werkzeug: Schulsport",
+        items: [
+          "Die Sport- und Fußball-AGs, die der Verein an Schulen und im Hort anbietet, haben ein eigenes Werkzeug — zusammen mit den Fußballcamps in den Ferien.",
+          "Eine AG wird einmal als Serie angelegt: Schule, Ort, Wochentag, Uhrzeit und Zeitraum. Alle Termine des Schuljahres entstehen daraus von selbst und lassen Ferien und Feiertage automatisch aus. Camps liegen umgekehrt genau in den Ferien.",
+          "Nach jeder Einheit meldet der Übungsleiter am Handy, ob sie stattgefunden hat und wie viele Kinder da waren. Fällt etwas aus, wird der Grund aus einer Liste gewählt.",
+          "Daraus entsteht auf Knopfdruck der Durchführungsnachweis als PDF, den Behörden und Fördermittelgeber verlangen. Die Schule kann ihn zusätzlich über einen Link digital gegenzeichnen — ohne eigenen Zugang zu den Vereins-Werkzeugen.",
+          "Von den teilnehmenden Kindern wird ausschließlich die Anzahl erfasst. Namen von Schülerinnen und Schülern werden dort nicht gespeichert."
+        ]
+      }
+    ]
+  },
   {
     version: "1.2",
     groups: [
@@ -387,7 +413,7 @@ const APP_CHANGELOG = [
           "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
           "Die Kacheln lassen sich am Greifpunkt frei verschieben und innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger. Die eigene Reihenfolge merkt sich der Browser.",
           "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
-          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge und der externe Fahrtenbuch-Link.",
+          "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport und der externe Fahrtenbuch-Link.",
           "Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",
           "Nach dem Anmelden steht der eigene Name oben im Kopfbereich, bei Administratoren mit Kennzeichnung.",
           "Ist niemand angemeldet und dadurch keine Kachel sichtbar, erscheint ein Hinweis mit Anmelde-Knopf statt einer leeren Seite.",

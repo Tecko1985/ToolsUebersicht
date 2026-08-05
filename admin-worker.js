@@ -417,6 +417,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8789", // Dokumentenvorlagen (Dev-Server)
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
+  "http://localhost:8812", // Schulsport (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
   "https://tecko1985.github.io" // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
 ];
@@ -446,8 +447,20 @@ const DAV_APPS = {
   "fotoauftraege":     "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Fotoauftraege/fotoauftraege.json",
   "abwesenheitskalender": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Abwesenheitskalender/abwesenheitskalender.json",
   "dokumentenvorlagen": "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Dokumentenvorlagen/dokumentenvorlagen.json",
-  "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json"
+  "ausbildungsplan":   "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Ausbildungsplan/ausbildungsplan.json",
+  "schulsport":        "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport.json"
 };
+
+// Archivdatei des Schulsport-Planers: abgeschlossene Schuljahre wandern hierhin,
+// damit die laufende Datei klein bleibt (sie wird bei JEDEM Speichern vollständig
+// übertragen, und unterschriebene Nachweise tragen je ~15 kB Unterschriftsbild).
+//
+// ⚠️ Bewusst KEIN zweiter DAV_APPS-Eintrag: eine App-Id ohne eigenen Eintrag in
+// config.tools kommt an userMayAccessTool nicht vorbei (`if (!entry) return false`),
+// alle Nicht-Admins bekämen also 403. Deshalb zwei eigene schmale Aktionen, die
+// die Rechte des Schulsport-Tools mitbenutzen.
+const SCHULSPORT_ARCHIV_URL =
+  "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Schulsport/schulsport-archiv.json";
 
 // Basis-Ordner für die von Fotoaufträge erzeugten Foto-Upload-Ordner (getrennt
 // von DAV_APPS, da dort nur die JSON-Datendatei der App steht, nicht der
@@ -505,7 +518,14 @@ const WRITE_REQUIRES_EDIT_PERMISSION = new Set([
   // Spieltag-Bogen. Beides laeuft ueber generisches dav-save, deshalb reicht hier
   // der Set-Eintrag; die Trennung Boegen (Bearbeiten) vs. Katalog (Administrieren)
   // ist eine Client-Unterscheidung ueber canEdit()/canAdmin().
-  "ausbildungsplan"
+  "ausbildungsplan",
+  // schulsport (neu 2026-08-05): Uebungsleiter haben hier BEWUSST nur Sehen-Recht.
+  // Ihr einziger Schreibweg ist die schmale Aktion schulsport-meldung, deren Gate
+  // die Team-Zugehoerigkeit zur Massnahme ist -- nicht resolveEditPermission.
+  // Ohne diesen Set-Eintrag koennte jeder Uebungsleiter per generischem dav-save
+  // die gesamte Planung UND fremde Nachweisdaten ueberschreiben; ein Nachweis
+  // soll sich aber nicht von anderer Seite aendern lassen.
+  "schulsport"
 ]);
 // fotoauftraege zusätzlich hier (nicht nur in TEAM_FILTERED_APPS weiter unten):
 // normale Trainer dürfen generisches dav-save für diese App NIE aufrufen (auch
@@ -1108,6 +1128,25 @@ export default {
         return handleDavSave(request, body, env, authHeader, corsHeaders);
       case "vereinskalender-vote":
         return handleVereinskalenderVote(request, body, env, authHeader, corsHeaders);
+      // Schulsport-Planer (seit 2026-08-05). schulsport-meldung ist die schmale
+      // Aktion, ueber die Uebungsleiter OHNE Bearbeiten-Recht ihre eigenen
+      // Termine zurueckmelden -- gleiche Bauform wie vereinskalender-vote.
+      case "schulsport-personen":
+        return handleSchulsportPersonen(request, body, env, authHeader, corsHeaders);
+      case "schulsport-meldung":
+        return handleSchulsportMeldung(request, body, env, authHeader, corsHeaders);
+      case "schulsport-nachweis-erstellen":
+        return handleSchulsportNachweisErstellen(request, body, env, authHeader, corsHeaders);
+      case "schulsport-nachweis-senden":
+        return handleSchulsportNachweisSenden(request, body, env, authHeader, corsHeaders);
+      case "schulsport-nachweis-status":
+        return handleSchulsportNachweisStatus(request, body, env, authHeader, corsHeaders);
+      case "schulsport-archiv-load":
+        return handleSchulsportArchivLoad(request, body, env, authHeader, corsHeaders);
+      case "schulsport-schuljahr-archivieren":
+        return handleSchulsportSchuljahrArchivieren(request, body, env, authHeader, corsHeaders);
+      case "schulsport-erinnerung-push":
+        return handleSchulsportErinnerungPush(request, body, env, authHeader, corsHeaders, ctx);
       case "fotoauftrag-ordner-anlegen":
         return handleFotoauftragOrdnerAnlegen(request, body, env, authHeader, corsHeaders);
       case "fotoauftrag-spielbericht-hochladen":
@@ -1136,6 +1175,19 @@ export default {
         return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-beleg-file-get":
         return handleFahrtenbuchBelegFileGet(request, body, env, authHeader, corsHeaders);
+      // Schulsport: Bestaetigung eines Durchfuehrungsnachweises durch die Schule,
+      // OHNE Login (Freigabelink). Beide Aktionen rufen getVerifiedSession
+      // bewusst NICHT auf -- der Ausweis ist der lange Zufallstoken IM
+      // Nachweis-Vorgang, gleiche Bauform wie die fahrtenbuch-extern-*-Aktionen
+      // darueber. Sie antworten deshalb nie 401, sondern 400 (Token-Form),
+      // 404 (unbekannt), 410 (abgelaufen/widerrufen) oder 429 (Zaehlwerk) --
+      // daran erkennt man in der Live-Probe, dass sie wirklich vor jeder
+      // Sitzungspruefung liegen. request wird mitgegeben, weil die Handler die
+      // aufrufende IP fuer die Missbrauchsbremse brauchen.
+      case "schulsport-freigabe-lesen":
+        return handleSchulsportFreigabeLesen(request, body, env, authHeader, corsHeaders);
+      case "schulsport-freigabe-senden":
+        return handleSchulsportFreigabeSenden(request, body, env, authHeader, corsHeaders);
       case "livekit-token":
         return handleLivekitToken(request, body, env, authHeader, corsHeaders);
       case "livekit-kick":
@@ -6758,6 +6810,855 @@ async function handleVereinskalenderVote(request, body, env, authHeader, corsHea
   }
 }
 
+// ---------- Aktionen: Schulsport-Planer (seit 2026-08-05) ----------
+//
+// Planung und Durchfuehrungsnachweis der Schul-AGs und Ferien-Camps.
+//
+// ⚠️ Die Rechte sind hier bewusst ANDERS geschnitten als sonst in der Flotte:
+// Uebungsleiter stehen NUR in der Sehen-Gruppe. Haetten sie Bearbeiten-Recht,
+// gaebe ihnen WRITE_REQUIRES_EDIT_PERMISSION ueber resolveEditPermission das
+// ganze Dokument frei -- und damit auch fremde Nachweisdaten. Ihr einziger
+// Schreibweg ist schulsport-meldung, dessen Gate die Team-Zugehoerigkeit zur
+// Massnahme ist. Muster: handleVereinskalenderVote weiter oben.
+
+const SCHULSPORT_TERMIN_STATUS = new Set(["offen", "durchgefuehrt", "ausgefallen", "verschoben"]);
+const SCHULSPORT_STATUS_NAMEN = {
+  offen: "Offen", durchgefuehrt: "Durchgeführt", ausgefallen: "Ausgefallen", verschoben: "Verschoben"
+};
+const SCHULSPORT_WOCHENTAGE = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const SCHULSPORT_FREIGABE_BASIS = "https://sc1911heiligenstadt.github.io/schulsport/bestaetigung.html";
+const SCHULSPORT_FREIGABE_TAGE = 30;
+const SCHULSPORT_MAX_NACHWEISE = 500;
+
+// Missbrauchsbremse fuer die beiden login-losen Aktionen.
+// ⚠️ Isolate-lokal, wie aktivitaetGesehen -- dieser Worker hat keinen
+// persistenten Speicher fuer so etwas. Das ist eine BREMSE, keine Sperre: ein
+// kalter Isolate faengt bei null an. Die eigentliche Sicherheit sind die 256 Bit
+// Zufall im Token plus Ablaufdatum plus Widerruf. Gehoert genau so in die
+// akzeptierten Limitierungen, nicht in eine spaetere Fehlersuche.
+const SCHULSPORT_IP_ZAEHLER = new Map();
+const SCHULSPORT_IP_MAX_PRO_STUNDE = 30;
+
+function schulsportIpBremse(request) {
+  const ip = String((request && request.headers && request.headers.get("CF-Connecting-IP")) || "");
+  if (!ip) return true;
+  const jetzt = Date.now();
+  const eintrag = SCHULSPORT_IP_ZAEHLER.get(ip);
+  if (!eintrag || jetzt - eintrag.start > 3600000) {
+    SCHULSPORT_IP_ZAEHLER.set(ip, { start: jetzt, n: 1 });
+    // Aufraeumen, damit die Map in einem langlebigen Isolate nicht waechst.
+    if (SCHULSPORT_IP_ZAEHLER.size > 500) {
+      for (const [k, v] of SCHULSPORT_IP_ZAEHLER) {
+        if (jetzt - v.start > 3600000) SCHULSPORT_IP_ZAEHLER.delete(k);
+      }
+    }
+    return true;
+  }
+  eintrag.n++;
+  return eintrag.n <= SCHULSPORT_IP_MAX_PRO_STUNDE;
+}
+
+function schulsportMinuten(hhmm) {
+  const t = String(hhmm || "").split(":");
+  if (t.length !== 2) return 0;
+  const h = Number(t[0]), m = Number(t[1]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function schulsportWochentag(iso) {
+  const t = String(iso || "").split("-");
+  if (t.length !== 3) return "";
+  const d = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]));
+  return isNaN(d.getTime()) ? "" : SCHULSPORT_WOCHENTAGE[d.getDay()];
+}
+
+// Spiegelt summiereTermine() aus E:\schulsport\termine.js.
+// ⚠️ Doppelung mit Absicht: der Snapshot MUSS serverseitig entstehen, sonst
+// stuende im Nachweis, was der Browser behauptet, statt was gespeichert ist.
+// Wer die Client-Funktion aendert, zieht diese hier mit.
+function schulsportSummen(termine) {
+  let geplant = 0, durchgefuehrt = 0, ausgefallen = 0, verschoben = 0;
+  let teilnahmen = 0, mitZahl = 0, minutenAg = 0, minutenVor = 0, minutenNach = 0;
+  for (const t of termine) {
+    geplant++;
+    if (t.status === "durchgefuehrt") {
+      durchgefuehrt++;
+      const dauer = schulsportMinuten(t.endZeit) - schulsportMinuten(t.startZeit);
+      if (dauer > 0) minutenAg += dauer;
+      minutenVor += Number(t.vorbereitungMin) || 0;
+      minutenNach += Number(t.nachbereitungMin) || 0;
+      if (t.teilnehmerzahl !== null && t.teilnehmerzahl !== undefined) {
+        teilnahmen += Number(t.teilnehmerzahl) || 0;
+        mitZahl++;
+      }
+    } else if (t.status === "ausgefallen") ausgefallen++;
+    else if (t.status === "verschoben") verschoben++;
+  }
+  return {
+    geplant, durchgefuehrt, ausgefallen, verschoben,
+    offen: geplant - durchgefuehrt - ausgefallen - verschoben,
+    teilnahmen, mitZahl,
+    // Nenner ist die Zahl der Termine MIT Angabe -- ein durchgefuehrter, aber
+    // noch nicht gezaehlter Termin darf den Schnitt nicht druecken.
+    schnitt: mitZahl ? Math.round((teilnahmen / mitZahl) * 10) / 10 : 0,
+    minutenAg, minutenVor, minutenNach, minutenGesamt: minutenAg + minutenVor + minutenNach
+  };
+}
+
+function schulsportName(usersDoc, username) {
+  if (!username) return "";
+  const u = getOwn((usersDoc && usersDoc.users) || {}, username);
+  return (u && u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : username;
+}
+
+// Baut den eingefrorenen Nachweis aus der Datei. Nichts davon kommt aus dem Body.
+function schulsportSnapshot(doc, massnahmeId, vonDatum, bisDatum, usersDoc) {
+  const massnahmen = Array.isArray(doc.massnahmen) ? doc.massnahmen : [];
+  const m = massnahmen.find((x) => x && x.id === massnahmeId);
+  if (!m) return null;
+  const schule = (Array.isArray(doc.schulen) ? doc.schulen : []).find((s) => s && s.id === m.schuleId) || null;
+  const ort = (Array.isArray(doc.orte) ? doc.orte : []).find((o) => o && o.id === m.ortId) || null;
+  const gruende = Array.isArray(doc.ausfallgruende) ? doc.ausfallgruende : [];
+
+  const termine = (Array.isArray(doc.termine) ? doc.termine : [])
+    .filter((t) => t && t.massnahmeId === massnahmeId && t.datum >= vonDatum && t.datum <= bisDatum)
+    .sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0));
+
+  const summen = schulsportSummen(termine);
+
+  const zaehler = new Map();
+  for (const t of termine) {
+    if (t.status !== "ausgefallen") continue;
+    const k = t.ausfallgrundId || "";
+    zaehler.set(k, (zaehler.get(k) || 0) + 1);
+  }
+  const ausfaelle = [];
+  zaehler.forEach((anzahl, k) => {
+    const g = gruende.find((x) => x && x.id === k);
+    ausfaelle.push({
+      id: k, bezeichnung: g ? g.bezeichnung : "Ohne Angabe",
+      vereinsverschulden: g ? !!g.vereinsverschulden : false, anzahl
+    });
+  });
+  ausfaelle.sort((a, b) => b.anzahl - a.anzahl);
+
+  const ap = (schule && schule.ansprechpartner) || null;
+
+  return {
+    erstelltAm: new Date().toISOString(),
+    massnahmeTitel: String(m.titel || ""),
+    typ: String(m.typ || "ag"),
+    rahmen: String(m.rahmen || ""),
+    zielgruppe: String(m.zielgruppe || ""),
+    schuleName: schule ? String(schule.name || "") : "",
+    schuleAnschrift: schule
+      ? [schule.strasse, [schule.plz, schule.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+      : "",
+    ansprechpartner: ap ? { name: ap.name || "", funktion: ap.funktion || "", telefon: ap.telefon || "", email: ap.email || "" } : null,
+    ortName: ort ? String(ort.name || "") : "",
+    verantwortlichName: schulsportName(usersDoc, m.verantwortlichUsername),
+    teamNamen: (Array.isArray(m.teamUsernames) ? m.teamUsernames : []).map((u) => schulsportName(usersDoc, u)),
+    zeilen: termine.map((t) => ({
+      datum: t.datum,
+      wochentag: schulsportWochentag(t.datum),
+      startZeit: t.startZeit || "", endZeit: t.endZeit || "",
+      status: t.status || "offen",
+      statusName: SCHULSPORT_STATUS_NAMEN[t.status] || "Offen",
+      teilnehmerzahl: (t.teilnehmerzahl === null || t.teilnehmerzahl === undefined) ? null : Number(t.teilnehmerzahl),
+      durchgefuehrtVonName: schulsportName(usersDoc, t.durchgefuehrtVon),
+      ausfallgrund: t.ausfallgrundId
+        ? ((gruende.find((g) => g && g.id === t.ausfallgrundId) || {}).bezeichnung || "")
+        : "",
+      vorbereitungMin: Number(t.vorbereitungMin) || 0,
+      nachbereitungMin: Number(t.nachbereitungMin) || 0
+    })),
+    summen, ausfaelle,
+    offeneTermine: summen.offen
+  };
+}
+
+// Was die Schule ueber den Freigabelink sehen darf -- NUR dieser eine Vorgang,
+// und ohne die Protokollfelder ip/agent.
+function schulsportOeffentlicherNachweis(n) {
+  return {
+    id: n.id,
+    status: n.status,
+    vonDatum: n.vonDatum,
+    bisDatum: n.bisDatum,
+    gueltigBis: n.gueltigBis,
+    snapshot: n.snapshot,
+    bestaetigung: n.bestaetigung
+      ? { name: n.bestaetigung.name, funktion: n.bestaetigung.funktion, bestaetigtAm: n.bestaetigung.bestaetigtAm }
+      : null,
+    rueckfrage: n.rueckfrage
+      ? { name: n.rueckfrage.name, text: n.rueckfrage.text, gestelltAm: n.rueckfrage.gestelltAm }
+      : null
+  };
+}
+
+function schulsportNeuesToken() {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// Darf dieser Nutzer die Massnahme melden? Aus dem DATENSATZ, nie aus dem Body.
+function schulsportImTeam(massnahme, username) {
+  if (!massnahme || !username) return false;
+  if (massnahme.verantwortlichUsername === username) return true;
+  return Array.isArray(massnahme.teamUsernames) && massnahme.teamUsernames.indexOf(username) !== -1;
+}
+
+// ---------- schulsport-personen ----------
+// Auswahlquelle fuer Verantwortliche und Team.
+// ⚠️ Warum nicht list-tool-editors: das liefert NUR editGroupIds+adminGroupIds.
+// Die Uebungsleiter stehen hier bewusst nur in groupIds -- mit list-tool-editors
+// waere der Picker leer, und der naheliegende "Fix" (Uebungsleiter ins
+// Bearbeiten-Recht) haette ihnen das ganze Dokument geoeffnet.
+async function handleSchulsportPersonen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const config = await readJson(env.NEXTCLOUD_URL, authHeader, { version: 1, tools: {} });
+  const entry = getOwn(config.tools || {}, "schulsport") || {};
+  const sehen = Array.isArray(entry.groupIds) ? entry.groupIds : [];
+  const edit = Array.isArray(entry.editGroupIds) ? entry.editGroupIds : [];
+  const admin = Array.isArray(entry.adminGroupIds) ? entry.adminGroupIds : [];
+  const usersDoc = session.usersDoc;
+
+  const schreibend = new Set();
+  edit.concat(admin).forEach((gid) => {
+    const g = getOwn(usersDoc.groups || {}, gid);
+    if (g && Array.isArray(g.memberUsernames)) g.memberUsernames.forEach((u) => schreibend.add(u));
+  });
+
+  const alle = new Set(schreibend);
+  if (sehen.length) {
+    sehen.forEach((gid) => {
+      const g = getOwn(usersDoc.groups || {}, gid);
+      if (g && Array.isArray(g.memberUsernames)) g.memberUsernames.forEach((u) => alle.add(u));
+    });
+  } else {
+    // Leere Sehen-Gruppe heisst "alles Personal ausser Spielerkonten" -- dieselbe
+    // Auslegung wie userMayAccessTool. Ohne diesen Zweig waere der Picker in
+    // einem frisch registrierten Tool leer, obwohl alle es sehen duerfen.
+    const users = (usersDoc && usersDoc.users) || {};
+    for (const k of Object.keys(users)) {
+      const u = users[k];
+      if (!u || u.archiviert || !istPersonal(u)) continue;
+      alle.add(u.username || k);
+    }
+  }
+
+  const out = Array.from(alle).map((username) => {
+    const u = getOwn(usersDoc.users, username);
+    if (!u || u.archiviert) return null;
+    return {
+      username,
+      displayName: (u.vorname && u.nachname) ? `${u.vorname} ${u.nachname}` : username,
+      darfBearbeiten: schreibend.has(username) || !!u.isAdmin
+    };
+  }).filter(Boolean);
+  out.sort((a, b) => a.displayName.localeCompare(b.displayName, "de"));
+  return json({ users: out }, 200, corsHeaders);
+}
+
+// ---------- schulsport-meldung ----------
+async function handleSchulsportMeldung(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  // Bewusst NUR userMayAccessTool -- genau das ist der Zweck dieser Aktion.
+  if (!(await userMayAccessTool("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+
+  const terminId = String(body.terminId || "");
+  if (!terminId) return json({ error: "Fehlende Termin-Id" }, 400, corsHeaders);
+  const status = String(body.status || "");
+  if (!SCHULSPORT_TERMIN_STATUS.has(status)) return json({ error: "Ungültiger Status" }, 400, corsHeaders);
+
+  let zahl = null;
+  if (body.teilnehmerzahl !== null && body.teilnehmerzahl !== undefined && body.teilnehmerzahl !== "") {
+    zahl = Number(body.teilnehmerzahl);
+    if (!Number.isInteger(zahl) || zahl < 0 || zahl > 999) {
+      return json({ error: "Teilnehmerzahl muss eine ganze Zahl zwischen 0 und 999 sein" }, 400, corsHeaders);
+    }
+  }
+  if (status === "durchgefuehrt" && zahl === null) {
+    return json({ error: "Für eine durchgeführte Einheit fehlt die Teilnehmerzahl" }, 400, corsHeaders);
+  }
+  const ausfallgrundId = capStr(body.ausfallgrundId, 60);
+  const ausfallBemerkung = capStr(body.ausfallBemerkung, 500);
+  const notiz = capStr(body.notiz, 1000);
+  const durchRoh = capStr(body.durchgefuehrtVon, 80);
+
+  const url = DAV_APPS["schulsport"];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Beide jsonCache.delete sind Pflicht: davor, weil der 5-Sekunden-Cache
+    // sonst einen alten ETag liefert und der If-Match-PUT grundlos scheitert --
+    // danach, weil readJsonWithRev die gecachte REFERENZ zurueckgibt und die
+    // Mutation unten sonst parallele Requests im selben Isolate verfaelscht.
+    jsonCache.delete(url);
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+    if (!doc) return json({ error: "Es sind noch keine Daten hinterlegt" }, 404, corsHeaders);
+
+    const termine = Array.isArray(doc.termine) ? doc.termine : [];
+    const t = termine.find((x) => x && x.id === terminId);
+    if (!t) return json({ error: "Termin nicht gefunden" }, 404, corsHeaders);
+
+    const massnahmen = Array.isArray(doc.massnahmen) ? doc.massnahmen : [];
+    const m = massnahmen.find((x) => x && x.id === t.massnahmeId);
+    if (!m) return json({ error: "Maßnahme nicht gefunden" }, 404, corsHeaders);
+
+    // DAS Gate dieser Aktion. Bearbeiter duerfen ebenfalls, damit die Leitung
+    // eine Luecke nachtragen kann, wenn jemand ausfaellt.
+    const darfEditieren = await resolveEditPermission("schulsport", session, env, authHeader);
+    if (!schulsportImTeam(m, session.username) && !darfEditieren) {
+      return json({ error: "Für diese Maßnahme bist du nicht eingeteilt" }, 403, corsHeaders);
+    }
+
+    // durchgefuehrtVon darf nur jemand aus dem Team sein -- sonst koennte ein
+    // Uebungsleiter eine Durchfuehrung einem Kollegen unterschieben.
+    let durch = session.username;
+    if (durchRoh && durchRoh !== session.username) {
+      if (!schulsportImTeam(m, durchRoh)) {
+        return json({ error: "Die angegebene Person ist für diese Maßnahme nicht eingeteilt" }, 400, corsHeaders);
+      }
+      durch = durchRoh;
+    }
+
+    // Ausfallgrund muss in der gepflegten Liste stehen.
+    if (ausfallgrundId) {
+      const gruende = Array.isArray(doc.ausfallgruende) ? doc.ausfallgruende : [];
+      if (!gruende.some((g) => g && g.id === ausfallgrundId)) {
+        return json({ error: "Unbekannter Ausfallgrund" }, 400, corsHeaders);
+      }
+    }
+
+    // Genau diese Felder, nichts sonst.
+    t.status = status;
+    t.teilnehmerzahl = status === "durchgefuehrt" ? zahl : null;
+    t.durchgefuehrtVon = status === "durchgefuehrt" ? durch : "";
+    t.ausfallgrundId = status === "ausgefallen" ? ausfallgrundId : "";
+    t.ausfallBemerkung = status === "ausgefallen" ? ausfallBemerkung : "";
+    t.notiz = notiz;
+    t.gemeldetVon = session.username;
+    t.gemeldetAm = new Date().toISOString();
+    doc.meta = { ...(doc.meta || {}), stand: t.gemeldetAm };
+
+    try {
+      const newRev = await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, rev: newRev, termin: t }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) {
+        return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      }
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- schulsport-nachweis-erstellen ----------
+async function handleSchulsportNachweisErstellen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+
+  const massnahmeId = String(body.massnahmeId || "");
+  const vonDatum = capStr(body.vonDatum, 10);
+  const bisDatum = capStr(body.bisDatum, 10);
+  if (!massnahmeId) return json({ error: "Fehlende Maßnahmen-Id" }, 400, corsHeaders);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(vonDatum) || !/^\d{4}-\d{2}-\d{2}$/.test(bisDatum)) {
+    return json({ error: "Ungültiger Zeitraum" }, 400, corsHeaders);
+  }
+  if (bisDatum < vonDatum) return json({ error: "Das Ende liegt vor dem Beginn" }, 400, corsHeaders);
+
+  const url = DAV_APPS["schulsport"];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    jsonCache.delete(url);
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+    if (!doc) return json({ error: "Es sind noch keine Daten hinterlegt" }, 404, corsHeaders);
+
+    // ⚠️ Der Snapshot entsteht HIER, aus der Datei -- nie aus dem Body. Sonst
+    // stuende im unterschriebenen Nachweis, was der Browser behauptet hat.
+    const snapshot = schulsportSnapshot(doc, massnahmeId, vonDatum, bisDatum, session.usersDoc);
+    if (!snapshot) return json({ error: "Maßnahme nicht gefunden" }, 404, corsHeaders);
+    if (!snapshot.zeilen.length) return json({ error: "In diesem Zeitraum liegt kein Termin" }, 400, corsHeaders);
+
+    if (!Array.isArray(doc.nachweise)) doc.nachweise = [];
+    if (doc.nachweise.length >= SCHULSPORT_MAX_NACHWEISE) {
+      return json({ error: "Es sind zu viele Nachweise gespeichert. Bitte ein Schuljahr archivieren." }, 400, corsHeaders);
+    }
+
+    const m = (doc.massnahmen || []).find((x) => x && x.id === massnahmeId) || {};
+    const jetzt = new Date();
+    const gueltigBis = new Date(jetzt.getTime() + SCHULSPORT_FREIGABE_TAGE * 86400000).toISOString();
+    const token = schulsportNeuesToken();
+    const eintrag = {
+      id: crypto.randomUUID(),
+      art: "massnahme",
+      massnahmeId, schuleId: m.schuleId || "", schuljahr: m.schuljahr || "",
+      vonDatum, bisDatum,
+      erstelltVon: session.username, erstelltAm: jetzt.toISOString(),
+      token, tokenAusgestelltAm: jetzt.toISOString(), gueltigBis,
+      widerrufen: false, widerrufenAm: "", widerrufenVon: "",
+      status: "offen",
+      snapshot,
+      bestaetigung: null, rueckfrage: null,
+      versand: []
+    };
+    doc.nachweise.push(eintrag);
+    doc.meta = { ...(doc.meta || {}), stand: jetzt.toISOString() };
+
+    try {
+      const newRev = await writeJson(url, authHeader, doc, rev);
+      return json({
+        ok: true, rev: newRev, id: eintrag.id, token,
+        url: SCHULSPORT_FREIGABE_BASIS + "?t=" + token,
+        gueltigBis, offeneTermine: snapshot.offeneTermine
+      }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- schulsport-nachweis-senden ----------
+// ⚠️ Empfaenger, Betreff und Text stehen serverseitig. Der Body traegt nur die
+// Vorgangs-Id -- sonst waere die offene Worker-URL ein Versandweg an beliebige
+// Adressen unter dem Absender des Vereins.
+async function handleSchulsportNachweisSenden(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const nachweisId = String(body.nachweisId || "");
+  if (!nachweisId) return json({ error: "Fehlende Nachweis-Id" }, 400, corsHeaders);
+
+  const url = DAV_APPS["schulsport"];
+  jsonCache.delete(url);
+  const { data: raw } = await readJsonWithRev(url, authHeader, null);
+  jsonCache.delete(url);
+  const doc = (raw && typeof raw === "object") ? raw : null;
+  if (!doc) return json({ error: "Es sind noch keine Daten hinterlegt" }, 404, corsHeaders);
+
+  const n = (Array.isArray(doc.nachweise) ? doc.nachweise : []).find((x) => x && x.id === nachweisId);
+  if (!n) return json({ error: "Nachweis nicht gefunden" }, 404, corsHeaders);
+  if (n.widerrufen) return json({ error: "Dieser Nachweis ist widerrufen" }, 400, corsHeaders);
+
+  const schule = (Array.isArray(doc.schulen) ? doc.schulen : []).find((s) => s && s.id === n.schuleId);
+  const email = schule ? capStr(schule.bestaetigungEmail, 200) : "";
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    // Kein Fehler: der Vorgang ist da schon gespeichert und der Link laesst sich
+    // von Hand weitergeben. Der Client sagt es mit Klarnamen an.
+    return json({ ok: true, sent: false, grund: "keine-adresse" }, 200, corsHeaders);
+  }
+  if (!env.BREVO_API_KEY) return json({ ok: true, sent: false, grund: "kein-versandweg" }, 200, corsHeaders);
+
+  const link = SCHULSPORT_FREIGABE_BASIS + "?t=" + String(n.token || "");
+  const s = (n.snapshot && n.snapshot.summen) || {};
+  // Der Betreff nennt die Massnahme nicht -- er steht in der Handy-Vorschau und
+  // im Versandprotokoll des Dienstleisters, also an zwei Stellen mehr als die App.
+  const subject = "Nachweis zur Bestätigung — 1. SC 1911 Heiligenstadt";
+  const message =
+    "Guten Tag,\n\n" +
+    "der 1. SC 1911 Heiligenstadt bittet um Ihre Bestätigung eines Durchführungsnachweises.\n\n" +
+    "Maßnahme: " + ((n.snapshot && n.snapshot.massnahmeTitel) || "") + "\n" +
+    "Zeitraum: " + n.vonDatum + " bis " + n.bisDatum + "\n" +
+    "Durchgeführte Einheiten: " + (s.durchgefuehrt || 0) + " von " + (s.geplant || 0) + "\n\n" +
+    "Unter dem folgenden Link sehen Sie die vollständige Aufstellung und können sie\n" +
+    "direkt am Bildschirm bestätigen. Ein Benutzerkonto brauchen Sie dafür nicht:\n\n" +
+    link + "\n\n" +
+    "Der Link ist 30 Tage gültig. Stimmt etwas nicht, können Sie dort statt einer\n" +
+    "Bestätigung eine Rückfrage stellen.\n\n" +
+    "Mit freundlichen Grüßen\n" +
+    "1. SC 1911 e.V. Heilbad Heiligenstadt\n" +
+    "Leineberg 2, 37308 Heilbad Heiligenstadt\n" +
+    "Telefon 03606 612206";
+
+  try {
+    const resp = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": env.BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        sender: { email: NOTIFY_FROM_EMAIL, name: NOTIFY_FROM_NAME },
+        to: [{ email }],
+        subject, textContent: message
+      })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("Brevo-Versand fehlgeschlagen (schulsport)", resp.status, errText);
+      return json({ error: "Mail-Versand fehlgeschlagen (HTTP " + resp.status + ")" }, 502, corsHeaders);
+    }
+  } catch (e) {
+    return json({ error: "Mail-Versand fehlgeschlagen: " + e.message }, 502, corsHeaders);
+  }
+
+  // Versand protokollieren -- eigener Lesevorgang, weil zwischen Lesen und
+  // Senden Zeit vergangen ist.
+  try {
+    jsonCache.delete(url);
+    const { data: raw2, rev: rev2 } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc2 = (raw2 && typeof raw2 === "object") ? raw2 : null;
+    const n2 = doc2 && (doc2.nachweise || []).find((x) => x && x.id === nachweisId);
+    if (n2) {
+      if (!Array.isArray(n2.versand)) n2.versand = [];
+      n2.versand.push({ art: "mail", an: email, am: new Date().toISOString(), ok: true, fehler: "" });
+      await writeJson(url, authHeader, doc2, rev2);
+    }
+  } catch (_) {
+    // Die Mail ist raus -- ein misslungener Protokolleintrag darf das nicht
+    // zu einem Fehlschlag machen.
+  }
+
+  return json({ ok: true, sent: true, an: email }, 200, corsHeaders);
+}
+
+// ---------- schulsport-nachweis-status ----------
+async function handleSchulsportNachweisStatus(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const nachweisId = String(body.nachweisId || "");
+  const was = String(body.was || "");
+  if (!nachweisId) return json({ error: "Fehlende Nachweis-Id" }, 400, corsHeaders);
+  if (["widerrufen", "verlaengern", "neu-ausstellen"].indexOf(was) === -1) {
+    return json({ error: "Unbekannte Aktion" }, 400, corsHeaders);
+  }
+
+  const url = DAV_APPS["schulsport"];
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    jsonCache.delete(url);
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+    if (!doc) return json({ error: "Es sind noch keine Daten hinterlegt" }, 404, corsHeaders);
+    const n = (Array.isArray(doc.nachweise) ? doc.nachweise : []).find((x) => x && x.id === nachweisId);
+    if (!n) return json({ error: "Nachweis nicht gefunden" }, 404, corsHeaders);
+
+    const jetzt = new Date();
+    if (was === "widerrufen") {
+      // ⚠️ Das Token wird geleert, nicht nur ein Flag gesetzt -- danach gibt es
+      // keinen Weg mehr, ueber den der alte Link Daten liefern koennte.
+      n.widerrufen = true;
+      n.widerrufenAm = jetzt.toISOString();
+      n.widerrufenVon = session.username;
+      n.token = "";
+      n.status = n.status === "offen" ? "widerrufen" : n.status;
+    } else if (was === "verlaengern") {
+      if (n.widerrufen) return json({ error: "Dieser Nachweis ist widerrufen" }, 400, corsHeaders);
+      n.gueltigBis = new Date(jetzt.getTime() + SCHULSPORT_FREIGABE_TAGE * 86400000).toISOString();
+    } else {
+      if (n.status === "bestaetigt") {
+        return json({ error: "Ein bestätigter Nachweis wird nicht neu ausgestellt" }, 400, corsHeaders);
+      }
+      // Neu ausstellen heisst: frische Zahlen einfrieren und ein neues Token.
+      const neu = schulsportSnapshot(doc, n.massnahmeId, n.vonDatum, n.bisDatum, session.usersDoc);
+      if (!neu) return json({ error: "Maßnahme nicht gefunden" }, 404, corsHeaders);
+      n.snapshot = neu;
+      n.token = schulsportNeuesToken();
+      n.tokenAusgestelltAm = jetzt.toISOString();
+      n.gueltigBis = new Date(jetzt.getTime() + SCHULSPORT_FREIGABE_TAGE * 86400000).toISOString();
+      n.widerrufen = false;
+      n.status = "offen";
+      n.rueckfrage = null;
+    }
+    doc.meta = { ...(doc.meta || {}), stand: jetzt.toISOString() };
+
+    try {
+      const newRev = await writeJson(url, authHeader, doc, rev);
+      return json({
+        ok: true, rev: newRev, status: n.status, gueltigBis: n.gueltigBis,
+        url: n.token ? SCHULSPORT_FREIGABE_BASIS + "?t=" + n.token : ""
+      }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Konflikt: bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- schulsport-freigabe-lesen (OHNE Login) ----------
+async function handleSchulsportFreigabeLesen(request, body, env, authHeader, corsHeaders) {
+  // 1. Formpruefung zuerst -- die billigste Bremse, ohne jeden Datei-Zugriff.
+  const token = String(body.token || "");
+  if (!/^[0-9a-f]{64}$/.test(token)) return json({ error: "Ungültiger Link" }, 400, corsHeaders);
+  // 2. Zaehlwerk je IP.
+  if (!schulsportIpBremse(request)) return json({ error: "Zu viele Versuche" }, 429, corsHeaders);
+
+  const doc = await readJson(DAV_APPS["schulsport"], authHeader, null);
+  const nachweise = (doc && Array.isArray(doc.nachweise)) ? doc.nachweise : [];
+
+  // 3. Vergleich timing-sicher, nicht mit ===.
+  let treffer = null;
+  for (const n of nachweise) {
+    if (!n || !n.token) continue;
+    if (await staticPasswordEquals(token, n.token)) { treffer = n; break; }
+  }
+  if (!treffer) {
+    // Bremse wie bei requireFahrtenbuchExternCode.
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return json({ error: "Dieser Link ist nicht gültig" }, 404, corsHeaders);
+  }
+  if (treffer.widerrufen) return json({ error: "Dieser Link wurde zurückgezogen" }, 410, corsHeaders);
+  if (treffer.gueltigBis && new Date(treffer.gueltigBis) < new Date()) {
+    return json({ error: "Dieser Link ist abgelaufen", abgelaufen: true }, 410, corsHeaders);
+  }
+
+  return json({ nachweis: schulsportOeffentlicherNachweis(treffer) }, 200, corsHeaders);
+}
+
+// ---------- schulsport-freigabe-senden (OHNE Login) ----------
+async function handleSchulsportFreigabeSenden(request, body, env, authHeader, corsHeaders) {
+  const token = String(body.token || "");
+  if (!/^[0-9a-f]{64}$/.test(token)) return json({ error: "Ungültiger Link" }, 400, corsHeaders);
+  if (!schulsportIpBremse(request)) return json({ error: "Zu viele Versuche" }, 429, corsHeaders);
+
+  const art = String(body.art || "");
+  if (art !== "bestaetigen" && art !== "rueckfrage") return json({ error: "Unbekannte Rückmeldung" }, 400, corsHeaders);
+
+  const name = capStr(body.name, 120);
+  if (!name) return json({ error: "Name fehlt" }, 400, corsHeaders);
+
+  let funktion = "", unterschrift = "", text = "";
+  if (art === "bestaetigen") {
+    funktion = capStr(body.funktion, 120);
+    unterschrift = typeof body.unterschriftDataUrl === "string" ? body.unterschriftDataUrl : "";
+    if (!/^data:image\//.test(unterschrift)) return json({ error: "Unterschrift fehlt" }, 400, corsHeaders);
+    if (unterschrift.length > MAX_SIGNATURE_DATA_URL_LENGTH) return json({ error: "Unterschrift zu groß" }, 400, corsHeaders);
+  } else {
+    text = capStr(body.text, 2000);
+    if (!text) return json({ error: "Bitte beschreiben, was nicht stimmt" }, 400, corsHeaders);
+  }
+
+  const ip = capStr((request && request.headers && request.headers.get("CF-Connecting-IP")) || "", 60);
+  const agent = capStr((request && request.headers && request.headers.get("User-Agent")) || "", 300);
+  const url = DAV_APPS["schulsport"];
+
+  // ⚠️ MIT If-Match und drei Versuchen -- bewusst anders als
+  // handleFahrtenbuchExternSubmit, das unconditional schreibt. Eine gerade
+  // geleistete Unterschrift darf nicht von einem gleichzeitigen dav-save der
+  // Leitung ueberschrieben werden.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    jsonCache.delete(url);
+    const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+    jsonCache.delete(url);
+    const doc = (raw && typeof raw === "object") ? raw : null;
+    const nachweise = (doc && Array.isArray(doc.nachweise)) ? doc.nachweise : [];
+
+    let n = null;
+    for (const x of nachweise) {
+      if (!x || !x.token) continue;
+      if (await staticPasswordEquals(token, x.token)) { n = x; break; }
+    }
+    if (!n) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return json({ error: "Dieser Link ist nicht gültig" }, 404, corsHeaders);
+    }
+    if (n.widerrufen) return json({ error: "Dieser Link wurde zurückgezogen" }, 410, corsHeaders);
+    if (n.gueltigBis && new Date(n.gueltigBis) < new Date()) {
+      return json({ error: "Dieser Link ist abgelaufen", abgelaufen: true }, 410, corsHeaders);
+    }
+    // Eine einmal geleistete Bestaetigung wird nicht ueberschrieben. Eine
+    // Rueckfrage nach einer Rueckfrage ist dagegen erlaubt.
+    if (n.status === "bestaetigt") return json({ error: "Dieser Nachweis wurde bereits bestätigt" }, 409, corsHeaders);
+
+    const jetzt = new Date().toISOString();
+    if (art === "bestaetigen") {
+      n.bestaetigung = { name, funktion, unterschriftDataUrl: unterschrift, bestaetigtAm: jetzt, ip, agent };
+      n.status = "bestaetigt";
+      // Das Token wird verbraucht: ein zweiter Aufruf desselben Links soll den
+      // Nachweis nicht erneut oeffnen koennen.
+      n.token = "";
+    } else {
+      n.rueckfrage = { name, text, gestelltAm: jetzt, ip, agent };
+      n.status = "rueckfrage";
+    }
+    doc.meta = { ...(doc.meta || {}), stand: jetzt };
+
+    try {
+      await writeJson(url, authHeader, doc, rev);
+      return json({ ok: true, status: n.status }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) continue;
+      if (e instanceof ConflictError) return json({ error: "Bitte erneut versuchen", conflict: true }, 409, corsHeaders);
+      return json({ error: "Speicherfehler" }, 502, corsHeaders);
+    }
+  }
+}
+
+// ---------- schulsport-archiv-load ----------
+async function handleSchulsportArchivLoad(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await userMayAccessTool("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders);
+  }
+  const data = await readJson(SCHULSPORT_ARCHIV_URL, authHeader, { version: 1, schuljahre: [] });
+  return json({ data }, 200, corsHeaders);
+}
+
+// ---------- schulsport-schuljahr-archivieren ----------
+async function handleSchulsportSchuljahrArchivieren(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveAdminPermission("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Administrieren-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const schuljahr = capStr(body.schuljahr, 12);
+  if (!/^\d{4}\/\d{2}$/.test(schuljahr)) return json({ error: "Ungültiges Schuljahr" }, 400, corsHeaders);
+
+  const url = DAV_APPS["schulsport"];
+  jsonCache.delete(url);
+  const { data: raw, rev } = await readJsonWithRev(url, authHeader, null);
+  jsonCache.delete(url);
+  const doc = (raw && typeof raw === "object") ? raw : null;
+  if (!doc) return json({ error: "Es sind noch keine Daten hinterlegt" }, 404, corsHeaders);
+
+  const massnahmen = (Array.isArray(doc.massnahmen) ? doc.massnahmen : []).filter((m) => m && m.schuljahr === schuljahr);
+  if (!massnahmen.length) return json({ ok: true, verschoben: {}, grund: "nichts-gefunden" }, 200, corsHeaders);
+  const ids = new Set(massnahmen.map((m) => m.id));
+  const termine = (Array.isArray(doc.termine) ? doc.termine : []).filter((t) => t && ids.has(t.massnahmeId));
+  const zusatz = (Array.isArray(doc.zusatzeintraege) ? doc.zusatzeintraege : []).filter((z) => z && ids.has(z.massnahmeId));
+  const nachweise = (Array.isArray(doc.nachweise) ? doc.nachweise : []).filter((n) => n && ids.has(n.massnahmeId));
+  const sperrtage = (Array.isArray(doc.sperrtage) ? doc.sperrtage : []).filter((s) => s && s.schuljahr === schuljahr);
+
+  // ⚠️ Reihenfolge ist bindend: ERST das Archiv schreiben, DANN aus der
+  // Hauptdatei entfernen. Zwei Dateien lassen sich nicht atomar schreiben --
+  // bricht es dazwischen ab, stehen Eintraege doppelt (harmlos, der naechste
+  // Lauf raeumt auf). Andersherum waeren sie weg.
+  const archiv = await readJson(SCHULSPORT_ARCHIV_URL, authHeader, { version: 1, schuljahre: [] });
+  if (!Array.isArray(archiv.schuljahre)) archiv.schuljahre = [];
+  let block = archiv.schuljahre.find((b) => b && b.schuljahr === schuljahr);
+  if (!block) {
+    block = { schuljahr, archiviertAm: "", archiviertVon: "", massnahmen: [], termine: [], zusatzeintraege: [], nachweise: [], sperrtage: [] };
+    archiv.schuljahre.push(block);
+  }
+  // Merge nach id statt anhaengen -- dadurch ist ein zweiter Aufruf folgenlos.
+  const mische = (ziel, quelle) => {
+    const da = new Set((ziel || []).map((x) => x && x.id));
+    (quelle || []).forEach((x) => { if (x && !da.has(x.id)) ziel.push(x); });
+  };
+  ["massnahmen", "termine", "zusatzeintraege", "nachweise", "sperrtage"].forEach((k) => {
+    if (!Array.isArray(block[k])) block[k] = [];
+  });
+  mische(block.massnahmen, massnahmen);
+  mische(block.termine, termine);
+  mische(block.zusatzeintraege, zusatz);
+  mische(block.nachweise, nachweise);
+  mische(block.sperrtage, sperrtage);
+  block.archiviertAm = new Date().toISOString();
+  block.archiviertVon = session.username;
+  archiv.meta = { version: 1, stand: block.archiviertAm };
+
+  try {
+    await writeJson(SCHULSPORT_ARCHIV_URL, authHeader, archiv, null);
+  } catch (e) {
+    return json({ error: "Das Archiv konnte nicht geschrieben werden: " + e.message }, 502, corsHeaders);
+  }
+
+  doc.massnahmen = (doc.massnahmen || []).filter((m) => !(m && m.schuljahr === schuljahr));
+  doc.termine = (doc.termine || []).filter((t) => !(t && ids.has(t.massnahmeId)));
+  doc.zusatzeintraege = (doc.zusatzeintraege || []).filter((z) => !(z && ids.has(z.massnahmeId)));
+  doc.nachweise = (doc.nachweise || []).filter((n) => !(n && ids.has(n.massnahmeId)));
+  doc.sperrtage = (doc.sperrtage || []).filter((s) => !(s && s.schuljahr === schuljahr));
+  doc.meta = { ...(doc.meta || {}), stand: new Date().toISOString() };
+
+  try {
+    const newRev = await writeJson(url, authHeader, doc, rev);
+    return json({
+      ok: true, rev: newRev,
+      verschoben: {
+        Maßnahmen: massnahmen.length, Termine: termine.length,
+        Nachweise: nachweise.length, Ferieneinträge: sperrtage.length
+      }
+    }, 200, corsHeaders);
+  } catch (e) {
+    // Das Archiv steht bereits -- ein Konflikt hier bedeutet nur, dass die
+    // Hauptdatei noch aufgeraeumt werden muss. Der naechste Lauf holt das nach.
+    if (e instanceof ConflictError) {
+      return json({ error: "Das Archiv wurde geschrieben, die Hauptdatei aber zwischenzeitlich geändert. Bitte den Vorgang wiederholen.", conflict: true }, 409, corsHeaders);
+    }
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+}
+
+// ---------- schulsport-erinnerung-push ----------
+async function handleSchulsportErinnerungPush(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!(await resolveEditPermission("schulsport", session, env, authHeader))) {
+    return json({ error: "Kein Bearbeiten-Recht für dieses Tool" }, 403, corsHeaders);
+  }
+  const massnahmeId = String(body.massnahmeId || "");
+
+  const doc = await readJson(DAV_APPS["schulsport"], authHeader, null);
+  if (!doc) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
+
+  const heute = new Date();
+  const heuteIso = heute.getFullYear() + "-" + String(heute.getMonth() + 1).padStart(2, "0") + "-" + String(heute.getDate()).padStart(2, "0");
+  const massnahmen = Array.isArray(doc.massnahmen) ? doc.massnahmen : [];
+  const termine = Array.isArray(doc.termine) ? doc.termine : [];
+
+  // Wer hat offene Meldungen? Empfaenger kommen aus dem DATENSATZ, nie aus dem
+  // Request -- sonst koennte ein Bearbeiter beliebige Konten anschreiben lassen.
+  // ⚠️ NICHT pushEmpfaengerMitRecht verwenden: das spiegelt
+  // resolveEditPermission, und genau dieses Recht haben die Uebungsleiter hier
+  // bewusst nicht.
+  const offeneProPerson = new Map();
+  for (const t of termine) {
+    if (!t || t.datum > heuteIso) continue;
+    const gemeldet = (t.status && t.status !== "offen") || (t.teilnehmerzahl !== null && t.teilnehmerzahl !== undefined) || t.gemeldetAm;
+    if (gemeldet) continue;
+    const m = massnahmen.find((x) => x && x.id === t.massnahmeId);
+    if (!m) continue;
+    if (massnahmeId && m.id !== massnahmeId) continue;
+    const leute = [];
+    if (m.verantwortlichUsername) leute.push(m.verantwortlichUsername);
+    (Array.isArray(m.teamUsernames) ? m.teamUsernames : []).forEach((u) => { if (leute.indexOf(u) === -1) leute.push(u); });
+    leute.forEach((u) => { offeneProPerson.set(u, (offeneProPerson.get(u) || 0) + 1); });
+  }
+  if (!offeneProPerson.size) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
+
+  const users = (session.usersDoc && session.usersDoc.users) || {};
+  const empfaenger = [];
+  for (const roh of offeneProPerson.keys()) {
+    // ⚠️ Push-Abos liegen unter dem NORMALISIERTEN Namen. Weicht die
+    // Schreibweise ab, liegt das Abo da und wird nie gefunden.
+    const name = normalizeUsername(String(roh || ""));
+    if (!name) continue;
+    const u = getOwn(users, name) || getOwn(users, String(roh));
+    if (!u || u.archiviert || !istPersonal(u)) continue;
+    empfaenger.push(name);
+  }
+  if (!empfaenger.length) return json({ ok: true, infrage: 0 }, 200, corsHeaders);
+
+  const text = empfaenger.length === 1 && offeneProPerson.size === 1
+    ? "Es warten noch " + Array.from(offeneProPerson.values())[0] + " Termine auf deine Rückmeldung."
+    : "Es warten noch Termine auf deine Rückmeldung.";
+  pushSenden(env, authHeader, execCtx, empfaenger, "schulsport", text);
+
+  return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
+}
+
 // ---------- Aktion: Fotoauftrag-Ordner anlegen (dedizierter Ordner + echter
 // Nextcloud-Freigabelink pro Auftrag, via OCS-Sharing-API) ----------
 
@@ -8571,7 +9472,9 @@ const PUSH_ANLAESSE = [
   { id: "fotos", titel: "Fotoaufträge", ziel: "/fotoauftraege/",
     label: "Fotoaufträge — neue Aufträge für meine Mannschaft" },
   { id: "raumnutzung", titel: "Raumnutzung", ziel: "/raumnutzung/",
-    label: "Raumnutzung — fertige Anträge und ihr weiterer Weg" }
+    label: "Raumnutzung — fertige Anträge und ihr weiterer Weg" },
+  { id: "schulsport", titel: "Schulsport", ziel: "/schulsport/",
+    label: "Schulsport — Termine, die auf meine Rückmeldung warten" }
 ];
 
 function pushAnlassInfo(id) {
@@ -9376,7 +10279,8 @@ const PUNKTE_APP_PRAEFIXE = [
   ["materialcontainer", "materialliste"],
   ["get-materialcontainer", "materialliste"],
   ["set-materialcontainer", "materialliste"],
-  ["beleg-eingang", "budget"]
+  ["beleg-eingang", "budget"],
+  ["schulsport", "schulsport"]
 ];
 
 // Manche Endpunkte bedienen mehrere Vorgaenge auf einmal. Fuer die zaehlt nicht
