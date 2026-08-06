@@ -1,70 +1,71 @@
-# Tools-Übersicht (v1.0)
+# 🧰 Tools-Übersicht
 
-Zentrale Landingpage mit Links zu allen Vereins- und privaten Tools (Vanilla JS, kein Build-Step). Live unter https://sc1911heiligenstadt.github.io/ToolsUebersicht/, deployed via GitHub Pages.
+Die Startseite der Vereins-Werkzeuge des 1. SC 1911 Heiligenstadt: Anmeldung, Kachelübersicht aller Tools, Neuigkeiten und die Rechteverwaltung. Jede andere App der Flotte prüft hier die Anmeldung.
 
-Jede Tool-Karte zeigt Version und geeignetes Endgerät (📱/💻) des verlinkten Tools; die Karten lassen sich per Greifpunkt frei anordnen (Reihenfolge wird im Browser gemerkt).
+**➡️ [Tools-Übersicht öffnen](https://sc1911heiligenstadt.github.io/ToolsUebersicht/)**
 
-- `config.js` — Stammdaten aller Tool-Links (`TOOLS`-Array: Name, Beschreibung, URL, Kategorie, Version). Neue Tools werden hier per Code-Änderung ergänzt.
-- `app.js` — rendert die Kartenübersicht, das Login und den Admin-Tab.
-- `admin-worker.js` — Cloudflare Worker: Login/Sessions, Sichtbarkeits-Konfiguration und das WebDAV-Login-Gateway für andere Apps (siehe unten), beides in Nextcloud gespeichert. Wird **nicht** über GitHub Pages ausgeliefert, sondern separat bei Cloudflare deployed (Anleitung im Datei-Kopf).
+## Alle Werkzeuge
 
-## Dashboard: Neuigkeiten, Termine & Aufgaben
+| Werkzeug | Wofür | Repo |
+|---|---|---|
+| **[Abwesenheitskalender](https://sc1911heiligenstadt.github.io/abwesenheitskalender/)** | Übersicht, wer wann abwesend ist (Urlaub, Krankheit, Fortbildung u.a.) — jede:r Berechtigte trägt eigene Abwesenheiten ein, alle … | [`abwesenheitskalender`](https://github.com/sc1911heiligenstadt/abwesenheitskalender) |
+| **[Anmeldung Nachwuchs](https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html)** | Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer … | [`vereinsverwaltung`](https://github.com/sc1911heiligenstadt/vereinsverwaltung) |
+| **[Ausbildungsplan](https://sc1911heiligenstadt.github.io/ausbildungsplan/)** | Trainingsschwerpunkte und passende Übungen für jede Altersklasse von den Bambini bis zur U23, auf Grundlage der … | [`ausbildungsplan`](https://github.com/sc1911heiligenstadt/ausbildungsplan) |
+| **[Beleg-Eingang](https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/beleg-eingang.html)** | Mobiles Formular für Helfer zum Einreichen von Belegen. | [`sc-heiligenstadt-budget`](https://github.com/sc1911heiligenstadt/sc-heiligenstadt-budget) |
+| **[Besprechung](https://sc1911heiligenstadt.github.io/besprechung/)** | Digitaler Treffpunkt für Trainer: Sprachraum direkt im Browser, inklusive Bildschirm teilen — z. B. für die hybride … | [`besprechung`](https://github.com/sc1911heiligenstadt/besprechung) |
+| **[Busplan](https://sc1911heiligenstadt.github.io/busplan/)** | Bus-/Transportplanung für die Auswärtsspiele der Nachwuchsmannschaften (nur für berechtigte Gruppe). | [`busplan`](https://github.com/sc1911heiligenstadt/busplan) |
+| **[Digitaler Stempel](https://sc1911heiligenstadt.github.io/digitaler-stempel/)** | PDF- und Word-Dokumente digital stempeln (Position, Größe, Drehung und Deckkraft frei wählbar) — jede Stempelung wird mit Nutzer … | [`digitaler-stempel`](https://github.com/sc1911heiligenstadt/digitaler-stempel) |
+| **[Dokumentenvorlagen](https://sc1911heiligenstadt.github.io/dokumentenvorlagen/)** | Word-Vorlagen (Trainervertrag, Anfragen, Bescheinigungen) mit Platzhaltern zentral verwalten und in einem Rutsch für viele … | [`dokumentenvorlagen`](https://github.com/sc1911heiligenstadt/dokumentenvorlagen) |
+| **[Fahrtenbuch](https://sc1911heiligenstadt.github.io/fahrtenbuch/)** | Digitale Fahrer-Checkliste für Vereinsfahrzeuge: Fahrt mit Fahrzeug-/Fahrtdaten und Sicherheits-Checklisten erfassen, Mängel mit … | [`fahrtenbuch`](https://github.com/sc1911heiligenstadt/fahrtenbuch) |
+| **[Fahrtenbuch (extern)](https://sc1911heiligenstadt.github.io/fahrtenbuch/extern.html)** | Für Eltern ohne Vereinskonto: Fahrt mit einem Vereinsfahrzeug eintragen und Führerschein-Kopie hochladen — zugriffscode-geschützt … | [`fahrtenbuch`](https://github.com/sc1911heiligenstadt/fahrtenbuch) |
+| **[Fotoaufträge](https://sc1911heiligenstadt.github.io/fotoauftraege/)** | Das Social-Media-Team fragt Fotos von einer Mannschaft an; der zuständige Trainer legt per Klick einen eigenen, freigegebenen … | [`fotoauftraege`](https://github.com/sc1911heiligenstadt/fotoauftraege) |
+| **[Geschäftsstelle](https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/geschaeftsstelle.html)** | Eingegangene Belege prüfen, korrigieren und als geprüft markieren — ohne Einblick in die Budgetplanung. | [`sc-heiligenstadt-budget`](https://github.com/sc1911heiligenstadt/sc-heiligenstadt-budget) |
+| **[Kadermanager](https://sc1911heiligenstadt.github.io/kadermanager/)** | Vereinsinterne Alternative zu SpielerPlus: Termine mit An-/Abmeldung, Aufgaben, Aufstellung/Taktikboard, Spielberichte … | [`kadermanager`](https://github.com/sc1911heiligenstadt/kadermanager) |
+| **[Kleiderbestellung](https://sc1911heiligenstadt.github.io/kleiderbestellung/)** | Trainer:innen bestellen Vereinskleidung/-ausrüstung mit ihrer Größe aus einem Artikelkatalog; Admin verwaltet Katalog und … | [`kleiderbestellung`](https://github.com/sc1911heiligenstadt/kleiderbestellung) |
+| **[Materialbedarf](https://sc1911heiligenstadt.github.io/materialbedarf/)** | Trainer:innen melden Materialbedarf (z.B. neue Bälle, Erste-Hilfe-Set) an den Verein; Admin entscheidet über Annahme/Ablehnung … | [`materialbedarf`](https://github.com/sc1911heiligenstadt/materialbedarf) |
+| **[Materialliste](https://sc1911heiligenstadt.github.io/Materialliste/)** | Vereinsmaterial (Trikots, Bälle, Leibchen) pro Mannschaft verwalten. | [`Materialliste`](https://github.com/sc1911heiligenstadt/Materialliste) |
+| **[Mitgliedsantrag](https://sc1911heiligenstadt.github.io/vereinsverwaltung/antrag.html)** | Aufnahmeantrag zum Ausfüllen und Unterschreiben am Handy — ohne Anmeldung, ohne Ausdruck. Der Antrag geht an die Geschäftsstelle … | [`vereinsverwaltung`](https://github.com/sc1911heiligenstadt/vereinsverwaltung) |
+| **[Personalakte](https://sc1911heiligenstadt.github.io/personalakte/)** | Zusammengeführte Trainer-Übersicht für die Geschäftsstelle: Stammdaten, Vertrags-/Kodex-Status, Checklisten, Führerschein … | [`personalakte`](https://github.com/sc1911heiligenstadt/personalakte) |
+| **[Personalkosten](https://sc1911heiligenstadt.github.io/Personalkosten/)** | Personalkosten / Aufwandsentschädigungen der Mannschaften planen und auswerten (nur für berechtigte Gruppe). | [`Personalkosten`](https://github.com/sc1911heiligenstadt/Personalkosten) |
+| **[Platzbelegung](https://sc1911heiligenstadt.github.io/platzbelegung/)** | Belegungsplan für Trainingsplätze und Halle — wer nutzt wann welchen Platz. | [`platzbelegung`](https://github.com/sc1911heiligenstadt/platzbelegung) |
+| **[Raumnutzung](https://sc1911heiligenstadt.github.io/raumnutzung/)** | Anträge auf Raumnutzung für Veranstaltungen (Landkreis Eichsfeld) digital erfassen und daraus das ausgefüllte Original-Formular … | [`raumnutzung`](https://github.com/sc1911heiligenstadt/raumnutzung) |
+| **[Schulsport](https://sc1911heiligenstadt.github.io/schulsport/)** | Wochenplan und Nachweis der Sport- und Fußball-AGs an Schulen und im Hort sowie der Ferien-Camps: Eine AG wird einmal als Serie … | [`schulsport`](https://github.com/sc1911heiligenstadt/schulsport) |
+| **[Spiele](https://sc1911heiligenstadt.github.io/spiele/)** | Mini-Spiele-Sammlung fürs Team: Auto-, Fußball- und Fußball-Vereine-Quartett sowie Der Maulwurf als Verräterspiel (auch solo … | [`spiele`](https://github.com/sc1911heiligenstadt/spiele) |
+| **[Spielersichtung](https://sc1911heiligenstadt.github.io/spielersichtung/)** | Sichtung und Bewertung von Nachwuchsspielern für Kader- und Förderentscheidungen. | [`spielersichtung`](https://github.com/sc1911heiligenstadt/spielersichtung) |
+| **[Spielertool](https://sc1911heiligenstadt.github.io/spielertool-test/)** | Bewertung und Förderung von Nachwuchsspielern im Vereinsbetrieb. | [`spielertool-test`](https://github.com/sc1911heiligenstadt/spielertool-test) |
+| **[Testspielplaner](https://sc1911heiligenstadt.github.io/testspielplaner/)** | Testspiele und Leistungsvergleiche planen: Termin anfragen, Admin genehmigt nach DFBnet-Eintragung, Gegner wird nachgetragen … | [`testspielplaner`](https://github.com/sc1911heiligenstadt/testspielplaner) |
+| **[TrainerCheckliste](https://sc1911heiligenstadt.github.io/TrainerCheckliste/)** | Digitale Checkliste für Trainerzu- und -abgang im Nachwuchsbereich. | [`TrainerCheckliste`](https://github.com/sc1911heiligenstadt/TrainerCheckliste) |
+| **[Trainerdaten](https://sc1911heiligenstadt.github.io/Trainerdaten/)** | Trainer-Stammdaten erfassen, Trainerverträge automatisch als Word-Dokument erzeugen und digital unterschreiben, dazu … | [`Trainerdaten`](https://github.com/sc1911heiligenstadt/Trainerdaten) |
+| **[Trainerversammlung-Anmeldung](https://sc1911heiligenstadt.github.io/sc1911-anmeldung/verwaltung.html)** | Digitales Anmeldesystem für Trainerversammlungen beim 1. SC 1911 Heiligenstadt. | [`sc1911-anmeldung`](https://github.com/sc1911heiligenstadt/sc1911-anmeldung) |
+| **[Vereinsaufgaben](https://sc1911heiligenstadt.github.io/Vereinsaufgaben/)** | Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer … | [`Vereinsaufgaben`](https://github.com/sc1911heiligenstadt/Vereinsaufgaben) |
+| **[Vereinsbudget](https://sc1911heiligenstadt.github.io/sc-heiligenstadt-budget/vereinsbudget.html)** | Budgetübersicht, Einnahmen/Ausgaben und Belegverwaltung für den Kassierer. | [`sc-heiligenstadt-budget`](https://github.com/sc1911heiligenstadt/sc-heiligenstadt-budget) |
+| **[Vereinskalender](https://sc1911heiligenstadt.github.io/vereinskalender/)** | Kommende Vereinstermine im Überblick (gesperrte Hallen/Plätze, Trainingszeiten, Veranstaltungen) — Pflege durch die … | [`vereinskalender`](https://github.com/sc1911heiligenstadt/vereinskalender) |
+| **[Vereinsverwaltung](https://sc1911heiligenstadt.github.io/vereinsverwaltung/)** | Mitglieder, Beiträge und Vereinsfinanzen an einer Stelle — mit Sparten, Haushalten und Beitragsklassen. Löst den GLS … | [`vereinsverwaltung`](https://github.com/sc1911heiligenstadt/vereinsverwaltung) |
 
-- **Neuigkeiten** über den Kacheln als Karussell (eine Meldung sichtbar, per Pfeiltasten blätterbar, Positionsanzeige z.B. "2 / 5"). **Nur für Angemeldete** (seit 2026-07-25): der öffentliche GET liefert ohne gültigen Token `news: null`, statt einen Fehler zu werfen. Darunter eine Emoji-Reaktionsleiste (eine Reaktion pro Person und Meldung). Admins pflegen Neuigkeiten im Einstellungen-Tab (Typ Neu/Update/Fix/Hinweis, Datum, Titel, Text, optionale Verknüpfung zu einem Tool) — zentral in Nextcloud gespeichert und sofort für alle sichtbar, kein Code-Update nötig.
-- **Nächste Termine** — Widget mit bis zu 8 anstehenden Vereinsterminen aus dem Vereinskalender. Private Termine erscheinen in einem eigenen Bereich darunter und nur für den jeweiligen Ersteller bzw. die damit geteilten Personen/Gruppen.
-- **Meine Aufgaben** (seit 2026-07-28) — persönliche Aufgabenliste unter den Terminen, für jedes Mitarbeiterkonto automatisch; Spielerkonten bekommen sie serverseitig nicht. Text + optionales Fälligkeitsdatum, überfällige oben und rot. Die Karte startet zugeklappt und zeigt nur die Zahl der offenen Aufgaben — außer es ist etwas überfällig oder neu zugewiesen, dann klappt sie einmal von allein auf. Erledigte bleiben durchgestrichen stehen, bis sie weggeräumt werden.
-  **Zuweisen an andere** hängt an den Gruppen in `aufgaben.assignGroupIds` (Einstellungen → Aufgaben); eine **leere Liste heißt hier NIEMAND**, nicht "alle eingeloggten" — Zuweisen schreibt in fremde Listen, deshalb fällt der unkonfigurierte Zustand in die geschlossene Richtung. Jeder Empfänger bekommt eine eigene Kopie, kann abhaken, aber weder löschen noch umschreiben; zurückziehen kann nur der Zuweiser (der Eintrag bleibt dann als durchgestrichener Hinweis stehen). Der Rückkanal "Von mir zugewiesen" liefert streng nur die selbst erzeugten Einträge, nie die übrige Liste des Empfängers. Ablage in eigener Nextcloud-Datei `aufgaben.json`; Details in `CLAUDE.md`.
+## Nicht auf der Kachelübersicht
 
-## Login & Nutzerverwaltung
+Erreichbar, aber bewusst nicht als Kachel gelistet:
 
-Echte Nutzerkonten statt eines geteilten PIN:
+| Werkzeug | Wofür | Repo |
+|---|---|---|
+| **[AgeLan – Streamplan](https://sc1911heiligenstadt.github.io/agelan/)** | Streamplan des AgeLan-Turniers: Die Streamer tragen sich selbst in einen Kalender über die Veranstaltungstage ein. | [`agelan`](https://github.com/sc1911heiligenstadt/agelan) |
+| **[Beleg-Scanner](https://sc1911heiligenstadt.github.io/beleg-scanner/)** | Belege abfotografieren, den Inhalt automatisch auslesen und als durchsuchbares PDF ablegen. | [`beleg-scanner`](https://github.com/sc1911heiligenstadt/beleg-scanner) |
+| **[Familien-Quartett](https://sc1911heiligenstadt.github.io/familien-quartett/)** | Kartenspiel für mehrere Mitspieler an verschiedenen Geräten. | [`familien-quartett`](https://github.com/sc1911heiligenstadt/familien-quartett) |
+| **[Kassenbuch](https://sc1911heiligenstadt.github.io/kassenbuch/)** | Einnahmen und Ausgaben erfassen und gegenrechnen. | [`kassenbuch`](https://github.com/sc1911heiligenstadt/kassenbuch) |
+| **[Toolbox Wiki](https://sc1911heiligenstadt.github.io/Vereinswiki/)** | Nachschlagewerk zu allen Vereins-Werkzeugen: welches Tool wofür da ist, wie es bedient wird, und ein Assistent, der Fragen dazu … | [`Vereinswiki`](https://github.com/sc1911heiligenstadt/Vereinswiki) |
 
-- Nicht eingeloggte Besucher sehen weiterhin alle öffentlich markierten Tools. Ist dadurch aktuell kein Tool sichtbar, erscheint ein Hinweis mit "Jetzt anmelden"-Button statt einer reinen Leermeldung.
-- Ein Login schaltet zusätzlich Tools frei, die im Admin-Tab auf "nur eingeloggt" oder auf bestimmte Gruppen gestellt wurden.
-- Admin-Konten können im Admin-Tab (Bereich "Nutzer") weitere Nutzer anlegen — dabei wird nur Vorname/Nachname angegeben, kein Passwort. Der Nutzername (z.B. `max.muster`) wird automatisch generiert, bei Namensgleichheit mit angehängter Zahl.
-- Die Anmeldung läuft zweistufig: zuerst nur den Nutzernamen eingeben ("Weiter"). Je nach Ergebnis erscheint entweder das Passwortfeld für einen bestehenden Account, oder — beim allerersten Login des Nutzers — das Formular "Konto einrichten", in dem er sein eigenes Passwort festlegt und damit sein Konto verknüpft. Beide Zwischenschritte haben einen "Zurück"-Button zur Nutzernamen-Eingabe.
-- Neue Passwörter müssen mindestens 12 Zeichen lang sein und Groß- sowie Kleinbuchstaben sowie eine Zahl oder ein Sonderzeichen enthalten (gilt für Admin-Anlage und Erstlogin).
-- Ein Admin kann jederzeit das Passwort eines Nutzers zurücksetzen (z.B. wenn jemand ausgesperrt ist) — der Nutzer durchläuft danach erneut den Erstlogin-Flow. Vorname/Nachname/Admin-Status lassen sich nachträglich bearbeiten, Nutzer lassen sich löschen (inkl. Sicherheitsabfrage). Dem letzten Admin-Konto kann der Admin-Status nicht entzogen werden, es kann auch nicht gelöscht werden.
-- Passwörter werden mit PBKDF2 (Web Crypto, 100.000 Iterationen, Salt pro Nutzer) gehasht, niemals im Klartext gespeichert. Sessions sind signierte Bearer-Token (7 Tage gültig), im Browser in `localStorage` unter dem Schlüssel `tu_session_token` gespeichert.
+## Zugang
 
-**Bekannter Tradeoff:** Wer einen frisch angelegten Nutzernamen kennt, bevor die echte Person sich zuerst einloggt, könnte ihn theoretisch übernehmen. Für dieses interne Vereins-Tool bewusst akzeptiert — im Zweifel per "Passwort zurücksetzen" korrigierbar.
+Hier meldet man sich an. Sichtbar ist nur, wofür das eigene Konto freigeschaltet ist. Die Rechte gelten je Werkzeug in drei Stufen: **Sehen**, **Bearbeiten** und **Administrieren**.
 
-**Erstbesuch:** Solange in der Nutzerdatei noch kein Konto existiert, öffnet sich im Admin-Tab automatisch das Formular zum Anlegen des ersten Admin-Kontos. Dieser Weg ist danach dauerhaft gesperrt — er hängt daran, ob global schon irgendein Nutzer existiert, nicht an Browser oder Gerät.
+## Lokal starten
 
-Solange `admin-worker.js` noch nicht mit den unten genannten Secrets deployed ist, läuft die Seite im Fallback-Modus: alle Tools aus `config.js` gelten als öffentlich sichtbar, der Admin-Tab meldet einen Verbindungsfehler.
+Über den Eintrag `toolsuebersicht` in `E:\.claude\launch.json` — der Server läuft dann auf `http://localhost:8770/`.
 
-## Nutzergruppen & Sichtbarkeit
+## Technik
 
-- Im Admin-Tab unter "Gruppen" können Gruppen angelegt werden (z.B. "Vorstand", "Trainer U15"). Mitglieder werden über eine Checkbox-Liste je Gruppe zugeordnet ("Mitglieder"-Button) — alternativ direkt in der Nutzerliste über den "Gruppen"-Button je Nutzer.
-- Pro Tool ist die Sichtbarkeit vierstufig einstellbar: versteckt, öffentlich, für jeden eingeloggten Nutzer, oder nur für bestimmte Gruppen (plus Admins, die immer alles sehen). Alternativ direkt über den "Apps"-Button je Gruppe: dort legt man fest, welche Tools diese Gruppe nutzen darf (setzt automatisch "nur eingeloggt").
-- Pro App und Gruppe lässt sich zusätzlich zu "Sehen" auch "Bearbeiten" vergeben (im Gruppen-Bereich oder in "Sichtbarkeit der Tools") — ersetzt dedizierte Bearbeiter-Gruppen je App; die jeweilige App fragt dieses Recht selbst ab, um z.B. zwischen Ansehen und Bearbeiten zu unterscheiden.
-- Entfernt man einer Gruppe die letzte Tool-Zuordnung, wird das Tool wieder versteckt statt für alle eingeloggten Nutzer sichtbar zu werden.
-- Eine gelöschte Gruppe wird automatisch aus allen Tool-Zuordnungen entfernt, damit kein Tool versehentlich für alle unsichtbar bleibt.
-- Kein zusätzliches Worker-Secret nötig: Gruppen werden zusammen mit den Nutzerkonten in derselben `nutzer.json` gespeichert.
+Vanilla JavaScript ohne Build-Schritt, veröffentlicht über GitHub Pages. Die Daten liegen in der Vereins-Nextcloud. `admin-worker.js` und `push-worker.js` sind Cloudflare-Worker und werden **nicht** über GitHub Pages ausgeliefert, sondern separat veröffentlicht.
 
-## Admin-Dashboard
+---
 
-Ein zentrierter Button "📊 Admin-Dashboard" in der Kopfzeile (nur für Admins sichtbar) führt zu einer eigenen Ansicht mit sechs Kennzahlen auf einen Blick: Nutzer-Anmeldequote, Trainervertrag- und Trainerkodex-Quote (bezogen auf die Gruppe "Trainer"), offene Feedback- & Hilfe-Einträge, offene Materialbedarf-Meldungen sowie offene/klärungsbedürftige Busplan-Zusagen der aktuellen Saison. Ist die Gruppe "Trainer" noch nicht angelegt, weist das Dashboard klar darauf hin statt einer irreführenden 0-von-0-Quote.
-
-## Admin-Testansicht
-
-Über einen Umschalter oben rechts im Header (nur für Admins) kann ein Admin eine Gruppe wählen und Dashboard sowie alle verlinkten Apps genau so sehen, wie ein echtes Mitglied dieser Gruppe sie sieht — inklusive echter Zugriffsbeschränkungen (Personalakte, Bearbeiten-Rechte). Das spart das Aus- und Wieder-Einloggen mit einem Test-Account. Ein deutlich sichtbarer Badge "🎭 Testansicht" erinnert an die aktive simulierte Rolle; "👑 Admin (echt)" schaltet zurück. Die Simulation wird zentral im Worker gelöst (`deriveIdentity`/`set-view-as`, `realIsAdmin` bleibt vom simulierten `isAdmin` getrennt) und wirkt dadurch in jeder Gateway-App, nicht nur in der Übersicht selbst.
-
-## WebDAV-Login-Gateway für andere Apps
-
-Mehrere Vereins-Tools (Materialliste, TrainerCheckliste, Spielertool, Trainerkodex, Spielersichtung, Platzbelegung, Personalkosten, Vereinskalender, Busplan, Kadermanager, Digitaler Stempel, Kleiderbestellung, Fahrtenbuch, Materialbedarf) speichern ihre eigenen Daten per WebDAV in derselben Nextcloud. Statt dort ein eigenes Formular mit WebDAV-Adresse, Benutzername und App-Passwort zu verlangen, nutzen sie dieselbe Anmeldung wie diese Übersicht:
-
-- Die Apps lesen das Login-Token aus `localStorage["tu_session_token"]` (funktioniert, weil alle Apps auf derselben Origin `sc1911heiligenstadt.github.io` liegen) und rufen den Worker mit `{ action: "dav-load" | "dav-save", app: "<tool-id>" }` auf.
-- Der Worker prüft das Token **und** die Gruppen-Sichtbarkeit des jeweiligen Tools (identische Regeln wie oben), bevor er serverseitig mit den eigenen Nextcloud-Zugangsdaten auf die passende Datei zugreift. Der Client bekommt nie ein Passwort zu Gesicht.
-- Die Zuordnung App-id → Nextcloud-Datei-Pfad liegt fest in `DAV_APPS` in `admin-worker.js`. Eine weitere App anzubinden heißt: Eintrag in `DAV_APPS` ergänzen, in der App den gleichen Gateway-Code (Token lesen, `dav-load`/`dav-save` aufrufen) einbauen und das alte WebDAV-Formular entfernen.
-
-## Setup nach dem ersten Deploy
-
-1. `admin-worker.js` bei Cloudflare deployen (siehe Kommentar im Datei-Kopf).
-2. Worker-Secrets setzen: `NEXTCLOUD_URL`, `NEXTCLOUD_NUTZER_URL`, `NEXTCLOUD_USERNAME`, `NEXTCLOUD_PASSWORD`, `SESSION_SECRET`.
-3. **Direkt danach, bevor die URL geteilt wird**: im Admin-Tab der Seite läuft automatisch das "Admin-Konto einrichten"-Formular (solange `nutzer.json` noch leer ist) — dort das erste Admin-Konto anlegen. Dieser Weg ist danach dauerhaft gesperrt.
-4. Weitere Nutzer im Admin-Tab unter "Nutzer" anlegen.
-
-## Geplante Erweiterung
-
-Aktuell ist die Sichtbarkeit pro Tool nur bis auf Gruppenebene einstellbar. Eine noch feinere, nutzerspezifische Freigabe pro Tool (z.B. "nur Person A und B sehen Tool X") ist im Datenmodell nicht ausgeschlossen, aber noch nicht implementiert.
+Ein Werkzeug des 1. SC 1911 Heiligenstadt. Erklärungen zu allen Werkzeugen stehen im [Toolbox Wiki](https://sc1911heiligenstadt.github.io/Vereinswiki/).
