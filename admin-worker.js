@@ -432,6 +432,9 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
   "http://localhost:8812", // Schulsport (Dev-Server)
+  // AgeLan haengt sonst an keinem Gateway (eigenes Firebase); seit dem Passwort-Gate
+  // vor dem Streamplan ruft sie verify-action-password hier auf.
+  "http://localhost:8791", // AgeLan (Dev-Server)
   // Vereinsverwaltung spricht sonst ihren EIGENEN Worker an (D1) und stand
   // deshalb nie hier. Seit der Nachwuchs-Anmeldung laedt sie die Nachweise
   // direkt hierher -- der Dev-Server braucht die Freigabe also doch.
@@ -6456,7 +6459,8 @@ const ACTION_PASSWORD_SECRETS = {
   "budget-zugang": "PW_VEREINSBUDGET",               // Vereinsbudget: Zugang zur ganzen Seite (vereinsbudget.html)
   "budget-saison-leeren": "PW_BUDGET_LEEREN",        // Vereinsbudget: "Saison leeren"
   "budget-beleg-eingang": "PW_BUDGET_EINGANG_ZUGANG", // sc-heiligenstadt-beleg-upload-Worker: Zugriffscode für beleg-eingang.html (serverseitig delegiert)
-  "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN" // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
+  "fahrtenbuch-extern": "PW_FAHRTENBUCH_EXTERN", // extern.html: Vorab-Check am Code-Gate (die drei fahrtenbuch-extern-*-Aktionen prüfen zusätzlich selbst)
+  "agelan-zugang": "PW_AGELAN" // AgeLan: Zugang zur ganzen Seite (Streamplan), Passwort verteilt Michel über Discord
 };
 
 async function handleVerifyActionPassword(body, env, corsHeaders) {
