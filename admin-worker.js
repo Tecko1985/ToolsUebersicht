@@ -1220,6 +1220,14 @@ export default {
         return handleVvNachweisGet(request, body, env, authHeader, corsHeaders);
       case "vv-nachweis-loeschen":
         return handleVvNachweisLoeschen(request, body, env, authHeader, corsHeaders);
+      // Das fertige Verbandsformular. IMMER angemeldet -- es entsteht in
+      // der Verwaltung, nicht am Familien-Formular.
+      case "vv-antrag-pdf-put":
+        return handleVvAntragPdfPut(request, body, env, authHeader, corsHeaders);
+      case "vv-antrag-pdf-get":
+        return handleVvAntragPdfGet(request, body, env, authHeader, corsHeaders);
+      case "vv-antrag-pdf-status":
+        return handleVvAntragPdfStatus(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-belege-list":
         return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-beleg-file-get":
@@ -9067,9 +9075,29 @@ const VV_NACHWEIS_DIR =
 
 // Feste Weissliste. Der Slot wird Teil des Dateinamens -- ein freier Wert
 // waere der zweite Ausbruchsweg neben dem Owner.
+//
+// "passbild" ist kein Nachweis im Sinne des Bogens, liegt aber aus gutem
+// Grund hier: es wird im selben Zug von derselben Familie hochgeladen und
+// gehoert zu demselben Vorgang. Der Verband druckt es NICHT auf das
+// Formular (das hat gar kein Bildfeld) -- die Geschaeftsstelle laedt es
+// beim Eintragen in DFBnet Pass-Online hoch.
 const VV_NACHWEIS_SLOTS = new Set([
-  "geburtsurkunde", "spielerpass", "abmeldung", "namensaenderung"
+  "geburtsurkunde", "spielerpass", "abmeldung", "namensaenderung", "passbild"
 ]);
+
+// Das FERTIGE Verbandsformular, das die Geschaeftsstelle erzeugt hat.
+// Eigener Ordner und eigene Aktionen, bewusst getrennt von den Nachweisen:
+// anderer Urheber (der Verein statt der Familie), andere Vertrauensstufe
+// (angemeldet statt offen) und ein anderer Schluessel -- die Antrags-Id,
+// nicht der Nachweis-Owner. Der Verband verlangt Aufbewahrung des
+// unterschriebenen Antrags beim Verein fuer mindestens zwei Jahre.
+const VV_ANTRAG_DIR =
+  VEREINSAUFGABEN_URL.slice(0, VEREINSAUFGABEN_URL.lastIndexOf("/Tools/")) +
+  "/Tools/Vereinsverwaltung/spielerlaubnis";
+
+// Antrags-Ids sind UUIDs aus crypto.randomUUID() -- mit Bindestrichen,
+// anders als der Nachweis-Owner. Deshalb ein eigenes Muster.
+const VV_ANTRAG_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const VV_NACHWEIS_OWNER_RE = /^[0-9a-f]{32}$/;
 
@@ -9203,6 +9231,93 @@ async function handleVvNachweisLoeschen(request, body, env, authHeader, corsHead
     return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
   }
   return json({ ok: true }, 200, corsHeaders);
+}
+
+// --- Das erzeugte Verbandsformular ------------------------------------
+//
+// Anders als beim Nachweis-Upload ist hier IMMER eine Sitzung noetig: das
+// Blatt entsteht in der Verwaltung, nicht am Familien-Formular. Gleiches
+// Recht wie beim Lesen der Nachweise.
+
+async function handleVvAntragPdfPut(request, body, env, authHeader, corsHeaders) {
+  const gate = await vvNachweisDarfSehen(request, env, authHeader, corsHeaders);
+  if (gate.fehler) return gate.fehler;
+
+  const id = String(body.antrag_id || "");
+  if (!VV_ANTRAG_ID_RE.test(id)) {
+    return json({ error: "Ungueltige Antrags-Id" }, 400, corsHeaders);
+  }
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  // ⚠️ Nur PDF, an den ersten Bytes geprueft -- nicht an der Angabe des
+  // Clients. Dasselbe Prinzip wie beim Unterschriften-Upload: was hier
+  // liegt, ist der Nachweis gegenueber dem Verband.
+  if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
+    return json({ error: "Nur PDF-Dateien" }, 400, corsHeaders);
+  }
+
+  // Ein Antrag, eine Datei: ein zweiter Klick ueberschreibt sie. Die
+  // Alternative -- jedes Erzeugen als eigene Fassung -- legte nach ein
+  // paar Korrekturen mehrere Blaetter nebeneinander, von denen niemand
+  // mehr weiss, welches eingereicht wurde.
+  const fileUrl = VV_ANTRAG_DIR + "/" + id + ".pdf";
+  const headers = { Authorization: authHeader, "Content-Type": "application/pdf" };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  if (resp.status === 409 || resp.status === 404) {
+    await ensureCollection(VV_ANTRAG_DIR, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, groesse: bytes.length }, 200, corsHeaders);
+}
+
+async function handleVvAntragPdfGet(request, body, env, authHeader, corsHeaders) {
+  const gate = await vvNachweisDarfSehen(request, env, authHeader, corsHeaders);
+  if (gate.fehler) return gate.fehler;
+
+  const id = String(body.antrag_id || "");
+  if (!VV_ANTRAG_ID_RE.test(id)) {
+    return json({ error: "Ungueltige Antrags-Id" }, 400, corsHeaders);
+  }
+
+  const resp = await fetch(VV_ANTRAG_DIR + "/" + id + ".pdf",
+                           { headers: { Authorization: authHeader } });
+  if (resp.status === 404) return json({ error: "Kein abgelegtes Formular" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+
+  const kopf = new Headers(corsHeaders);
+  kopf.set("Content-Type", "application/pdf");
+  return new Response(resp.body, { status: 200, headers: kopf });
+}
+
+// Liegt zu diesem Antrag schon ein Blatt? Beantwortet die Frage, ohne die
+// Datei zu holen -- die Antragsansicht will nur wissen, ob sie den Knopf
+// "erneut erzeugen" oder "erzeugen" beschriften soll.
+async function handleVvAntragPdfStatus(request, body, env, authHeader, corsHeaders) {
+  const gate = await vvNachweisDarfSehen(request, env, authHeader, corsHeaders);
+  if (gate.fehler) return gate.fehler;
+
+  const id = String(body.antrag_id || "");
+  if (!VV_ANTRAG_ID_RE.test(id)) {
+    return json({ error: "Ungueltige Antrags-Id" }, 400, corsHeaders);
+  }
+
+  const r = await fetch(VV_ANTRAG_DIR + "/" + id + ".pdf",
+                        { method: "HEAD", headers: { Authorization: authHeader } });
+  return json({
+    ok: true,
+    vorhanden: r.ok,
+    groesse: r.ok ? Number(r.headers.get("Content-Length") || 0) : 0,
+    erzeugt_am: r.ok ? (r.headers.get("Last-Modified") || null) : null
+  }, 200, corsHeaders);
 }
 
 // Listet per WebDAV PROPFIND (Depth:1) den Belegeingang-Ordner und liest nur die
