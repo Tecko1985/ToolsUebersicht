@@ -58,6 +58,9 @@
 //
 // API (POST-Body: { action, ... } außer beim einfachen GET):
 //   GET                                                        -> { tools, bootstrapAvailable } ohne Auth
+//   GET /kalender/<token>.ics                                  -> text/calendar, ohne Auth (der Token IM PFAD ist der Ausweis)
+//     Abo-Feed des Vereinskalenders für den eigenen Kalender. Kalenderprogramme können keinen Bearer-Token
+//     schicken, deshalb dieser zweite GET-Pfad. Prüft bei JEDEM Abruf Konto und Tool-Sichtbarkeit neu.
 //   POST { action: "bootstrap-admin", username, password }     -> nur wenn noch keine Nutzer existieren
 //   POST { action: "login", username, password }               -> { token, username, isAdmin, groupIds } | { needsPasswordSetup: true, username } | 401
 //     `username` ist seit 2026-08-03 der Nutzername ODER eine Schreibvariante davon ODER die
@@ -175,6 +178,13 @@
 //     Bearbeitern vorbehalten, ABSTIMMEN muss aber jeder dürfen, der den Termin sieht — sonst stimmt die
 //     Geschäftsstelle mit sich selbst ab. Schreibt ausschließlich umfrage.stimmen[<Token-Nutzer>][candId] eines
 //     einzelnen Termins und spiegelt dafür die Sichtbarkeitsregel für Privattermine serverseitig.
+//   POST { action: "vereinskalender-abo-status" } (jeder mit Tool-Zugriff)  -> { ok, aktiv, umfang?, url?, webcalUrl?, erstelltAm? }
+//   POST { action: "vereinskalender-abo-anlegen", umfang } (dito)           -> { ok, aktiv:true, umfang, url, webcalUrl }
+//   POST { action: "vereinskalender-abo-loeschen" } (dito)                  -> { ok, aktiv:false, entwertet }
+//     Persönlicher Abo-Link, mit dem der eigene Kalender (Google/Apple/Outlook) die Vereinstermine dauerhaft
+//     spiegelt. umfang = "oeffentlich" (nur allgemeine Termine, Standard) | "alle" (zusätzlich eigene und mit
+//     einem geteilte Privattermine). Ein Nutzer hat höchstens EIN Abo — Neuerzeugen entwertet den alten Link.
+//     Abgerufen wird der Feed NICHT hier, sondern per GET /kalender/<token>.ics (siehe unten).
 //   POST { action: "my-trainerdaten-status" } (jeder eingeloggte Nutzer) -> { vorhanden, trainerdatenGesamtOk, ...restliche
 //     Trainerdaten-Statusfelder (gleiche Zusammenfassung wie personalakte-overview, aber NUR für den eigenen
 //     Datensatz, kein Admin-Gate) } — für das grüne/rote Ampel-Badge auf der Trainerdaten-Kachel im Dashboard.
@@ -878,6 +888,13 @@ export default {
     try {
 
     if (request.method === "GET") {
+      // Der Kalender-Abo-Feed ist der einzige andere GET dieses Workers und muss
+      // VOR der Sichtbarkeits-Antwort stehen. Er liefert text/calendar statt JSON
+      // und traegt seinen Ausweis im Pfad -- ein Kalenderprogramm kann keinen
+      // Bearer-Token schicken. Siehe den Vereinskalender-Abo-Block weiter unten.
+      const icsTreffer = new URL(request.url).pathname.match(/^\/kalender\/([A-Za-z0-9_-]{32,100})\.ics$/);
+      if (icsTreffer) return handleVkIcsFeed(request, icsTreffer[1], env, authHeader, corsHeaders);
+
       // Der GET ist der öffentliche Kanal (Tool-Sichtbarkeit für jeden Besucher),
       // trägt seit 2026-07-25 aber einen OPTIONALEN Bearer-Token: die Neuigkeiten
       // sind Vereinsinterna und gehen nur an Angemeldete. Ohne Token (oder mit einem
@@ -1136,6 +1153,14 @@ export default {
         return handleDavSave(request, body, env, authHeader, corsHeaders);
       case "vereinskalender-vote":
         return handleVereinskalenderVote(request, body, env, authHeader, corsHeaders);
+      // Abo-Link fuer den eigenen Kalender (seit 2026-08-06). Der Feed selbst
+      // laeuft nicht hier durch, sondern ueber den GET-Pfad /kalender/<token>.ics.
+      case "vereinskalender-abo-status":
+        return handleVkAboStatus(request, env, authHeader, corsHeaders);
+      case "vereinskalender-abo-anlegen":
+        return handleVkAboAnlegen(request, body, env, authHeader, corsHeaders);
+      case "vereinskalender-abo-loeschen":
+        return handleVkAboLoeschen(request, env, authHeader, corsHeaders);
       // Schulsport-Planer (seit 2026-08-05). schulsport-meldung ist die schmale
       // Aktion, ueber die Uebungsleiter OHNE Bearbeiten-Recht ihre eigenen
       // Termine zurueckmelden -- gleiche Bauform wie vereinskalender-vote.
@@ -6915,6 +6940,421 @@ async function handleVereinskalenderVote(request, body, env, authHeader, corsHea
   }
 }
 
+// ---------- Vereinskalender: Abo-Feed fuer den eigenen Kalender (seit 2026-08-06) ----------
+//
+// Michel-Wunsch: die Vereinstermine dauerhaft im eigenen Kalender sehen (Google,
+// Apple, Outlook). Ein einmaliger .ics-Download taugt dafuer NICHT -- er ist eine
+// Kopie und erfaehrt von spaeteren Aenderungen nichts. Gebaut ist deshalb ein
+// Abo-Feed: eine URL, die das Kalenderprogramm selbst regelmaessig abruft.
+//
+// ⚠️ Die URL IST der Ausweis. Ein Kalenderprogramm kann keinen Bearer-Token
+// schicken -- es gibt dort kein Login, keinen Header, nur die Adresse. Daraus
+// folgt alles Weitere:
+//   * je Nutzer ein eigener langer Zufallstoken, nie ein gemeinsamer Vereinslink
+//   * jederzeit entwertbar -- deshalb GESPEICHERT und nicht signiert-zustandslos
+//   * bei JEDEM Abruf wird gegen nutzer.json und die Tool-Rechte geprueft: wer
+//     sein Konto verliert, archiviert wird oder das Sehen-Recht einbuesst, dessen
+//     Feed ist im selben Moment tot (ein einmal erzeugter Link darf kein
+//     dauerhaftes Nebenrecht sein, das den Rechte-Entzug ueberlebt)
+//   * private Termine gehen nur mit, wenn der Nutzer das beim Erzeugen des Links
+//     ausdruecklich waehlt (umfang "alle") -- der Feed landet auf fremden Servern
+//
+// Ablage in einer EIGENEN Datei statt als Feld in nutzer.json: die wird bei jeder
+// Sitzungspruefung der ganzen Flotte gelesen. Gleiche Ueberlegung wie bei
+// push-abos.json.
+const VK_ABOS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/Vereinskalender/kalender-abos.json";
+
+const VK_ABO_UMFANG_ALLE = "alle";                 // auch eigene + mit mir geteilte private Termine
+const VK_ABO_UMFANG_OEFFENTLICH = "oeffentlich";   // nur allgemeine Vereinstermine (Standard)
+const VK_ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Muss zum Regex in der GET-Weiche passen (dort wird der Token aus dem Pfad geholt).
+const VK_ABO_TOKEN_RE = /^[A-Za-z0-9_-]{32,100}$/;
+
+function leeresVkAboDoc() { return { version: 1, byToken: {} }; }
+
+// 32 Byte Zufall als base64url -- dieselbe Groessenordnung wie die
+// Freigabe-Tokens des Schulsport-Nachweises. Raten scheidet damit aus.
+function vkNeuerAboToken() {
+  return bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+function vkAboUmfangNormalisieren(raw) {
+  return String(raw || "") === VK_ABO_UMFANG_ALLE ? VK_ABO_UMFANG_ALLE : VK_ABO_UMFANG_OEFFENTLICH;
+}
+
+// Der Feed-Pfad wird aus der Adresse gebaut, unter der der Worker gerade
+// angesprochen wurde -- so stimmt der Link auch, falls je eine eigene Domain
+// davorkommt. Der Token steht IM PFAD und nicht als ?query: manche Kalender-
+// Programme schneiden Query-Parameter beim Speichern des Abos ab.
+function vkAboUrls(request, token) {
+  const basis = new URL(request.url).origin + "/kalender/" + token + ".ics";
+  return { url: basis, webcalUrl: basis.replace(/^https?:/i, "webcal:") };
+}
+
+async function vkAbosMutieren(authHeader, aendern) {
+  let letzterFehler = null;
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const gelesen = await readJsonWithRev(VK_ABOS_URL, authHeader, leeresVkAboDoc());
+    const doc = (gelesen.data && typeof gelesen.data === "object") ? gelesen.data : leeresVkAboDoc();
+    if (!doc.byToken || typeof doc.byToken !== "object") doc.byToken = {};
+    const weiter = aendern(doc);
+    if (weiter === false) return doc;
+    try {
+      await writeJson(VK_ABOS_URL, authHeader, doc, gelesen.rev);
+      return doc;
+    } catch (e) {
+      if (e instanceof ConflictError) { letzterFehler = e; continue; }
+      throw e;
+    }
+  }
+  throw letzterFehler || new Error("Kalender-Abos konnten nicht geschrieben werden");
+}
+
+// Ein Nutzer hat hoechstens EIN Abo. Der Umweg ueber byToken (statt byUser) ist
+// Absicht: der heisse Pfad ist der Feed-Abruf, und der kennt nur den Token.
+function vkAboVonNutzer(doc, username) {
+  const byToken = (doc && doc.byToken && typeof doc.byToken === "object") ? doc.byToken : {};
+  for (const token of Object.keys(byToken)) {
+    const eintrag = byToken[token];
+    if (eintrag && eintrag.username === username) return { token, ...eintrag };
+  }
+  return null;
+}
+
+// ---------- ICS-Erzeugung (RFC 5545) ----------
+
+// Verschiebung von Europe/Berlin gegenueber UTC zu einem Zeitpunkt, in ms.
+// sv-SE liefert "YYYY-MM-DD HH:MM:SS"; parst man das wieder als UTC, ist die
+// Differenz genau der Offset -- inklusive Sommerzeit und ohne eigene Regeltabelle.
+function vkBerlinOffsetMs(ms) {
+  const alsBerlin = new Date(ms).toLocaleString("sv-SE", { timeZone: "Europe/Berlin" });
+  return Date.parse(alsBerlin.replace(" ", "T") + "Z") - ms;
+}
+
+// Wandzeit in Heiligenstadt -> echter Zeitpunkt (UTC-Millisekunden).
+// ⚠️ ZWEI Durchgaenge: den ersten Offset lesen wir an der falschen Stelle der
+// Zeitachse ab, weil wir den Zeitpunkt ja noch gar nicht kennen. An den beiden
+// Umstellungstagen im Jahr liegt er dadurch eine Stunde daneben -- der zweite
+// Durchgang korrigiert das. Wer hier eine Runde einspart, verschiebt jeden
+// Termin am letzten Maerz- und Oktoberwochenende.
+function vkBerlinWandzeitZuMs(iso, hhmm) {
+  const alsWaereEsUtc = Date.parse(iso + "T" + hhmm + ":00Z");
+  if (!Number.isFinite(alsWaereEsUtc)) return NaN;
+  const ersterVersuch = alsWaereEsUtc - vkBerlinOffsetMs(alsWaereEsUtc);
+  return alsWaereEsUtc - vkBerlinOffsetMs(ersterVersuch);
+}
+
+function vkIcsZeit(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}T${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
+}
+
+function vkIcsDatum(iso) { return String(iso || "").replace(/-/g, ""); }
+
+// DTEND ist bei Ganztagsterminen EXKLUSIV: ein eintaegiger Termin am 17.08. endet
+// laut Norm am 18.08. Ohne das +1 zeigen Google und Apple einen mehrtaegigen
+// Termin um einen Tag zu kurz an -- und einen eintaegigen gar nicht.
+function vkIcsDatumExklusiv(iso) {
+  const ms = Date.parse(String(iso || "") + "T00:00:00Z");
+  if (!Number.isFinite(ms)) return vkIcsDatum(iso);
+  return vkIcsDatum(new Date(ms + 86400000).toISOString().slice(0, 10));
+}
+
+function vkIcsEscape(text) {
+  return String(text == null ? "" : text)
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r\n|\r|\n/g, "\\n");
+}
+
+// RFC 5545 begrenzt eine Zeile auf 75 Oktette, Fortsetzungen beginnen mit einem
+// Leerzeichen. ⚠️ Gezaehlt werden BYTES, nicht Zeichen -- ein Umlaut sind zwei.
+// Deshalb wird zeichenweise gefuellt statt per slice(): ein mitten
+// durchgeschnittenes Mehrbyte-Zeichen macht die Datei fuer manche Programme
+// unlesbar, und Vereinstermine stecken voller Umlaute.
+function vkIcsFalten(zeile) {
+  const enc = new TextEncoder();
+  if (enc.encode(zeile).length <= 75) return zeile;
+  const zeilen = [];
+  let aktuell = "";
+  let bytes = 0;
+  for (const zeichen of zeile) {
+    const n = enc.encode(zeichen).length;
+    const grenze = zeilen.length === 0 ? 75 : 74; // Folgezeile: das fuehrende Leerzeichen zaehlt mit
+    if (bytes + n > grenze) { zeilen.push(aktuell); aktuell = ""; bytes = 0; }
+    aktuell += zeichen;
+    bytes += n;
+  }
+  if (aktuell) zeilen.push(aktuell);
+  return zeilen.map((z, i) => (i === 0 ? z : " " + z)).join("\r\n");
+}
+
+// Baut die Zeilen EINES VEVENT. Werte von Textfeldern kommen bereits escaped
+// herein; Datums-/Zeitfelder duerfen nicht escaped werden (der Doppelpunkt und
+// die Parameter gehoeren zur Syntax).
+function vkIcsEvent(e) {
+  const zeilen = ["BEGIN:VEVENT"];
+  const add = (name, wert) => { if (wert !== "" && wert != null) zeilen.push(vkIcsFalten(name + ":" + wert)); };
+
+  add("UID", e.uid);
+  add("DTSTAMP", e.dtstamp);
+  if (e.ganztags) {
+    add("DTSTART;VALUE=DATE", vkIcsDatum(e.datum));
+    add("DTEND;VALUE=DATE", vkIcsDatumExklusiv(e.endDatum || e.datum));
+  } else {
+    const start = vkBerlinWandzeitZuMs(e.datum, e.startZeit || "00:00");
+    // Ohne Endzeit eine Stunde annehmen: ein Termin ohne Dauer verschwindet in
+    // manchen Ansichten zu einem Strich.
+    const ende = e.endZeit
+      ? vkBerlinWandzeitZuMs(e.endDatum || e.datum, e.endZeit)
+      : start + 3600000;
+    add("DTSTART", vkIcsZeit(start));
+    // Ein Ende vor dem Start ist fuer Kalenderprogramme ein kaputter Eintrag --
+    // in den Daten kommt das vor (Termin von 22:00 bis 01:00, alles am selben Tag).
+    add("DTEND", vkIcsZeit(ende > start ? ende : start + 3600000));
+  }
+  add("SUMMARY", vkIcsEscape(e.titel));
+  add("LOCATION", vkIcsEscape(e.ort));
+  add("DESCRIPTION", vkIcsEscape(e.beschreibung));
+  add("CATEGORIES", vkIcsEscape(e.kategorie));
+  add("STATUS", e.status || "CONFIRMED");
+  zeilen.push("END:VEVENT");
+  return zeilen;
+}
+
+// Ein Termin ergibt EIN Ereignis -- ausser bei einer laufenden Umfrage, dann eins
+// je Vorschlag.
+//
+// ⚠️ Rueckgabe ist eine FLACHE Zeilenliste, kein Array von Ereignissen. vkIcsEvent
+// liefert selbst schon Zeilen; wer die ungeflacht weiterreicht, bekommt beim
+// join("\r\n") des Aufrufers ein Array-toString() -- alle Zeilen eines Ereignisses
+// landen dann kommasepariert in EINER Zeile. Die Datei sieht dabei auf den ersten
+// Blick heil aus (BEGIN/END stehen da, Umlaute stimmen) und ist trotzdem fuer
+// jeden Kalender unlesbar: "component began but did not end". Am 2026-08-06 genau
+// so gebaut und erst von einem fremden Parser gefunden.
+function vkTerminEvents(t, katName, dtstamp, uidBasis) {
+  if (!t || !VK_ISO_RE.test(String(t.datum || ""))) return [];
+  const kat = katName(t.kategorie);
+  const beschreibungsteile = [];
+  if (t.notiz) beschreibungsteile.push(String(t.notiz));
+  if (kat) beschreibungsteile.push("Kategorie: " + kat);
+  const beschreibung = beschreibungsteile.join("\n");
+  const gemeinsam = { ort: t.ort || "", beschreibung, kategorie: kat, dtstamp };
+
+  const vorschlaege = (t.umfrage && t.umfrage.aktiv && Array.isArray(t.umfrage.termine)) ? t.umfrage.termine : [];
+  if (vorschlaege.length) {
+    // ⚠️ Ein Umfrage-Termin ist noch KEIN Termin, sondern mehrere Moeglichkeiten.
+    // Je Vorschlag ein eigener Eintrag mit STATUS:TENTATIVE -- genau dafuer gibt
+    // es das Feld, Kalender stellen solche Eintraege blass dar. Ein einziger
+    // Eintrag ueber die ganze Spanne waere sachlich falsch: der Verein ist nicht
+    // drei Tage lang beschaeftigt, sondern an einem davon. Dieselbe Darstellung
+    // wie im "Naechste Termine"-Fenster der Uebersicht (eine Zeile je Moeglichkeit).
+    const zeilen = [];
+    vorschlaege.forEach((c, i) => {
+      if (!c || !VK_ISO_RE.test(String(c.datum || ""))) return;
+      zeilen.push(...vkIcsEvent({
+        ...gemeinsam,
+        uid: `${uidBasis}-${c.id || i}`,
+        titel: "(Vorschlag) " + (t.titel || "Termin"),
+        datum: c.datum,
+        endDatum: c.datum,
+        startZeit: c.startZeit || "",
+        endZeit: c.endZeit || "",
+        ganztags: !c.startZeit && !c.endZeit,
+        status: "TENTATIVE"
+      }));
+    });
+    return zeilen;
+  }
+
+  const endDatum = (t.endDatum && VK_ISO_RE.test(t.endDatum) && t.endDatum >= t.datum) ? t.endDatum : t.datum;
+  return vkIcsEvent({
+    ...gemeinsam,
+    uid: uidBasis,
+    titel: t.titel || "Termin",
+    datum: t.datum,
+    endDatum,
+    startZeit: t.startZeit || "",
+    endZeit: t.endZeit || "",
+    ganztags: !!t.ganztags || (!t.startZeit && !t.endZeit)
+  });
+}
+
+// ⚠️ BEWUSST OHNE ADMIN-BYPASS -- das ist der Unterschied zu
+// vereinskalenderTerminSichtbar(). In der App darf ein Admin jeden Privattermin
+// sehen (Support und Aufraeumen). Im Feed haette dasselbe zur Folge, dass mit
+// einem einzigen Haken saemtliche Privattermine des ganzen Vereins dauerhaft auf
+// den Server eines Kalenderanbieters wandern. Der Feed zeigt deshalb nur, was
+// einen persoenlich betrifft.
+function vkFeedTerminSichtbar(t, nutzer) {
+  if (!t.privat) return true;
+  if (t.ersteller && t.ersteller === nutzer.username) return true;
+  if (Array.isArray(t.geteiltUsers) && t.geteiltUsers.includes(nutzer.username)) return true;
+  const gids = Array.isArray(nutzer.groupIds) ? nutzer.groupIds : [];
+  if (Array.isArray(t.geteiltGruppen) && t.geteiltGruppen.some((g) => gids.includes(g))) return true;
+  return false;
+}
+
+function vkTextAntwort(text, status, corsHeaders) {
+  return new Response(text, {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }
+  });
+}
+
+// Der Feed-Abruf. Kein Bearer, keine Sitzung -- der Token aus dem Pfad ist alles,
+// was das Kalenderprogramm mitbringt.
+async function handleVkIcsFeed(request, token, env, authHeader, corsHeaders) {
+  const abosDoc = await readJson(VK_ABOS_URL, authHeader, leeresVkAboDoc());
+  const eintrag = getOwn(abosDoc.byToken || {}, token);
+  if (!eintrag || !eintrag.username) {
+    return vkTextAntwort("Dieser Kalender-Link ist nicht (mehr) gültig.", 404, corsHeaders);
+  }
+
+  const usersDoc = await readJson(env.NEXTCLOUD_NUTZER_URL, authHeader, emptyUsersDoc());
+  const user = getOwn(usersDoc.users, String(eintrag.username));
+  // Dieselben Regeln wie sessionUserFromDoc, nur ohne Token-Zeitstempel: ein
+  // geloeschtes, archiviertes oder nie eingerichtetes Konto hat keinen Kalender.
+  if (!user || user.archiviert || user.mustSetPassword || !user.passwordHash) {
+    return vkTextAntwort("Dieser Kalender-Link ist nicht (mehr) gültig.", 404, corsHeaders);
+  }
+
+  // ⚠️ deriveIdentity absichtlich NICHT verwendet: es wuerde die Testansicht
+  // (viewAsGroupId) eines Admins in den Feed durchreichen und einem Admin
+  // isAdmin: true geben -- beides hat in einem dauerhaft laufenden Abo nichts zu
+  // suchen. Gebraucht werden nur die echten Gruppen.
+  const nutzer = { username: user.username, groupIds: getUserGroupIds(usersDoc, user.username) };
+  const session = { username: user.username, isAdmin: !!user.isAdmin, groupIds: nutzer.groupIds, art: userArt(user) };
+  if (!(await userMayAccessTool("vereinskalender", session, env, authHeader))) {
+    return vkTextAntwort("Für diesen Zugang ist der Vereinskalender nicht freigegeben.", 403, corsHeaders);
+  }
+
+  const doc = await readJson(DAV_APPS["vereinskalender"], authHeader, { meta: {}, kategorien: [], termine: [] });
+  const termine = Array.isArray(doc.termine) ? doc.termine : [];
+  const kategorien = Array.isArray(doc.kategorien) ? doc.kategorien : [];
+  const katName = (id) => {
+    const k = kategorien.find((x) => x && x.id === id);
+    return k && k.name ? String(k.name) : "";
+  };
+  const nurOeffentlich = vkAboUmfangNormalisieren(eintrag.umfang) !== VK_ABO_UMFANG_ALLE;
+
+  const dtstamp = vkIcsZeit(Date.now());
+  const zeilen = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//1. SC 1911 Heiligenstadt//Vereinskalender//DE",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    vkIcsFalten("X-WR-CALNAME:" + vkIcsEscape("Vereinskalender SC 1911")),
+    "X-WR-TIMEZONE:Europe/Berlin",
+    // Bitte an das Kalenderprogramm, stuendlich nachzusehen. Apple und Outlook
+    // halten sich daran, Google nicht -- dort bleibt es bei dessen eigenem
+    // Rhythmus von mehreren Stunden. Das ist keine Einstellung, die sich von
+    // hier aus erzwingen laesst.
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H"
+  ];
+
+  for (const t of termine) {
+    if (!t || typeof t !== "object") continue;
+    if (t.privat && nurOeffentlich) continue;
+    if (!vkFeedTerminSichtbar(t, nutzer)) continue;
+    // Die Uid muss ueber Abrufe hinweg stabil bleiben, sonst legt das
+    // Kalenderprogramm bei jeder Aktualisierung neue Eintraege an, statt die
+    // vorhandenen fortzuschreiben.
+    const uidBasis = String(t.id || "") + "@vereinskalender.sc1911-heiligenstadt.de";
+    for (const zeile of vkTerminEvents(t, katName, dtstamp, uidBasis)) zeilen.push(zeile);
+  }
+
+  zeilen.push("END:VCALENDAR");
+  // RFC 5545 schreibt CRLF vor. Mit reinem \n weigern sich einzelne Programme,
+  // die Datei zu lesen.
+  const ics = zeilen.join("\r\n") + "\r\n";
+  return new Response(ics, {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/calendar; charset=utf-8",
+      "Content-Disposition": 'inline; filename="vereinskalender.ics"',
+      // Ein zwischengespeicherter Feed waere ein Kalender, der nicht nachzieht --
+      // genau das, wogegen das ganze Feature gebaut ist.
+      "Cache-Control": "no-store"
+    }
+  });
+}
+
+// ---------- Aktionen: Abo verwalten ----------
+//
+// Alle drei haengen am SEHEN-Recht, nicht am Bearbeiten -- Michel-Entscheidung
+// vom 2026-08-06, bewusste Abweichung von der Flottenregel "Export ab
+// Bearbeiten". Begruendung: der Feed zeigt jedem genau die Termine, die er in der
+// App ohnehin sieht, und der ganze Zweck ist, dass die TRAINER die Vereinstermine
+// im Handy-Kalender haben. Mit dem Bearbeiten-Gate haetten ihn nur
+// Geschaeftsstelle, Foerderung und Fuehrung.
+
+async function vkAboSession(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (!(await userMayAccessTool("vereinskalender", session, env, authHeader))) {
+    return { fehler: json({ error: "Kein Zugriff auf dieses Tool" }, 403, corsHeaders) };
+  }
+  return { session };
+}
+
+async function handleVkAboStatus(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await vkAboSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const doc = await readJson(VK_ABOS_URL, authHeader, leeresVkAboDoc());
+  const abo = vkAboVonNutzer(doc, session.username);
+  if (!abo) return json({ ok: true, aktiv: false }, 200, corsHeaders);
+  return json({
+    ok: true,
+    aktiv: true,
+    umfang: vkAboUmfangNormalisieren(abo.umfang),
+    erstelltAm: abo.erstelltAm || "",
+    ...vkAboUrls(request, abo.token)
+  }, 200, corsHeaders);
+}
+
+async function handleVkAboAnlegen(request, body, env, authHeader, corsHeaders) {
+  const { session, fehler } = await vkAboSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  const umfang = vkAboUmfangNormalisieren(body.umfang);
+  const token = vkNeuerAboToken();
+  await vkAbosMutieren(authHeader, (doc) => {
+    // Ein Nutzer hat hoechstens ein Abo: der alte Token wird beim Neuerzeugen
+    // entwertet. Sonst sammelten sich mit jedem Klick weitere gueltige Links an,
+    // von denen der Nutzer nichts mehr weiss -- und "Link entwerten" wuerde nur
+    // einen davon treffen.
+    for (const alt of Object.keys(doc.byToken)) {
+      const e = doc.byToken[alt];
+      if (e && e.username === session.username) delete doc.byToken[alt];
+    }
+    doc.byToken[token] = { username: session.username, umfang, erstelltAm: new Date().toISOString() };
+  });
+
+  return json({ ok: true, aktiv: true, umfang, ...vkAboUrls(request, token) }, 200, corsHeaders);
+}
+
+async function handleVkAboLoeschen(request, env, authHeader, corsHeaders) {
+  const { session, fehler } = await vkAboSession(request, env, authHeader, corsHeaders);
+  if (fehler) return fehler;
+
+  let entwertet = false;
+  await vkAbosMutieren(authHeader, (doc) => {
+    for (const token of Object.keys(doc.byToken)) {
+      const e = doc.byToken[token];
+      if (e && e.username === session.username) { delete doc.byToken[token]; entwertet = true; }
+    }
+    if (!entwertet) return false; // nichts da -> gar nicht erst schreiben
+  });
+  return json({ ok: true, aktiv: false, entwertet }, 200, corsHeaders);
+}
+
 // ---------- Aktionen: Schulsport-Planer (seit 2026-08-05) ----------
 //
 // Planung und Durchfuehrungsnachweis der Schul-AGs und Ferien-Camps.
@@ -10306,6 +10746,9 @@ const PUNKTE_IGNORIERT = new Set([
   // Laeuft beim Oeffnen des Feedback-Tabs von selbst, ist also eine Anzeige und
   // keine Handlung -- das Einreichen (submit-feedback) zaehlt ohnehin fuer sich.
   "meine-feedbacks",
+  // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
+  // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
+  "vereinskalender-abo-status",
   // Dateien, die eine Liste beim Rendern selbsttaetig nachlaedt
   "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
   "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
