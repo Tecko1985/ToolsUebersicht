@@ -3991,6 +3991,9 @@ function renderFeedbackTab() {
   if (!currentUser) {
     emptyEl.style.display = "block";
     contentEl.style.display = "none";
+    // ⚠️ Leeren, nicht nur ausblenden: die eigenen Einreichungen des vorherigen
+    // Nutzers blieben sonst im DOM lesbar (gleiche Falle wie bei renderNews).
+    meineFeedbacksLeeren();
     return;
   }
   emptyEl.style.display = "none";
@@ -3998,6 +4001,74 @@ function renderFeedbackTab() {
   renderFeedbackToolOptions();
   const wikiCard = document.getElementById("wiki-ask-card");
   if (wikiCard) wikiCard.style.display = isVisibleToUser("vereinswiki", currentUser) ? "block" : "none";
+}
+
+function meineFeedbacksLeeren() {
+  const card = document.getElementById("meine-feedbacks-card");
+  const liste = document.getElementById("meine-feedbacks-liste");
+  if (card) card.style.display = "none";
+  if (liste) liste.innerHTML = "";
+}
+
+// Die eigenen Einreichungen samt Antwort.
+//
+// ⚠️ Aufgerufen wird das aus activateTab("feedback"), NICHT aus
+// renderFeedbackTab(): letzteres laeuft bei jedem Seitenaufbau und nach jeder
+// An-/Abmeldung: ein Nextcloud-Read (200-450 ms) fuer jeden Nutzer bei jedem
+// Aufruf der Startseite, auch wenn er den Tab nie oeffnet.
+async function loadMeineFeedbacks() {
+  const card = document.getElementById("meine-feedbacks-card");
+  const liste = document.getElementById("meine-feedbacks-liste");
+  if (!card || !liste || !currentUser) return;
+
+  // ⚠️ NUR der Worker-Aufruf steht im try, nicht das Rendern. Ein alter Worker
+  // kennt die Aktion noch nicht — dann bleibt die Karte still weg, statt einen
+  // roten Hinweis auf eine Funktion zu zeigen, die es serverseitig noch nicht
+  // gibt (gleiche Linie wie bei push-status). Ein Fehler BEIM RENDERN ist
+  // dagegen ein echter Fehler und soll in der Konsole stehen, statt sich als
+  // "keine Einreichungen" zu tarnen.
+  let data;
+  try {
+    data = await callWorker("meine-feedbacks", {});
+  } catch (e) {
+    card.style.display = "none";
+    liste.innerHTML = "";
+    return;
+  }
+
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  // Wer noch nie etwas eingereicht hat, sieht auch keine leere Karte.
+  if (!entries.length) {
+    card.style.display = "none";
+    liste.innerHTML = "";
+    return;
+  }
+  card.style.display = "block";
+  // Beantwortete zuerst — das ist, weswegen jemand nach der Push-Nachricht
+  // hierherkommt. Innerhalb dessen neueste zuerst.
+  const sorted = entries.slice().sort((a, b) => {
+      if (!!a.antwort !== !!b.antwort) return a.antwort ? -1 : 1;
+    return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+  });
+  liste.innerHTML = sorted.map((f) => {
+    const tool = f.toolId ? toolById(f.toolId) : null;
+    const type = f.type === "wunsch" ? "wunsch" : "feedback";
+    return `
+      <div class="meine-feedback-row">
+        <div class="feedback-item-head">
+          <span class="feedback-badge feedback-badge-${type}">${type === "wunsch" ? "Wunsch" : "Feedback"}</span>
+          <span class="muted">${escapeHtml(fmtDatumKurz(f.createdAt))}</span>
+          ${f.done ? '<span class="muted">· erledigt</span>' : ""}
+        </div>
+        <div class="muted" style="font-size:12px; margin-top:2px;">${tool ? `→ ${escapeHtml(tool.name)}` : "— Allgemein —"}</div>
+        <div class="feedback-item-text">${escapeHtml(f.text || "")}</div>
+        ${f.antwort ? `
+        <div class="meine-feedback-antwort">
+          <div class="meine-feedback-antwort-kopf">Antwort von ${escapeHtml(f.antwortVon || "?")}${f.antwortAm ? " · " + escapeHtml(fmtDatumKurz(f.antwortAm)) : ""}</div>
+          <div class="feedback-item-text">${escapeHtml(f.antwort)}</div>
+        </div>` : '<p class="muted" style="font-size:12px; margin-top:8px;">Noch keine Antwort.</p>'}
+      </div>`;
+  }).join("");
 }
 
 // Fragen ans Toolbox Wiki, direkt hier ganz oben im Tab eingebettet (statt einer
@@ -4182,6 +4253,7 @@ function renderFeedbackAdmin() {
     const tool = f.toolId ? toolById(f.toolId) : null;
     const type = f.type === "wunsch" ? "wunsch" : "feedback";
     const name = (f.vorname && f.nachname) ? `${f.vorname} ${f.nachname}` : (f.username || "?");
+    const bereitsBeantwortet = !!f.antwort;
     return `
       <div class="feedback-admin-row" data-id="${escapeHtml(f.id || "")}">
         <div class="feedback-admin-main">
@@ -4191,6 +4263,14 @@ function renderFeedbackAdmin() {
           </div>
           <div class="muted" style="font-size:12px; margin-top:2px;">${tool ? `→ ${escapeHtml(tool.name)}` : "— Allgemein —"}</div>
           <div class="feedback-item-text">${escapeHtml(f.text || "")}</div>
+          <div class="feedback-antwort-block">
+            <label class="feedback-antwort-label" for="feedback-antwort-${escapeHtml(f.id || "")}">${bereitsBeantwortet ? `Antwort (von ${escapeHtml(f.antwortVon || "?")}${f.antwortAm ? ", " + escapeHtml(fmtDatumKurz(f.antwortAm)) : ""})` : "Antwort an " + escapeHtml(name)}</label>
+            <textarea id="feedback-antwort-${escapeHtml(f.id || "")}" class="feedback-antwort-text" rows="2" maxlength="2000" placeholder="Antwort schreiben — der Einreicher bekommt sie im Tab „Feedback &amp; Hilfe“ und als Push-Nachricht.">${escapeHtml(f.antwort || "")}</textarea>
+            <div class="feedback-antwort-aktionen">
+              <button type="button" class="btn small feedback-antwort-btn">${bereitsBeantwortet ? "Antwort ändern" : "Antworten"}</button>
+              <span class="muted feedback-antwort-status"></span>
+            </div>
+          </div>
         </div>
         <div class="feedback-admin-actions">
           <label class="checkbox-label"><input type="checkbox" class="feedback-done-checkbox" ${f.done ? "checked" : ""} /> Erledigt</label>
@@ -4202,7 +4282,42 @@ function renderFeedbackAdmin() {
     const id = row.dataset.id;
     row.querySelector(".feedback-done-checkbox").addEventListener("change", (e) => toggleFeedbackDone(id, e.target.checked));
     row.querySelector(".feedback-del-btn").addEventListener("click", () => deleteFeedbackEntry(id));
+    row.querySelector(".feedback-antwort-btn").addEventListener("click", () => sendeFeedbackAntwort(id, row));
   });
+}
+
+// Eigene schmale Aktion statt eines Feldes im save-feedback-Array: nur so weiss
+// der Worker, dass wirklich JETZT geantwortet wurde, und schickt genau dann eine
+// Push-Nachricht (siehe handleFeedbackAntwort). Deshalb wird hier auch NICHT
+// persistFeedback gerufen.
+async function sendeFeedbackAntwort(id, row) {
+  const feld = row.querySelector(".feedback-antwort-text");
+  const statusEl = row.querySelector(".feedback-antwort-status");
+  const knopf = row.querySelector(".feedback-antwort-btn");
+  const text = feld.value.trim();
+  const eintrag = feedbackState.find((f) => f.id === id);
+  if (!text && !(eintrag && eintrag.antwort)) {
+    statusEl.textContent = "Bitte erst eine Antwort schreiben.";
+    return;
+  }
+  if (!text && !confirm("Antwort wirklich entfernen? Der Einreicher sieht sie dann nicht mehr.")) return;
+
+  knopf.disabled = true;
+  statusEl.style.color = "";
+  statusEl.textContent = "Wird gesendet …";
+  try {
+    const res = await callWorker("feedback-antwort", { id, text });
+    // Den Server-Stand uebernehmen statt die Eingabe zu spiegeln — antwortVon und
+    // antwortAm setzt erst der Worker.
+    if (res && res.entry) {
+      feedbackState = feedbackState.map((f) => (f.id === id ? res.entry : f));
+    }
+    renderFeedbackAdmin();
+  } catch (err) {
+    knopf.disabled = false;
+    statusEl.style.color = "#c0392b";
+    statusEl.textContent = err.message;
+  }
 }
 
 async function toggleFeedbackDone(id, done) {
@@ -4249,6 +4364,9 @@ function activateTab(name) {
   // beim Tab-Wechsel Sichtbarkeit anhand des geladenen Inhalts neu bewerten.
   const widget = document.getElementById("calendar-widget");
   if (widget) widget.style.display = (name === "uebersicht" && widget.dataset.hasContent === "1") ? "block" : "none";
+  // Eigene Einreichungen erst beim Oeffnen des Tabs holen, nicht beim
+  // Seitenaufbau — siehe loadMeineFeedbacks.
+  if (name === "feedback") loadMeineFeedbacks();
 }
 
 function setupTabs() {
@@ -5662,6 +5780,9 @@ function setupAuthForms() {
         successEl.style.display = "block";
         // Admin sieht die eigene Einreichung sofort in admin-feedback-panel, ohne neu zu laden.
         if (currentUser && currentUser.isAdmin) await loadAndRenderFeedback();
+        // Und jeder sieht sie sofort unter "Meine Einreichungen" — sonst wirkt der
+        // Absenden-Knopf, als waere nichts angekommen.
+        await loadMeineFeedbacks();
       } catch (err) {
         errorEl.textContent = err.message;
         errorEl.style.display = "block";

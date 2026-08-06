@@ -222,6 +222,10 @@
 //   POST { action: "list-feedback" } (admin)                     -> { entries } (alle Feedback-/Wunsch-Einträge)
 //   POST { action: "save-feedback", entries } (admin)            -> ersetzt alle Feedback-Einträge (Array, serverseitig
 //     validiert) — für "erledigt"-Status togglen und Einträge löschen (kompletter Array-Ersatz wie save-news)
+//   POST { action: "feedback-antwort", id, text } (admin)        -> { entry } (schreibt die Antwort an GENAU einen Eintrag
+//     und schickt dem Einreicher eine Push-Nachricht; leerer Text entfernt die Antwort wieder, dann ohne Push)
+//   POST { action: "meine-feedbacks" } (jeder eingeloggte Nutzer) -> { entries } (nur die EIGENEN Einreichungen samt
+//     Antwort — der Weg, auf dem der Einreicher die Antwort liest, zu der die Push-Nachricht führt)
 //   POST { action: "get-admin-stats" } (admin)                   -> { users, trainerGroup, trainervertrag, trainerkodex,
 //     jugendschutz, feedbackOpen, materialbedarfOpen, busplanOpen } — Kennzahlen fürs Admin-Dashboard, aus bestehenden
 //     Datenquellen berechnet (nutzer.json, feedback.json, trainerdaten/trainerkodex/materialbedarf/busplan via
@@ -1110,6 +1114,10 @@ export default {
         return handleListFeedback(request, env, authHeader, corsHeaders);
       case "save-feedback":
         return handleSaveFeedback(request, body, env, authHeader, corsHeaders);
+      case "feedback-antwort":
+        return handleFeedbackAntwort(request, body, env, authHeader, corsHeaders, ctx);
+      case "meine-feedbacks":
+        return handleMeineFeedbacks(request, env, authHeader, corsHeaders);
       case "get-admin-stats":
         return handleGetAdminStats(request, env, authHeader, corsHeaders);
       case "personalakte-overview":
@@ -5784,6 +5792,17 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
     };
     const toolId = String(f.toolId || "").trim().slice(0, 60);
     if (toolId) item.toolId = toolId;
+    // ⚠️ Die Antwortfelder MÜSSEN hier mitwandern, obwohl sie nur über
+    // feedback-antwort entstehen: diese Aktion ersetzt das ganze Array, und der
+    // Client schickt seinen lokalen Stand zurueck. Ohne diese drei Zeilen loescht
+    // ein blosses Setzen des Erledigt-Hakens jede bereits gegebene Antwort --
+    // und der Einreicher haette sie danach nirgends mehr.
+    const antwort = String(f.antwort || "").trim().slice(0, 2000);
+    if (antwort) {
+      item.antwort = antwort;
+      item.antwortVon = f.antwortVon ? String(f.antwortVon).trim().slice(0, 100) : null;
+      item.antwortAm = /^\d{4}-\d{2}-\d{2}T/.test(String(f.antwortAm || "")) ? String(f.antwortAm) : new Date().toISOString();
+    }
     clean.push(item);
   }
 
@@ -5795,6 +5814,92 @@ async function handleSaveFeedback(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ entries: doc.entries }, 200, corsHeaders);
+}
+
+// Antwort an GENAU einen Eintrag (Admin) plus Push an den Einreicher.
+//
+// Bewusst eine eigene schmale Aktion statt eines weiteren Feldes in
+// save-feedback: dort schickt der Client das ganze Array zurueck, und der Worker
+// koennte "neue Antwort" nicht von "unveraendert mitgeschickt" unterscheiden --
+// jedes Setzen eines Erledigt-Hakens loeste dann eine zweite Push-Nachricht zu
+// einer laengst gelesenen Antwort aus. Hier ist der Versand an die Handlung
+// gebunden, die ihn meint.
+//
+// Leerer Text loescht die Antwort wieder (Tippfehler zuruecknehmen) und schickt
+// dann natuerlich nichts.
+async function handleFeedbackAntwort(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const id = String(body.id || "").trim();
+  if (!/^[a-z0-9-]{1,40}$/i.test(id)) return json({ error: "Ungültige Id" }, 400, corsHeaders);
+  const text = String(body.text || "").trim().slice(0, 2000);
+
+  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  doc.version = doc.version || 1;
+  doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+
+  const eintrag = doc.entries.find((f) => f && String(f.id) === id);
+  if (!eintrag) return json({ error: "Eintrag nicht gefunden" }, 404, corsHeaders);
+
+  const antworter = getOwn(session.usersDoc.users, session.username) || {};
+  if (text) {
+    eintrag.antwort = text;
+    eintrag.antwortVon = (antworter.vorname && antworter.nachname)
+      ? `${antworter.vorname} ${antworter.nachname}`
+      : session.username;
+    eintrag.antwortAm = new Date().toISOString();
+  } else {
+    delete eintrag.antwort;
+    delete eintrag.antwortVon;
+    delete eintrag.antwortAm;
+  }
+
+  try {
+    await writeJson(FEEDBACK_URL, authHeader, doc); // unconditional, wie handleSubmitFeedback -- akzeptiertes Race-Risiko
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  // ⚠️ Der Empfaenger kommt aus dem EINTRAG, nie aus dem Request -- sonst
+  // koennte ein Admin die Aktion als beliebigen Nachrichtenversand benutzen.
+  // Nach dem Schreiben, damit ein Push-Fehler die Antwort nicht mitreisst.
+  if (text && eintrag.username) {
+    const kurz = text.length > 140 ? text.slice(0, 140) + "…" : text;
+    pushSenden(env, authHeader, execCtx, [eintrag.username], "feedback",
+      "Antwort auf deine Rückmeldung: " + kurz);
+  }
+
+  return json({ entry: eintrag }, 200, corsHeaders);
+}
+
+// Die eigenen Einreichungen samt Antwort (jeder Angemeldete). Ohne diesen Weg
+// fuehrte die Push-Nachricht ins Leere: der Einreicher sieht sein eigenes
+// Feedback sonst nirgends wieder, list-feedback ist admin-only.
+//
+// ⚠️ Gefiltert wird auf session.username, NICHT auf einen Namen aus dem Body --
+// sonst waere das die admin-only Liste fuer jeden.
+async function handleMeineFeedbacks(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const doc = await readJson(FEEDBACK_URL, authHeader, { version: 1, entries: [] });
+  const alle = Array.isArray(doc.entries) ? doc.entries : [];
+  const meine = alle
+    .filter((f) => f && normalizeUsername(String(f.username || "")) === normalizeUsername(session.username))
+    .map((f) => ({
+      id: f.id,
+      type: f.type,
+      text: f.text,
+      toolId: f.toolId || null,
+      createdAt: f.createdAt,
+      done: !!f.done,
+      antwort: f.antwort || null,
+      antwortVon: f.antwortVon || null,
+      antwortAm: f.antwortAm || null
+    }));
+
+  return json({ entries: meine }, 200, corsHeaders);
 }
 
 // ---------- Aktionen: Admin-Dashboard-Statistik ----------
@@ -9474,7 +9579,12 @@ const PUSH_ANLAESSE = [
   { id: "raumnutzung", titel: "Raumnutzung", ziel: "/raumnutzung/",
     label: "Raumnutzung — fertige Anträge und ihr weiterer Weg" },
   { id: "schulsport", titel: "Schulsport", ziel: "/schulsport/",
-    label: "Schulsport — Termine, die auf meine Rückmeldung warten" }
+    label: "Schulsport — Termine, die auf meine Rückmeldung warten" },
+  // Ziel ist die Uebersicht selbst (wie "unterschriften") -- die Antwort steht
+  // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
+  // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
+  { id: "feedback", titel: "Feedback & Wünsche", ziel: "/ToolsUebersicht/",
+    label: "Feedback & Wünsche — Antworten auf meine Einreichungen" }
 ];
 
 function pushAnlassInfo(id) {
@@ -10193,6 +10303,9 @@ const PUNKTE_IGNORIERT = new Set([
   "push-status", "my-trainerdaten-status", "my-trainercheckliste-status",
   "my-testspielplaner-status", "my-news-reactions", "list-birthdays-today",
   "list-trainer-profiles", "list-tool-editors", "trainerdaten-list-groups",
+  // Laeuft beim Oeffnen des Feedback-Tabs von selbst, ist also eine Anzeige und
+  // keine Handlung -- das Einreichen (submit-feedback) zaehlt ohnehin fuer sich.
+  "meine-feedbacks",
   // Dateien, die eine Liste beim Rendern selbsttaetig nachlaedt
   "nutzerfoto-get", "nutzerfoto-versionen", "dav-file-get", "dav-restricted-get",
   "dokument-datei-get", "news-datei-get", "vereinsaufgabe-datei-get",
@@ -10236,6 +10349,9 @@ const PUNKTE_TATEN = new Map([
   ["vereinsaufgabe-zurueckziehen", PUNKTE_PRO_TAT],
   ["vereinsaufgabe-reaktivieren", PUNKTE_PRO_TAT],
   ["vereinsaufgabe-kommentar", PUNKTE_PRO_TAT],
+  // Antwort auf eine Rueckmeldung -- dasselbe Muster wie ein Kommentar an einer
+  // Vereinsaufgabe: eine echte Rueckmeldung an eine Person, nicht wiederholbar.
+  ["feedback-antwort", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-uebergabe", PUNKTE_PRO_TAT],
   ["vereinsaufgaben-ressort-speichern", PUNKTE_PRO_TAT],
   // Zu-/Absage zu einem Terminvorschlag im Vereinskalender (die Oberflaeche dort

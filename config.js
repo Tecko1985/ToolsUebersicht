@@ -379,6 +379,20 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.1",
+    groups: [
+      {
+        title: "Antworten auf Feedback und Wünsche",
+        items: [
+          "Auf jede Einreichung aus dem Tab „Feedback & Hilfe“ kann jetzt geantwortet werden — direkt beim Eintrag im Einstellungen-Bereich.",
+          "Wer etwas eingereicht hat, findet die Antwort im Tab „Feedback & Hilfe“ unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt). Vorher war eine abgeschickte Rückmeldung für den Absender nirgends mehr zu sehen.",
+          "Zur Antwort kommt eine Push-Nachricht aufs Handy. Sie lässt sich im Tab „Mein Konto“ unter „Benachrichtigungen“ einzeln abschalten wie jeder andere Anlass auch.",
+          "Eine Antwort lässt sich nachträglich ändern; das Leeren des Feldes nimmt sie wieder zurück. Eine erneute Push-Nachricht geht nur raus, wenn wirklich neu geantwortet wurde."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0",
     groups: [
       {

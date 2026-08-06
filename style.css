@@ -759,7 +759,11 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 
 /* ---------- Feedback & Hilfe ---------- */
 
-.feedback-admin-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+/* ⚠️ flex-wrap + der 320px-Basiswert am Textteil: seit dort ein Antwortfeld
+   steht, teilten sich Text und Knopfgruppe am Handy die 303 px Zeilenbreite --
+   fuers Antworten blieben 135 px. Ab dieser Breite bricht die Knopfgruppe unter
+   den Text, am Rechner bleibt alles nebeneinander wie bisher. */
+.feedback-admin-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
 .feedback-admin-row:first-child { border-top: none; }
 .feedback-admin-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .feedback-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
@@ -774,6 +778,38 @@ a.news-item:hover .news-item-title { text-decoration: underline; }
 }
 .feedback-badge-feedback { color: var(--blue); background: var(--blue-light); }
 .feedback-badge-wunsch   { color: var(--gold); background: var(--gold-light); }
+
+/* Antwortfeld im Admin-Panel. ⚠️ min-width:0 am Textteil ist Pflicht: seit hier
+   ein Textarea drinsteht, zieht ein Flex-Kind sonst die ganze Zeile auf seine
+   Wunschbreite und laesst die Seite am Handy seitlich ueberlaufen. */
+.feedback-admin-main { flex: 1 1 320px; min-width: 0; }
+.feedback-antwort-block { margin-top: 10px; }
+.feedback-antwort-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.feedback-antwort-text {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+}
+.feedback-antwort-aktionen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.feedback-antwort-status { font-size: 12px; }
+
+/* Eigene Einreichungen im Feedback-Tab */
+.meine-feedback-row { padding: 12px 0; border-top: 1px solid var(--border); }
+.meine-feedback-row:first-child { border-top: none; }
+.meine-feedback-antwort {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--blue);
+  background: var(--blue-light);
+  border-radius: 0 8px 8px 0;
+}
+.meine-feedback-antwort-kopf { font-size: 12px; font-weight: 700; color: var(--blue); margin-bottom: 3px; }
 
 a.btn-link {
   display: inline-block;
