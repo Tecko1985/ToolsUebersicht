@@ -432,6 +432,10 @@ const ALLOWED_ORIGINS = [
   "http://localhost:8809", // Vereinsaufgaben (Dev-Server)
   "http://localhost:8811", // Ausbildungsplan (Dev-Server)
   "http://localhost:8812", // Schulsport (Dev-Server)
+  // Vereinsverwaltung spricht sonst ihren EIGENEN Worker an (D1) und stand
+  // deshalb nie hier. Seit der Nachwuchs-Anmeldung laedt sie die Nachweise
+  // direkt hierher -- der Dev-Server braucht die Freigabe also doch.
+  "http://localhost:8810", // Vereinsverwaltung (Dev-Server)
   "https://sc1911heiligenstadt.github.io",
   "https://tecko1985.github.io" // alte Adresse bis 2026-08: PWAs mit eigenem SW-Cache laufen dort noch
 ];
@@ -1204,6 +1208,18 @@ export default {
         return handleFahrtenbuchExternFilePut(body, env, authHeader, corsHeaders);
       case "fahrtenbuch-extern-fuehrerschein-put":
         return handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, corsHeaders);
+      // Vereinsverwaltung: Nachweise zur Nachwuchs-Anmeldung (Geburtsurkunde,
+      // Spielerpass, Abmeldung). Das PUT laeuft OHNE Login -- Eltern haben kein
+      // Vereinskonto, gleiche Bauform wie fahrtenbuch-extern-fuehrerschein-put
+      // darueber. Die drei lesenden/loeschenden Wege verlangen eine Sitzung.
+      case "vv-nachweis-put":
+        return handleVvNachweisPut(body, env, authHeader, corsHeaders);
+      case "vv-nachweis-liste":
+        return handleVvNachweisListe(request, body, env, authHeader, corsHeaders);
+      case "vv-nachweis-get":
+        return handleVvNachweisGet(request, body, env, authHeader, corsHeaders);
+      case "vv-nachweis-loeschen":
+        return handleVvNachweisLoeschen(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-belege-list":
         return handleFahrtenbuchBelegeList(request, body, env, authHeader, corsHeaders);
       case "fahrtenbuch-beleg-file-get":
@@ -9016,6 +9032,177 @@ async function handleFahrtenbuchExternFuehrerscheinPut(body, env, authHeader, co
   }
   if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
   return json({ ok: true, owner }, 200, corsHeaders);
+}
+
+// =====================================================================
+// Vereinsverwaltung: Nachweise zur Nachwuchs-Anmeldung
+// =====================================================================
+//
+// Der Verband verlangt zum Spielerlaubnisantrag Anlagen: bei einer
+// Erstausstellung die Geburtsurkunde oder einen Ausweis, beim
+// Vereinswechsel den alten Spielerpass und den Abmeldenachweis.
+//
+// ⚠️ Warum das hier steht und nicht im Vereinsverwaltungs-Worker: der hat
+// KEIN Nextcloud-Binding (seine Daten liegen in D1) und soll auch keines
+// bekommen. Ausweiskopien gehoeren nicht in dieselbe Datenbank wie
+// Beitraege und Buchhaltung -- die naechtliche Sicherung zoege sie sonst
+// jedesmal mit. Der Browser laedt sie deshalb direkt hierher.
+//
+// Ablage: <Vereinsverwaltung>/nachweise/<owner>/<slot>. Der Owner ist ein
+// serverseitig vergebener 32-Hex-Schluessel, KEIN Nutzername -- Eltern
+// haben keinen. Der Unterordner je Antrag ist der Unterschied zum
+// RESTRICTED_FILE_APPS-Muster, das genau eine Datei je Schluessel kennt;
+// hier koennen zwei bis drei Anlagen zusammengehoeren.
+//
+// ⚠️ Der Ordner traegt bewusst KEINEN Namen und kein Datum, obwohl beides
+// beim Hochladen bekannt waere (siehe die lesbare Ablage im Fahrtenbuch).
+// Der Upload passiert VOR dem Absenden und ohne jede Anmeldung -- ein
+// Name aus dem Koerper waere eine ungeprueft uebernommene Personendatei
+// im Pfad und zugleich der uebliche Weg zum Ausbruch aus dem Verzeichnis.
+// Wer die Dateien zuordnen will, geht ueber den Antrag; dort stehen Name
+// und Eingangsdatum.
+const VV_NACHWEIS_DIR =
+  VEREINSAUFGABEN_URL.slice(0, VEREINSAUFGABEN_URL.lastIndexOf("/Tools/")) +
+  "/Tools/Vereinsverwaltung/nachweise";
+
+// Feste Weissliste. Der Slot wird Teil des Dateinamens -- ein freier Wert
+// waere der zweite Ausbruchsweg neben dem Owner.
+const VV_NACHWEIS_SLOTS = new Set([
+  "geburtsurkunde", "spielerpass", "abmeldung", "namensaenderung"
+]);
+
+const VV_NACHWEIS_OWNER_RE = /^[0-9a-f]{32}$/;
+
+// Wer die Nachweise sehen darf. Der Gateway kennt die Rollen der
+// Vereinsverwaltung nicht -- die liegen in deren D1 -- und benutzt
+// deshalb die naechstliegende Entsprechung: das Bearbeiten-Recht auf der
+// Kachel. Administrieren schliesst es serverseitig ein.
+async function vvNachweisDarfSehen(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return { fehler: json({ error: "Nicht angemeldet" }, 401, corsHeaders) };
+  if (!(await resolveEditPermission("vereinsverwaltung", session, env, authHeader))) {
+    return { fehler: json({ error: "Nicht berechtigt" }, 403, corsHeaders) };
+  }
+  return { session };
+}
+
+function vvNachweisPfad(owner, slot) {
+  return VV_NACHWEIS_DIR + "/" + owner + "/" + slot;
+}
+
+async function handleVvNachweisPut(body, env, authHeader, corsHeaders) {
+  const slot = String(body.slot || "");
+  if (!VV_NACHWEIS_SLOTS.has(slot)) {
+    return json({ error: "Unbekannte Art des Nachweises" }, 400, corsHeaders);
+  }
+
+  // Wie beim Fuehrerschein: Erst-Upload ohne owner, der Server vergibt ihn
+  // und gibt ihn zurueck. Jeder weitere Nachweis desselben Antrags schickt
+  // den erhaltenen Wert mit, damit alle Anlagen zusammen liegen.
+  let owner = String(body.owner || "");
+  if (owner && !VV_NACHWEIS_OWNER_RE.test(owner)) {
+    return json({ error: "Ungueltiger Nachweis-Schluessel" }, 400, corsHeaders);
+  }
+  if (!owner) owner = crypto.randomUUID().replace(/-/g, "");
+
+  let bytes;
+  try {
+    bytes = base64ToBytes(String(body.dataBase64 || ""));
+  } catch (_) {
+    return json({ error: "Datei-Inhalt ist kein gültiges base64" }, 400, corsHeaders);
+  }
+  if (bytes.length === 0) return json({ error: "Leere Datei" }, 400, corsHeaders);
+  if (bytes.length > MAX_FILE_BYTES) return json({ error: "Datei zu groß" }, 413, corsHeaders);
+
+  let ctype = String(body.contentType || "").replace(/[^\x20-\x7e]/g, "");
+  if (!ctype || ctype.length > 200) ctype = "application/octet-stream";
+
+  const dir = VV_NACHWEIS_DIR + "/" + owner;
+  const fileUrl = vvNachweisPfad(owner, slot);
+  const headers = { Authorization: authHeader, "Content-Type": ctype };
+  let resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  if (resp.status === 409 || resp.status === 404) {
+    // Zwei Ebenen: der Sammelordner kann genauso fehlen wie der des
+    // einzelnen Antrags. ensureCollection legt beide an.
+    await ensureCollection(VV_NACHWEIS_DIR, authHeader, 0);
+    await ensureCollection(dir, authHeader, 0);
+    resp = await fetch(fileUrl, { method: "PUT", headers, body: bytes });
+  }
+  if (!resp.ok) return json({ error: `Nextcloud PUT ${resp.status}` }, 502, corsHeaders);
+  return json({ ok: true, owner, slot }, 200, corsHeaders);
+}
+
+// Welche Anlagen liegen zu einem Antrag vor? Der Client zeigt danach seine
+// Knoepfe -- ein Knopf, hinter dem nichts liegt, ist schlimmer als keiner.
+// Kein PROPFIND: die Slot-Liste ist kurz und fest, ein HEAD je Slot ist
+// billiger als das Auswerten einer Multistatus-Antwort ohne XML-Parser.
+async function handleVvNachweisListe(request, body, env, authHeader, corsHeaders) {
+  const gate = await vvNachweisDarfSehen(request, env, authHeader, corsHeaders);
+  if (gate.fehler) return gate.fehler;
+
+  const owner = String(body.owner || "");
+  if (!VV_NACHWEIS_OWNER_RE.test(owner)) {
+    return json({ error: "Ungueltiger Nachweis-Schluessel" }, 400, corsHeaders);
+  }
+
+  const vorhanden = [];
+  for (const slot of VV_NACHWEIS_SLOTS) {
+    const r = await fetch(vvNachweisPfad(owner, slot), {
+      method: "HEAD", headers: { Authorization: authHeader }
+    });
+    if (r.ok) vorhanden.push({ slot, groesse: Number(r.headers.get("Content-Length") || 0) });
+  }
+  return json({ ok: true, owner, nachweise: vorhanden }, 200, corsHeaders);
+}
+
+async function handleVvNachweisGet(request, body, env, authHeader, corsHeaders) {
+  const gate = await vvNachweisDarfSehen(request, env, authHeader, corsHeaders);
+  if (gate.fehler) return gate.fehler;
+
+  const owner = String(body.owner || "");
+  const slot = String(body.slot || "");
+  if (!VV_NACHWEIS_OWNER_RE.test(owner) || !VV_NACHWEIS_SLOTS.has(slot)) {
+    return json({ error: "Unbekannter Nachweis" }, 400, corsHeaders);
+  }
+
+  const resp = await fetch(vvNachweisPfad(owner, slot), {
+    headers: { Authorization: authHeader }
+  });
+  if (resp.status === 404) return json({ error: "Nachweis nicht gefunden" }, 404, corsHeaders);
+  if (!resp.ok) return json({ error: `Nextcloud GET ${resp.status}` }, 502, corsHeaders);
+
+  // Rohe Bytes mit dem Typ von Nextcloud, wie dav-restricted-get.
+  const kopf = new Headers(corsHeaders);
+  kopf.set("Content-Type", resp.headers.get("Content-Type") || "application/octet-stream");
+  return new Response(resp.body, { status: 200, headers: kopf });
+}
+
+// Der Verband verlangt Aufbewahrung beim Verein fuer mindestens zwei
+// Jahre -- geloescht wird hier deshalb nicht im Alltag, sondern auf
+// ausdrueckliche Anforderung. Darum GLOBALER Admin und nicht bloss das
+// Bearbeiten-Recht, das die ganze Geschaeftsstelle hat.
+async function handleVvNachweisLoeschen(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  if (!session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const owner = String(body.owner || "");
+  if (!VV_NACHWEIS_OWNER_RE.test(owner)) {
+    return json({ error: "Ungueltiger Nachweis-Schluessel" }, 400, corsHeaders);
+  }
+  const slot = String(body.slot || "");
+  if (slot && !VV_NACHWEIS_SLOTS.has(slot)) {
+    return json({ error: "Unbekannte Art des Nachweises" }, 400, corsHeaders);
+  }
+
+  // Ohne slot faellt der ganze Ordner des Antrags weg -- der Regelfall,
+  // wenn jemand die Loeschung seiner Unterlagen verlangt.
+  const ziel = slot ? vvNachweisPfad(owner, slot) : VV_NACHWEIS_DIR + "/" + owner;
+  const resp = await fetch(ziel, { method: "DELETE", headers: { Authorization: authHeader } });
+  if (!resp.ok && resp.status !== 404) {
+    return json({ error: `Nextcloud DELETE ${resp.status}` }, 502, corsHeaders);
+  }
+  return json({ ok: true }, 200, corsHeaders);
 }
 
 // Listet per WebDAV PROPFIND (Depth:1) den Belegeingang-Ordner und liest nur die
