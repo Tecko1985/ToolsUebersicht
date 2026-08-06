@@ -59,6 +59,20 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    // Eigene Kachel für den öffentlichen Teil der Vereinsverwaltung -- dasselbe
+    // Muster wie `fahrtenbuch-extern` neben `fahrtenbuch`. Sie führt auf eine
+    // Seite OHNE Anmeldung: wer Mitglied werden will, hat noch kein Konto.
+    // ⚠️ Sie gehört deshalb im Sichtbarkeits-Panel auf "Öffentlich" -- steht sie
+    // auf "eingeloggt", erreicht sie genau die Leute nicht, für die sie da ist.
+    id: "mitgliedsantrag",
+    name: "Mitgliedsantrag",
+    description: "Aufnahmeantrag zum Ausfüllen und Unterschreiben am Handy — ohne Anmeldung, ohne Ausdruck. Der Antrag geht an die Geschäftsstelle; über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand.",
+    url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/antrag.html",
+    icon: "🙋",
+    category: "Verein",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "vereinsaufgaben",
     name: "Vereinsaufgaben",
     description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
@@ -367,6 +381,14 @@ const APP_CHANGELOG = [
   {
     version: "1.0",
     groups: [
+      {
+        title: "Neue Kachel: Mitgliedsantrag",
+        items: [
+          "Der Aufnahmeantrag der Vereinsverwaltung hat eine eigene Kachel bekommen — sie führt direkt auf das Formular zum Ausfüllen und Unterschreiben am Handy.",
+          "Die Kachel ist bewusst öffentlich: wer Mitglied werden will, hat noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
+          "Ausgefüllt und unterschrieben geht der Antrag an die Geschäftsstelle. Über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand — der Antrag allein ist noch keine Mitgliedschaft."
+        ]
+      },
       {
         title: "Neues Werkzeug: Schulsport",
         items: [
