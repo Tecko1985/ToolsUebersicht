@@ -73,6 +73,24 @@ const TOOLS = [
     devices: ["mobile", "desktop"]
   },
   {
+    // Zweite öffentliche Kachel der Vereinsverwaltung, neben
+    // `mitgliedsantrag`. Eigene Seite statt einer Weiche im Antrag
+    // (Michel-Entscheidung 2026-08-06): Eltern sollen einen Link bekommen,
+    // hinter dem alles steht, was der Verein für ein neues Nachwuchskind
+    // braucht — nicht ein allgemeines Formular mit einem Fußball-Abschnitt.
+    // ⚠️ Gehört wie der Mitgliedsantrag im Sichtbarkeits-Panel auf
+    // "Öffentlich". Eltern eines Neuzugangs haben kein Vereinskonto; steht
+    // sie auf "eingeloggt", erreicht sie genau die Leute nicht, für die sie
+    // da ist.
+    id: "nachwuchs-anmeldung",
+    name: "Anmeldung Nachwuchs",
+    description: "Neue Jugendspieler in einem Durchgang anmelden: Aufnahmeantrag nach § 4 und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband, unterschrieben am Handy. Nachweise wie Geburtsurkunde oder Spielerpass lassen sich als Foto mitschicken.",
+    url: "https://sc1911heiligenstadt.github.io/vereinsverwaltung/nachwuchs.html",
+    icon: "⚽",
+    category: "Verein",
+    devices: ["mobile", "desktop"]
+  },
+  {
     id: "vereinsaufgaben",
     name: "Vereinsaufgaben",
     description: "Aufgaben an Funktionäre vergeben — mit verbindlicher Frist, Zuständigkeit über Ressorts, Abnahme und dauerhaft einsehbarer Historie. Zeigt auf einen Blick, wer was offen hat und wo etwas liegen bleibt.",
@@ -378,6 +396,21 @@ const NEWS = [];
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
 const APP_CHANGELOG = [
+  {
+    version: "1.2",
+    groups: [
+      {
+        title: "Neue Kachel: Anmeldung Nachwuchs",
+        items: [
+          "Neue Jugendspieler werden über einen Link angemeldet — Aufnahmeantrag und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband entstehen daraus zusammen. Zweimal dieselben Angaben einzutragen entfällt.",
+          "Die Kachel ist wie der Mitgliedsantrag öffentlich: Eltern eines Neuzugangs haben noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
+          "Erstausstellung, Vereinswechsel, Rückkehrer und Namensänderung stehen zur Wahl. Beim Wechsel fragt das Formular nach dem bisherigen Verein und danach, ob die Abmeldung schon erfolgt ist oder der Verein sie übernehmen soll.",
+          "Die Nachweise, die der Verband als Anlage verlangt, lassen sich als Foto mit dem Handy mitschicken. Sie liegen getrennt von den übrigen Daten und sind nur für die Geschäftsstelle einsehbar.",
+          "Aus der eingegangenen Anmeldung erzeugt die Geschäftsstelle das ausgefüllte Verbandsformular auf Knopfdruck — mit den Unterschriften darauf. Zu tun bleibt der Vereinsstempel."
+        ]
+      }
+    ]
+  },
   {
     version: "1.1",
     groups: [
