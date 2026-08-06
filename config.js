@@ -397,6 +397,19 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.3",
+    groups: [
+      {
+        title: "Neue Kachel: Mitgliedsantrag",
+        items: [
+          "Der Aufnahmeantrag der Vereinsverwaltung hat eine eigene Kachel bekommen — sie führt direkt auf das Formular zum Ausfüllen und Unterschreiben am Handy.",
+          "Die Kachel ist bewusst öffentlich: wer Mitglied werden will, hat noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
+          "Ausgefüllt und unterschrieben geht der Antrag an die Geschäftsstelle. Über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand — der Antrag allein ist noch keine Mitgliedschaft."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.2",
     groups: [
       {
@@ -428,14 +441,6 @@ const APP_CHANGELOG = [
   {
     version: "1.0",
     groups: [
-      {
-        title: "Neue Kachel: Mitgliedsantrag",
-        items: [
-          "Der Aufnahmeantrag der Vereinsverwaltung hat eine eigene Kachel bekommen — sie führt direkt auf das Formular zum Ausfüllen und Unterschreiben am Handy.",
-          "Die Kachel ist bewusst öffentlich: wer Mitglied werden will, hat noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
-          "Ausgefüllt und unterschrieben geht der Antrag an die Geschäftsstelle. Über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand — der Antrag allein ist noch keine Mitgliedschaft."
-        ]
-      },
       {
         title: "Neues Werkzeug: Schulsport",
         items: [
