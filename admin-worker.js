@@ -1022,6 +1022,12 @@ export default {
         return handlePushAnlaesseSetzen(request, body, env, authHeader, corsHeaders);
       case "push-test":
         return handlePushTest(request, env, authHeader, corsHeaders);
+      // Von Hand verschickte Mitteilung an alle Geraete (seit 2026-08-06).
+      // Admin-only, siehe Kommentar am Handler.
+      case "push-rundnachricht":
+        return handlePushRundnachricht(request, body, env, authHeader, corsHeaders, ctx);
+      case "push-rundnachricht-verlauf":
+        return handlePushRundnachrichtVerlauf(request, env, authHeader, corsHeaders);
       case "vereinskalender-termin-push":
         return handleVkTerminPush(request, body, env, authHeader, corsHeaders, ctx);
       case "vorgang-push":
@@ -10330,7 +10336,14 @@ const PUSH_ANLAESSE = [
   // im Tab "Feedback & Hilfe", nicht in einer der verlinkten Apps. Deshalb traegt
   // hierfuer auch keine Kachel in config.js das 🔔-Kennzeichen.
   { id: "feedback", titel: "Feedback & Wünsche", ziel: "/ToolsUebersicht/",
-    label: "Feedback & Wünsche — Antworten auf meine Einreichungen" }
+    label: "Feedback & Wünsche — Antworten auf meine Einreichungen" },
+  // Von Hand ausgeloest im Einstellungen-Tab (push-rundnachricht, seit
+  // 2026-08-06). Der einzige Anlass, dessen TITEL nicht von hier kommt: bei
+  // einer freien Mitteilung ist die Ueberschrift Teil der Nachricht. Der
+  // Eintrag steht trotzdem hier, weil er den Schalter im Konto-Tab traegt und
+  // das Ziel festlegt -- der Aufrufer bestimmt nur den Titel, sonst nichts.
+  { id: "mitteilung", titel: "SC 1911 Heiligenstadt", ziel: "/ToolsUebersicht/",
+    label: "Mitteilungen des Vereins — von Hand verschickt, nur bei besonderen Anlässen" }
 ];
 
 function pushAnlassInfo(id) {
@@ -10830,6 +10843,157 @@ async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders
   return json({ ok: true, infrage: empfaenger.length }, 200, corsHeaders);
 }
 
+// ---------- Rundnachricht von Hand (seit 2026-08-06) ----------
+//
+// Michel-Wunsch: eine Nachricht selbst formulieren und sofort an alle Geraete
+// schicken -- fuer die Faelle, die keine App und keinen Anlass haben (Training
+// faellt aus, Halle gesperrt, kurzfristige Absage).
+//
+// ⚠️ Der einzige Push-Weg der Flotte, dessen Empfaenger NICHT aus einem
+// Datensatz kommen, sondern aus einer Auswahl. Deshalb haengt er am globalen
+// Admin-Recht und an keiner Tool-Berechtigung: es gibt kein Tool, dessen
+// Bearbeiten-Recht "darf die ganze Belegschaft anschreiben" bedeuten soll.
+//
+// Der Text ist frei -- und damit der einzige Push-Text der Flotte, der auf einem
+// fremden Sperrbildschirm stehen kann. Das ist bewusst so (der Absender
+// entscheidet, was hineingehoert) und der Grund fuer den Hinweis im Panel.
+const PUSH_RUNDNACHRICHTEN_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/push-rundnachrichten.json";
+
+// Eigene Datei statt eines Feldes in push-abos.json, aus demselben Grund, aus
+// dem die Abos nicht in nutzer.json stehen: push-abos.json wird bei JEDEM
+// Versand der Flotte gelesen. Ein mitwachsendes Protokoll wuerde jede
+// Terminmeldung mitbezahlen lassen, obwohl es nur zwei Leser hat (das Panel und
+// die Doppelklick-Sperre).
+const PUSH_RUND_VERLAUF_MAX = 30;
+const PUSH_RUND_TITEL_MAX = 100;   // wie im push-worker, dort wird hart gekuerzt
+const PUSH_RUND_TEXT_MAX = 200;    // ebenso -- laenger kommt gar nicht erst an
+const PUSH_RUND_SPERRE_MS = 15000;
+
+function leereRundDoc() { return { version: 1, eintraege: [] }; }
+
+// Wer ueberhaupt in Frage kommt. Archivierte Konten sind draussen; Spieler nur
+// im Kreis "alle".
+//
+// ⚠️ Der Absender ist bewusst NICHT ausgenommen -- anders als bei allen anderen
+// Anlaessen. Dort weiss der Ausloeser ohnehin, was er getan hat; hier ist die
+// eigene Nachricht auf dem eigenen Handy der einzige Zustellnachweis, den es
+// gibt (der Versand laeuft in waitUntil und meldet nichts zurueck).
+function rundEmpfaenger(usersDoc, kreis) {
+  const users = (usersDoc && usersDoc.users) || {};
+  const out = [];
+  for (const schluessel of Object.keys(users)) {
+    const u = users[schluessel];
+    if (!u || u.archiviert) continue;
+    if (kreis !== "alle" && !istPersonal(u)) continue;
+    const name = normalizeUsername(u.username || schluessel);
+    if (name) out.push(name);
+  }
+  return out;
+}
+
+// Zaehlt, wen es WIRKLICH erreicht: Gerät angemeldet und Schalter an. Die
+// uebrigen Push-Aktionen melden nur die in Frage Kommenden zurueck -- hier
+// waere das irrefuehrend, weil vor dem Absenden gerade die echte Reichweite die
+// Frage ist ("gehen jetzt 60 Handys an oder 3?").
+function rundErreichbar(doc, empfaenger) {
+  let personen = 0;
+  let geraete = 0;
+  const gesehen = {};
+  for (const roh of empfaenger) {
+    const u = normalizeUsername(String(roh || ""));
+    if (!u || gesehen[u]) continue;
+    gesehen[u] = true;
+    if (!pushAnlaesseFuer(doc, u).mitteilung) continue;
+    const abos = pushAbosFuer(doc, u);
+    if (!abos.length) continue;
+    personen++;
+    geraete += abos.length;
+  }
+  return { personen, geraete };
+}
+
+async function handlePushRundnachricht(request, body, env, authHeader, corsHeaders, execCtx) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const titel = String((body && body.titel) || "").trim().slice(0, PUSH_RUND_TITEL_MAX);
+  const text = String((body && body.text) || "").trim().slice(0, PUSH_RUND_TEXT_MAX);
+  if (!titel) return json({ error: "Titel fehlt" }, 400, corsHeaders);
+  if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
+
+  const kreis = (body && body.kreis === "alle") ? "alle" : "personal";
+
+  const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  const empfaenger = rundEmpfaenger(session.usersDoc, kreis);
+  const reichweite = rundErreichbar(abosDoc, empfaenger);
+
+  // ⚠️ Doppelklick-Sperre, nicht Missbrauchsschutz. Der Versand laeuft in
+  // waitUntil und antwortet sofort -- ein zweiter Klick auf einen langsam
+  // reagierenden Knopf schickt sonst dieselbe Nachricht ein zweites Mal an
+  // dieselben Geraete, und zurueckholen laesst sich eine Push-Nachricht nicht.
+  // Nur bei GLEICHEM Text: eine zweite, andere Meldung darf sofort raus.
+  const rundDoc = await readJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc());
+  const bisher = Array.isArray(rundDoc.eintraege) ? rundDoc.eintraege : [];
+  const letzte = bisher[0];
+  if (letzte && letzte.titel === titel && letzte.text === text) {
+    const her = Date.now() - Date.parse(String(letzte.am || "")) ;
+    if (her >= 0 && her < PUSH_RUND_SPERRE_MS) {
+      return json({ error: "Diese Nachricht ist gerade eben schon rausgegangen." }, 409, corsHeaders);
+    }
+  }
+
+  pushSenden(env, authHeader, execCtx, empfaenger, "mitteilung", text, { titel });
+
+  // Protokoll. Ein Versand an alle Handys des Vereins soll nachlesbar sein --
+  // wer, wann, was. Fehler beim Schreiben duerfen den Versand nicht kippen: er
+  // ist zu diesem Zeitpunkt bereits beauftragt (gleiche Linie wie pushSenden).
+  const eintrag = {
+    id: crypto.randomUUID().replace(/-/g, ""),
+    titel, text, kreis,
+    von: normalizeUsername(session.username),
+    am: new Date().toISOString(),
+    personen: reichweite.personen,
+    geraete: reichweite.geraete
+  };
+  try {
+    rundDoc.eintraege = [eintrag].concat(bisher).slice(0, PUSH_RUND_VERLAUF_MAX);
+    rundDoc.version = 1;
+    await writeJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, rundDoc);
+  } catch (e) {
+    console.error("Rundnachricht-Protokoll fehlgeschlagen: " + (e && e.message ? e.message : e));
+  }
+
+  return json({
+    ok: true,
+    infrage: empfaenger.length,
+    personen: reichweite.personen,
+    geraete: reichweite.geraete,
+    eintrag
+  }, 200, corsHeaders);
+}
+
+// Verlauf UND Reichweite in einer Aktion. Beides braucht dieselben zwei Reads,
+// und beides will das Panel im selben Moment -- zwei Aktionen waeren vier Reads
+// fuer eine Ansicht.
+async function handlePushRundnachrichtVerlauf(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
+  const rundDoc = await readJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc());
+  const eintraege = Array.isArray(rundDoc.eintraege) ? rundDoc.eintraege : [];
+
+  return json({
+    ok: true,
+    verlauf: eintraege.slice(0, PUSH_RUND_VERLAUF_MAX),
+    erreichbar: {
+      personal: rundErreichbar(abosDoc, rundEmpfaenger(session.usersDoc, "personal")),
+      alle: rundErreichbar(abosDoc, rundEmpfaenger(session.usersDoc, "alle"))
+    },
+    grenzen: { titel: PUSH_RUND_TITEL_MAX, text: PUSH_RUND_TEXT_MAX }
+  }, 200, corsHeaders);
+}
+
 // ---------- Versand ----------
 
 // Erteilt den Versandauftrag an den Worker "push". Fehler werden geschluckt,
@@ -10839,7 +11003,13 @@ async function handleFotoauftragPush(request, body, env, authHeader, corsHeaders
 // Versand DIE Handlung ist.
 //
 // ⚠️ Diese Funktion wirft nie. Wer sie ruft, muss nichts abfangen.
-function pushSenden(env, authHeader, ctx, empfaenger, anlass, text) {
+//
+// `optionen.titel` ueberschreibt die fette Zeile aus PUSH_ANLAESSE. Gebraucht
+// wird das an genau EINER Stelle -- der von Hand verschickten Rundnachricht, wo
+// die Ueberschrift Teil der Nachricht ist. ⚠️ Kein weiterer Aufrufer sollte das
+// benutzen: der feste Titel je Anlass ist der Grund, warum eine Nachricht auf
+// dem Sperrbildschirm erkennbar bleibt, ohne Namen zu verraten.
+function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
   // Nicht konfiguriert = still aus. So laesst sich landingpage deployen, bevor
   // der push-Worker existiert; die Reihenfolge im Entwurf sieht es andersherum
   // vor, aber ein Fehlschlag darf keine Zuweisung mitreissen.
@@ -10866,7 +11036,9 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text) {
       if (!ziele.length) return;
 
       const nachricht = {
-        titel: info.titel,
+        // Ein leerer Titel-Wunsch faellt auf den Anlass zurueck, statt eine
+        // Nachricht ohne Ueberschrift zu erzeugen.
+        titel: String((optionen && optionen.titel) || "").trim() || info.titel,
         text: String(text || ""),
         ziel: info.ziel
       };
@@ -11068,7 +11240,11 @@ const PUNKTE_IGNORIERT = new Set([
   "aufgaben-load", "dokumente-load",
   // Die Punkte-Aktionen selbst -- sonst zaehlt das Nachsehen des eigenen Standes
   // als Aktivitaet, und wer oft genug nachschaut, verdient daran.
-  "meine-punkte", "punkte-opt-out", "aktivitaet-auswertung"
+  "meine-punkte", "punkte-opt-out", "aktivitaet-auswertung",
+  // Laeuft beim Aufklappen des Rundnachricht-Panels von selbst und liefert nur
+  // Verlauf und Reichweite. Das Absenden (push-rundnachricht) ist die Handlung
+  // und zaehlt weiter mit.
+  "push-rundnachricht-verlauf"
 ]);
 
 // Katalog echter Abschluesse -> volle Punkte je Vorkommen. Alles, was hier NICHT

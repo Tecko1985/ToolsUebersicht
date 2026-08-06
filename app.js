@@ -4421,6 +4421,17 @@ function setupTabs() {
   document.getElementById("btn-materialcontainer-save").addEventListener("click", speichereMaterialcontainerCode);
   document.getElementById("btn-aufgaben-gruppen-save").addEventListener("click", speichereAufgabenGruppen);
 
+  // Nachricht an alle Handys. ⚠️ Der Verlauf wird beim AUFKLAPPEN geholt, nicht
+  // beim Seitenaufbau -- zwei Nextcloud-Reads fuer ein Panel, das meistens
+  // niemand oeffnet. Das toggle-Ereignis feuert auch beim Zuklappen, deshalb die
+  // Abfrage auf .open.
+  document.getElementById("admin-rundnachricht-panel").addEventListener("toggle", (e) => {
+    if (e.target.open) rundnachrichtPanelLaden();
+  });
+  document.getElementById("btn-rund-senden").addEventListener("click", sendeRundnachricht);
+  document.getElementById("rund-kreis").addEventListener("change", rundnachrichtReichweiteZeigen);
+  document.getElementById("rund-text").addEventListener("input", rundnachrichtZaehler);
+
   const jumpToAdminPanel = (panelId) => {
     activateTab("admin");
     const panel = document.getElementById(panelId);
@@ -5293,6 +5304,7 @@ function renderAdminPanels() {
   document.getElementById("admin-news-panel").style.display = "none";
   document.getElementById("admin-feedback-panel").style.display = "none";
   document.getElementById("admin-materialcontainer-panel").style.display = "none";
+  document.getElementById("admin-rundnachricht-panel").style.display = "none";
   document.getElementById("admin-aufgaben-panel").style.display = "none";
   document.getElementById("push-panel").style.display = "none";
   document.getElementById("punkte-panel").style.display = "none";
@@ -5317,6 +5329,7 @@ function renderAdminPanels() {
       document.getElementById("admin-news-panel").style.display = "block";
       document.getElementById("admin-feedback-panel").style.display = "block";
       document.getElementById("admin-materialcontainer-panel").style.display = "block";
+      document.getElementById("admin-rundnachricht-panel").style.display = "block";
       document.getElementById("admin-aufgaben-panel").style.display = "block";
       document.getElementById("btn-admin-dashboard-open").style.display = "inline-flex";
     }
@@ -5421,6 +5434,134 @@ async function speichereMaterialcontainerCode() {
   } catch (e) {
     errEl.textContent = e.message;
     errEl.style.display = "block";
+  }
+}
+
+// ---------- Nachricht an alle Handys (seit 2026-08-06) ----------
+//
+// Gegenstueck zum Push-Panel im Konto-Tab: dort stellt jeder seinen eigenen
+// Empfang ein, hier verschickt ein Admin an alle.
+
+// Zuletzt vom Worker gemeldete Reichweite je Empfaengerkreis. Wird beim
+// Aufklappen geholt und beim Umschalten des Dropdowns nur noch angezeigt --
+// ein Read je Klick auf ein Auswahlfeld waere Verschwendung.
+let rundErreichbarCache = null;
+
+// ⚠️ Haengt am Aufklappen des Panels, NICHT an renderAdminPanels(). Der Aufruf
+// kostet zwei Nextcloud-Reads (Abos + Verlauf) und wuerde sonst bei jedem
+// Seitenaufbau und nach jeder An-/Abmeldung eines Admins mitlaufen, auch wenn
+// niemand eine Nachricht schicken will. Gleiche Ueberlegung wie bei
+// loadMeineFeedbacks().
+async function rundnachrichtPanelLaden() {
+  const errEl = document.getElementById("rund-error");
+  const verlaufEl = document.getElementById("rund-verlauf");
+  if (!verlaufEl) return;
+  rundnachrichtZaehler();
+
+  // ⚠️ Nur der Worker-Aufruf steht im try. Kennt ein aelterer Worker die Aktion
+  // noch nicht, bleibt das Panel bedienbar (Senden meldet dann selbst) -- ein
+  // Fehler BEIM RENDERN soll dagegen in der Konsole stehen.
+  let data;
+  try {
+    data = await callWorker("push-rundnachricht-verlauf", {});
+  } catch (e) {
+    console.warn("Rundnachricht-Verlauf nicht verfügbar", e && e.message ? e.message : e);
+    document.getElementById("rund-reichweite").textContent = "";
+    verlaufEl.innerHTML = "";
+    return;
+  }
+  if (errEl) errEl.style.display = "none";
+
+  rundErreichbarCache = (data && data.erreichbar) || null;
+  rundnachrichtReichweiteZeigen();
+  rundnachrichtVerlaufRendern((data && data.verlauf) || []);
+}
+
+function rundnachrichtReichweiteZeigen() {
+  const el = document.getElementById("rund-reichweite");
+  if (!el) return;
+  const kreis = document.getElementById("rund-kreis").value === "alle" ? "alle" : "personal";
+  const zahlen = rundErreichbarCache && rundErreichbarCache[kreis];
+  if (!zahlen) { el.textContent = ""; return; }
+  if (!zahlen.personen) {
+    el.textContent = "Erreicht im Moment niemanden — in diesem Kreis hat noch niemand Benachrichtigungen eingeschaltet.";
+    return;
+  }
+  el.textContent = "Erreicht im Moment "
+    + zahlen.personen + (zahlen.personen === 1 ? " Person" : " Personen")
+    + " auf " + zahlen.geraete + (zahlen.geraete === 1 ? " Gerät." : " Geräten.");
+}
+
+function rundnachrichtVerlaufRendern(liste) {
+  const el = document.getElementById("rund-verlauf");
+  if (!el) return;
+  if (!Array.isArray(liste) || !liste.length) { el.innerHTML = ""; return; }
+  el.innerHTML = '<details class="collapsible"><summary>Zuletzt verschickt ('
+    + liste.length + ')</summary><div class="rund-verlauf-liste">'
+    + liste.map((e) => {
+        const d = new Date((e && e.am) || "");
+        const wann = isNaN(d.getTime()) ? "" : d.toLocaleString("de-DE");
+        const kreis = (e && e.kreis === "alle") ? "alle Konten" : "Mitarbeiter";
+        return '<div class="rund-verlauf-eintrag">'
+          + '<strong>' + escapeHtml(e && e.titel) + '</strong>'
+          + '<div>' + escapeHtml(e && e.text) + '</div>'
+          + '<div class="muted" style="font-size:12px;">'
+          + escapeHtml(wann) + ' · ' + escapeHtml(String((e && e.von) || ""))
+          + ' · an ' + kreis + ' · ' + Number((e && e.personen) || 0) + ' Personen, '
+          + Number((e && e.geraete) || 0) + ' Geräte</div></div>';
+      }).join("")
+    + "</div></details>";
+}
+
+function rundnachrichtZaehler() {
+  const el = document.getElementById("rund-zaehler");
+  if (!el) return;
+  const rest = 200 - document.getElementById("rund-text").value.length;
+  el.textContent = "Noch " + rest + " Zeichen. Längere Texte schneiden die Handys ohnehin ab.";
+}
+
+async function sendeRundnachricht() {
+  const errEl = document.getElementById("rund-error");
+  const okEl = document.getElementById("rund-success");
+  const knopf = document.getElementById("btn-rund-senden");
+  errEl.style.display = "none";
+  okEl.style.display = "none";
+
+  const titel = document.getElementById("rund-titel").value.trim();
+  const text = document.getElementById("rund-text").value.trim();
+  const kreis = document.getElementById("rund-kreis").value === "alle" ? "alle" : "personal";
+  if (!titel || !text) {
+    errEl.textContent = "Überschrift und Text werden beide gebraucht.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  // ⚠️ Sicherheitsabfrage mit der ECHTEN Zahl, nicht mit "an alle". Eine
+  // Push-Nachricht laesst sich nicht zurueckholen, und der Unterschied zwischen
+  // 3 und 200 geweckten Handys soll vor dem Klick dastehen.
+  const zahlen = rundErreichbarCache && rundErreichbarCache[kreis];
+  const wieviele = zahlen
+    ? zahlen.personen + " Person" + (zahlen.personen === 1 ? "" : "en") + " auf " + zahlen.geraete + " Gerät" + (zahlen.geraete === 1 ? "" : "en")
+    : "alle erreichbaren Geräte";
+  if (!window.confirm("Jetzt an " + wieviele + " senden?\n\n" + titel + "\n" + text + "\n\nDas lässt sich nicht zurückholen.")) return;
+
+  knopf.disabled = true;
+  try {
+    const data = await callWorker("push-rundnachricht", { titel, text, kreis });
+    document.getElementById("rund-titel").value = "";
+    document.getElementById("rund-text").value = "";
+    rundnachrichtZaehler();
+    okEl.textContent = "Verschickt an " + Number((data && data.personen) || 0)
+      + " Personen auf " + Number((data && data.geraete) || 0) + " Geräten.";
+    okEl.style.display = "block";
+    // Frisch nachladen statt den neuen Eintrag lokal vorn anzuhaengen: der
+    // Worker fuehrt die Liste, und die Reichweite kann sich geaendert haben.
+    await rundnachrichtPanelLaden();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = "block";
+  } finally {
+    knopf.disabled = false;
   }
 }
 

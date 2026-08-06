@@ -1014,6 +1014,15 @@ main { flex: 1; min-width: 0; }
 .aufgaben-empfaenger-zeile:hover { background: var(--blue-light); border-radius: 4px; }
 .aufgaben-gruppen-liste { display: flex; flex-wrap: wrap; gap: 4px 18px; }
 
+/* ---------- Verlauf der Rundnachrichten (seit 2026-08-06) ---------- */
+
+/* Bewusst eine Liste von Bloecken statt einer Tabelle: der Text ist die laengste
+   Spalte, und eine Tabelle mit einer langen Textspalte sprengt am Handy den
+   Kasten (word-break greift dort nicht mehr rechtzeitig). */
+.rund-verlauf-eintrag { padding: 10px 0; border-top: 1px solid var(--border); }
+.rund-verlauf-eintrag:first-child { border-top: none; }
+.rund-verlauf-eintrag > div { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+
 /* ---------- Dokumente zum Unterschreiben ---------- */
 
 /* Eine Aufgabe mit Dokument sieht anders aus als eine normale: ihr Haken ist

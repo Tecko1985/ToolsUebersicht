@@ -397,6 +397,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.4",
+    groups: [
+      {
+        title: "Nachricht an alle Handys",
+        items: [
+          "Administratoren können im Einstellungen-Bereich eine eigene Push-Nachricht schreiben und sofort verschicken — für Kurzfristiges, das zu keinem Werkzeug gehört: Training fällt aus, Platz gesperrt, Halle zu.",
+          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
+          "Zur Wahl steht, ob nur die Mitarbeiter oder alle Konten einschließlich der Spieler angeschrieben werden.",
+          "Jede verschickte Nachricht bleibt unter „Zuletzt verschickt“ nachlesbar — mit Absender, Zeitpunkt und erreichter Anzahl.",
+          "Empfangen wird sie nur von denen, die im Tab „Mein Konto“ unter „Benachrichtigungen“ den Schalter „Mitteilungen des Vereins“ anhaben. Er ist wie alle anderen von Anfang an eingeschaltet und lässt sich einzeln abstellen."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.3",
     groups: [
       {

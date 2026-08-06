@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.42" />
+<link rel="stylesheet" href="style.css?v=1.43" />
 </head>
 <body>
 
@@ -508,6 +508,46 @@
       </form>
       <p class="muted" id="news-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
       <p class="muted" id="news-success" style="display:none; color:#2d8c4e; margin-top:10px;">Gespeichert.</p>
+    </details>
+
+    <!-- Nachricht an alle Handys (nur Admin, seit 2026-08-06).
+         Bewusst NICHT im Push-Panel des Konto-Tabs: dort stellt jeder seinen eigenen
+         Empfang ein, hier wird an andere gesendet. Zwei gegensätzliche Richtungen im
+         selben Kasten wären der klassische Fehlgriff. -->
+    <details class="card collapsible" id="admin-rundnachricht-panel" style="display:none;">
+      <summary>Nachricht an alle Handys</summary>
+      <p class="muted" style="margin-bottom:14px;">
+        Verschickt sofort eine Push-Nachricht an alle, die Benachrichtigungen eingeschaltet haben —
+        für Kurzfristiges, das zu keiner App gehört (Training fällt aus, Halle gesperrt).
+        <strong>Die Nachricht lässt sich nicht zurückholen</strong> und erscheint auf dem
+        Sperrbildschirm, wo auch andere mitlesen können: keine Namen und nichts Vertrauliches.
+        Wer den Schalter „Mitteilungen des Vereins“ in seinem Konto ausgeschaltet hat, bekommt nichts.
+      </p>
+      <div class="form-grid" style="align-items:flex-end;">
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="rund-titel">Überschrift</label>
+          <input type="text" id="rund-titel" maxlength="100" placeholder="z. B. Training fällt heute aus" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column:1 / -1;">
+          <label for="rund-text">Text</label>
+          <textarea id="rund-text" rows="2" maxlength="200" placeholder="z. B. Der Platz ist gesperrt. Alle Einheiten heute entfallen."></textarea>
+          <p class="muted" id="rund-zaehler" style="font-size:12px; margin-top:6px;"></p>
+        </div>
+        <div class="form-field">
+          <label for="rund-kreis">Empfänger</label>
+          <select id="rund-kreis" class="form-select">
+            <option value="personal">Mitarbeiter — ohne Spielerkonten</option>
+            <option value="alle">Alle Konten — auch Spieler</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <button type="button" class="btn small" id="btn-rund-senden">Jetzt senden</button>
+        </div>
+      </div>
+      <p class="muted" id="rund-reichweite" style="margin-top:10px; font-size:12px;"></p>
+      <p class="muted" id="rund-error" style="display:none; color:#c0392b; margin-top:10px;"></p>
+      <p class="muted" id="rund-success" style="display:none; color:#2d8c4e; margin-top:10px;"></p>
+      <div id="rund-verlauf" style="margin-top:14px;"></div>
     </details>
 
     <!-- Materialcontainer-Code (nur Admin) -->
@@ -1069,7 +1109,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.72"></script>
-<script src="app.js?v=1.58"></script>
+<script src="config.js?v=1.73"></script>
+<script src="app.js?v=1.59"></script>
 </body>
 </html>
