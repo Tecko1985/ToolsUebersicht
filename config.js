@@ -441,6 +441,18 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "1.9",
+    groups: [
+      {
+        title: "Zuletzt verschickt: nur noch die letzten drei",
+        items: [
+          "Unter „Nachricht an alle Handys“ standen bisher alle 30 protokollierten Nachrichten untereinander. Angezeigt werden jetzt die drei neuesten — mehr braucht man beim Schreiben der nächsten nicht.",
+          "Protokolliert werden weiterhin 30. Eine Push-Nachricht lässt sich nicht zurückholen; wer wann was an alle geschickt hat, ist der Nachweis dahinter und bleibt vollständig gespeichert. Stehen mehr dahinter, sagt die Überschrift das — „Zuletzt verschickt (3 von 12)“."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.8",
     groups: [
       {

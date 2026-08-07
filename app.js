@@ -6566,13 +6566,25 @@ function rundnachrichtWerZeigen(zahlen) {
     + block("Bekommt nichts — kein Gerät angemeldet oder Mitteilungen aus", ohne);
 }
 
+// ⚠️ Nur die ANZEIGE ist begrenzt, nicht das Protokoll: der Worker führt
+// weiterhin die letzten 30 (PUSH_RUND_VERLAUF_MAX). Eine Push-Nachricht lässt
+// sich nicht zurückholen -- wer wann was an die ganze Belegschaft geschickt hat,
+// ist der Nachweis dahinter und darf nicht an einer Anzeige-Vorliebe hängen.
+// Steht mehr dahinter, sagt die Überschrift das ("3 von 12") statt den Rest
+// verschwinden zu lassen.
+const RUND_VERLAUF_ANZEIGE = 3;
+
 function rundnachrichtVerlaufRendern(liste) {
   const el = document.getElementById("rund-verlauf");
   if (!el) return;
   if (!Array.isArray(liste) || !liste.length) { el.innerHTML = ""; return; }
+  const gezeigt = liste.slice(0, RUND_VERLAUF_ANZEIGE);
+  const beschriftung = liste.length > gezeigt.length
+    ? gezeigt.length + " von " + liste.length
+    : String(gezeigt.length);
   el.innerHTML = '<details class="collapsible"><summary>Zuletzt verschickt ('
-    + liste.length + ')</summary><div class="rund-verlauf-liste">'
-    + liste.map((e) => {
+    + beschriftung + ')</summary><div class="rund-verlauf-liste">'
+    + gezeigt.map((e) => {
         const d = new Date((e && e.am) || "");
         const wann = isNaN(d.getTime()) ? "" : d.toLocaleString("de-DE");
         const kreis = (e && e.kreis === "alle") ? "alle Konten" : "Mitarbeiter";
