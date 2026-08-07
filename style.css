@@ -1030,7 +1030,11 @@ main { flex: 1; min-width: 0; }
 .rund-wer-liste {
   font-size: 13px;
   line-height: 1.6;
-  color: var(--gray);
+  /* ⚠️ --muted, NICHT --gray: --gray ist #f4f5f7, also eine Hintergrundfarbe.
+     Als Schriftfarbe ergibt sie fast weiss auf weiss -- am 2026-08-07 genau so
+     ausgeliefert und von Michel per Screenshot gemeldet. Gedaempfter TEXT ist in
+     dieser Datei immer --muted. */
+  color: var(--muted);
   /* Doppelnamen sollen umbrechen statt den Kasten zu sprengen, und bei "Alle
      Konten" stehen mehrere hundert Namen in der zweiten Liste -- die scrollt
      dann in sich, statt das Panel unbedienbar lang zu machen. */
