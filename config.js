@@ -441,6 +441,19 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "2.1",
+    groups: [
+      {
+        title: "Gruppen umbenennen",
+        items: [
+          "In der Gruppenverwaltung steht jetzt ein Knopf „Umbenennen“. Bisher war ein Tippfehler im Gruppennamen nur über Löschen und Neuanlegen zu beheben — und das kostet die Gruppe alle Mitglieder und jedes Recht, das an ihr hängt.",
+          "Geändert wird ausschließlich die Beschriftung. Mitglieder, Sichtbarkeiten, Bearbeiten- und Administrieren-Rechte bleiben unangetastet: intern führt die Gruppe weiter denselben unveränderlichen Schlüssel.",
+          "Am Handy brechen die Knöpfe einer Gruppenzeile jetzt um. Vorher zogen sie die Seite seitlich auf, sodass man quer scrollen musste — das war schon vor dem neuen Knopf so."
+        ]
+      }
+    ]
+  },
+  {
     version: "2.0",
     groups: [
       {

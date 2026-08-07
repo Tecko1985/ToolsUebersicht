@@ -1752,9 +1752,32 @@ main { flex: 1; min-width: 0; }
   border: 1px solid var(--border);
   margin-bottom: 8px;
 }
-.gr-header { display: flex; align-items: center; gap: 12px; }
-.gr-header .gr-name { font-weight: 700; flex: 1; }
+/* ⚠️ flex-wrap ist hier Pflicht, nicht Kosmetik: ohne es erzwingen Name,
+   Mitgliederzahl und die Knopfreihe eine Mindestbreite von 558 px und ziehen bei
+   375 px die GANZE SEITE um 277 px seitlich auf. Am 2026-08-07 beim Einbau des
+   vierten Knopfes ("Umbenennen") gemessen -- mit den drei alten Knöpfen waren es
+   schon 228 px, der Fehler bestand also vorher und fiel nur nicht auf.
+   min-width: 0 am Namen, damit er umbricht statt seine Wunschbreite
+   durchzusetzen (siehe [[feedback-grid-minmax-null-fr]]). */
+.gr-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gr-header .gr-name { font-weight: 700; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .gr-members { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+
+/* Umbenennen-Zeile (seit 2026-08-07). flex-wrap, damit die beiden Knöpfe am
+   Handy unter das Feld rutschen statt es auf Briefmarkengröße zu quetschen --
+   dieselbe Rechnung wie bei .feedback-admin-row. */
+.gr-rename { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.gr-rename-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gr-rename-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.gr-rename-hinweis { margin: 8px 0 0; font-size: 12px; }
 
 .group-picker {
   display: flex;

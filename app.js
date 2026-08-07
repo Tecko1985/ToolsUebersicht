@@ -838,10 +838,12 @@ function renderGroupsList() {
       <div class="gr-header">
         <span class="gr-name">${escapeHtml(g.name)}</span>
         <span class="muted">${g.memberUsernames.length} Mitglied(er)</span>
+        <button type="button" class="btn secondary small" data-rename-group="${escapeHtml(g.id)}">Umbenennen</button>
         <button type="button" class="btn secondary small" data-toggle-members="${escapeHtml(g.id)}">Mitglieder</button>
         <button type="button" class="btn secondary small" data-toggle-tools="${escapeHtml(g.id)}">Apps</button>
         <button type="button" class="btn secondary small" data-delete-group="${escapeHtml(g.id)}">Löschen</button>
       </div>
+      <div class="gr-rename" data-rename-for="${escapeHtml(g.id)}" style="display:none;"></div>
       <div class="gr-members" data-members-for="${escapeHtml(g.id)}" style="display:none;"></div>
       <div class="gr-members" data-tools-for="${escapeHtml(g.id)}" style="display:none;"></div>
     `;
@@ -980,6 +982,79 @@ function renderGroupsList() {
           errorEl.style.display = "block";
         }
       });
+    });
+  });
+
+  // Umbenennen als aufklappbare Zeile statt window.prompt: ein prompt zeigt den
+  // bisherigen Namen zwar an, lässt ihn aber auf manchen Geräten nicht
+  // bearbeiten -- und genau darum geht es hier meistens (ein Buchstabe im
+  // Tippfehler). Zudem ist prompt am Handy ein Systemdialog ohne Kontext.
+  container.querySelectorAll("[data-rename-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const groupId = btn.dataset.renameGroup;
+      const gruppe = groupsState.filter((x) => x.id === groupId)[0];
+      const panel = btn.closest(".group-row").querySelector("[data-rename-for]");
+      if (panel.style.display !== "none") { panel.style.display = "none"; panel.innerHTML = ""; return; }
+      panel.style.display = "block";
+      panel.innerHTML = "";
+
+      const eingabe = document.createElement("input");
+      eingabe.type = "text";
+      eingabe.className = "gr-rename-input";
+      eingabe.value = gruppe ? gruppe.name : "";
+      eingabe.maxLength = 80;
+      const speichern = document.createElement("button");
+      speichern.type = "button";
+      speichern.className = "btn small";
+      speichern.textContent = "Speichern";
+      const abbrechen = document.createElement("button");
+      abbrechen.type = "button";
+      abbrechen.className = "btn secondary small";
+      abbrechen.textContent = "Abbrechen";
+      const hinweis = document.createElement("p");
+      hinweis.className = "muted gr-rename-hinweis";
+      // ⚠️ Der Satz gehört dorthin, wo umbenannt wird: die Rechte hängen an der
+      // Id, nicht am Namen. Ohne den Hinweis liegt die Sorge nahe, eine
+      // Umbenennung könnte Mitglieder oder Freigaben kosten -- und dann traut
+      // sich niemand, einen Tippfehler zu korrigieren.
+      hinweis.textContent = "Ändert nur die Beschriftung. Mitglieder, Rechte und Freigaben bleiben unverändert.";
+
+      const tun = async () => {
+        const name = eingabe.value.trim();
+        const errorEl = document.getElementById("groups-error");
+        errorEl.style.display = "none";
+        if (!name) { errorEl.textContent = "Der Gruppenname darf nicht leer sein."; errorEl.style.display = "block"; return; }
+        speichern.disabled = true;
+        try {
+          await callWorker("rename-group", { groupId, name });
+          await loadAndRenderGroups();
+          // Die Gruppennamen stehen auch im Sichtbarkeits-Panel und in den
+          // Nutzerzeilen -- ohne das Nachziehen zeigt die halbe Seite noch den
+          // alten Namen, bis jemand neu lädt.
+          await loadAndRenderUsers();
+          renderVisibilityList();
+        } catch (e) {
+          errorEl.textContent = e.message;
+          errorEl.style.display = "block";
+          speichern.disabled = false;
+        }
+      };
+      speichern.addEventListener("click", tun);
+      eingabe.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); tun(); }
+        if (e.key === "Escape") { panel.style.display = "none"; panel.innerHTML = ""; }
+      });
+      abbrechen.addEventListener("click", () => { panel.style.display = "none"; panel.innerHTML = ""; });
+
+      const zeile = document.createElement("div");
+      zeile.className = "gr-rename-zeile";
+      zeile.appendChild(eingabe);
+      zeile.appendChild(speichern);
+      zeile.appendChild(abbrechen);
+      panel.appendChild(zeile);
+      panel.appendChild(hinweis);
+      eingabe.focus();
+      eingabe.select();
     });
   });
 

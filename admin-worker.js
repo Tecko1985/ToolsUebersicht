@@ -208,6 +208,7 @@
 //     Trainerdaten-Einreichung), NICHT das ganze trainerEintraege-Array (Minimal-Disclosure, siehe CLAUDE.md).
 //     Seit TrainerCheckliste 1.2 liegen Unterschriften als eigene Dateien (dateien/<fileId>) statt inline —
 //     dieser Handler lädt sie für den eigenen Eintrag serverseitig nach (attachChecklistSignaturen).
+//   POST { action: "rename-group", groupId, name } (admin)      -> ändert NUR den Anzeigenamen, die Id bleibt
 //   POST { action: "update-group-members", groupId, memberUsernames } (admin) -> ersetzt Mitgliederliste komplett
 //   POST { action: "provision-group", groupId } (admin)          -> legt für alle Mitglieder der Gruppe Einträge in den
 //     dafür konfigurierten Tools an (Auto-Provisioning, idempotent) -> { provisioned:{[app]:{[username]:ergebnis}}, apps, memberCount }
@@ -1006,6 +1007,8 @@ export default {
         return handleDeleteUser(request, body, env, authHeader, corsHeaders);
       case "create-group":
         return handleCreateGroup(request, body, env, authHeader, corsHeaders);
+      case "rename-group":
+        return handleRenameGroup(request, body, env, authHeader, corsHeaders);
       case "list-groups":
         return handleListGroups(request, env, authHeader, corsHeaders);
       case "trainerdaten-list-groups":
@@ -1877,6 +1880,51 @@ async function handleCreateGroup(request, body, env, authHeader, corsHeaders) {
   }
 
   return json({ group: usersDoc.groups[id] }, 201, corsHeaders);
+}
+
+// Gruppe umbenennen (seit 2026-08-07). Michel-Wunsch: ein Tippfehler im
+// Gruppennamen war bis hierher nur ueber Loeschen und Neuanlegen zu beheben --
+// und das nimmt der Gruppe alle Mitglieder und jedes Recht, das an ihr haengt.
+//
+// ⚠️ Geaendert wird AUSSCHLIESSLICH `name`, niemals `id`. Die Id ist der
+// Schluessel, unter dem die Gruppe flottenweit referenziert wird: groupIds /
+// editGroupIds / adminGroupIds in sichtbarkeit.json, aufgaben.assignGroupIds
+// und .dokumentGroupIds, viewGroupId in RESTRICTED_FILE_APPS
+// ("fuehrerschein-einsicht" steht sogar als Konstante im Code), dazu die
+// pushEmpfaenger-Listen in den App-Dateien. Sie mitzuziehen hiesse, all diese
+// Stellen in einem Zug umzuschreiben -- und was dabei uebersehen wird, entzieht
+// still ein Recht. Der Slug bleibt deshalb bewusst der alte: nach dem
+// Korrigieren von "Fördertraier" zu "Fördertrainer" heisst die Gruppe
+// weiterhin `foerdertraier`. Das sieht niemand ausser hier im Code.
+async function handleRenameGroup(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session || !session.isAdmin) return json({ error: "Nicht berechtigt" }, 403, corsHeaders);
+
+  const groupId = String((body && body.groupId) || "").trim();
+  const name = String((body && body.name) || "").trim();
+  if (!groupId) return json({ error: "Gruppe fehlt" }, 400, corsHeaders);
+  if (!name) return json({ error: "Gruppenname erforderlich" }, 400, corsHeaders);
+
+  const usersDoc = session.usersDoc;
+  // getOwn statt direktem Zugriff: eine Id "__proto__" traefe sonst den
+  // Prototyp und der Handler schriebe an einem Objekt herum, das keine Gruppe ist.
+  const group = getOwn(usersDoc.groups || {}, groupId);
+  if (!group) return json({ error: "Unbekannte Gruppe" }, 404, corsHeaders);
+
+  // Kein Fehler bei gleichem Namen, aber auch kein Schreibvorgang: nutzer.json
+  // wird bei jeder Sitzungspruefung der ganzen Flotte gelesen, ein Write ohne
+  // Aenderung waere ein vermeidbares Konfliktfenster.
+  if (group.name === name) return json({ group, unveraendert: true }, 200, corsHeaders);
+
+  group.name = name;
+  group.umbenanntAm = new Date().toISOString();
+  try {
+    await writeJson(env.NEXTCLOUD_NUTZER_URL, authHeader, usersDoc);
+  } catch (e) {
+    return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+  }
+
+  return json({ group }, 200, corsHeaders);
 }
 
 async function handleListGroups(request, env, authHeader, corsHeaders) {
