@@ -395,7 +395,79 @@ const NEWS = [];
 // jeden Klick strikt gegen seine eigene Kopie. Reihenfolge = Anzeigereihenfolge.
 const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", "😮", "😂", "🙏", "💪"];
 
+// Emoji-Auswahl für die Nachricht an alle Handys (seit 2026-08-07). Bewusst NICHT
+// NEWS_REACTION_EMOJIS wiederverwendet: das sind Reaktionen (Zustimmung, Applaus),
+// hier geht es um den ANLASS einer Mitteilung -- Absage, Wetter, Anfahrt, Platz.
+// Rein clientseitig, der Worker kennt die Liste nicht und muss sie nicht kennen:
+// eingefügt wird nur Text in ein Textfeld, das ohnehin frei geschrieben wird.
+// `name` steht im title und im aria-label -- ohne ihn wäre der Knopf für
+// Vorlese-Programme namenlos.
+const MITTEILUNG_EMOJIS = [
+  { e: "⚠️", name: "Achtung" },
+  { e: "❌", name: "Fällt aus" },
+  { e: "✅", name: "Findet statt" },
+  { e: "ℹ️", name: "Hinweis" },
+  { e: "📢", name: "Ankündigung" },
+  { e: "🔔", name: "Erinnerung" },
+  { e: "📅", name: "Termin" },
+  { e: "⏰", name: "Uhrzeit" },
+  { e: "⚽", name: "Fußball" },
+  { e: "🥅", name: "Tor" },
+  { e: "🏆", name: "Pokal" },
+  { e: "🏟️", name: "Stadion" },
+  { e: "🚌", name: "Bus" },
+  { e: "🚗", name: "Fahrgemeinschaft" },
+  { e: "🅿️", name: "Parken" },
+  { e: "🌧️", name: "Regen" },
+  { e: "⛈️", name: "Gewitter" },
+  { e: "❄️", name: "Schnee und Frost" },
+  { e: "☀️", name: "Sonne" },
+  { e: "🚧", name: "Baustelle" },
+  { e: "🔒", name: "Gesperrt" },
+  { e: "🔑", name: "Schlüssel" },
+  { e: "🎉", name: "Feier" },
+  { e: "🎂", name: "Geburtstag" },
+  { e: "👏", name: "Applaus" },
+  { e: "💪", name: "Anfeuern" },
+  { e: "🙏", name: "Bitte" },
+  { e: "👍", name: "Daumen hoch" },
+  { e: "📸", name: "Foto" },
+  { e: "📝", name: "Formular" },
+  { e: "🍽️", name: "Essen" },
+  { e: "💧", name: "Trinken" },
+  { e: "👕", name: "Kleidung" },
+  { e: "🚑", name: "Erste Hilfe" }
+];
+
 const APP_CHANGELOG = [
+  {
+    version: "1.8",
+    groups: [
+      {
+        title: "Emojis für die Nachricht an alle Handys",
+        items: [
+          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht.",
+          "Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere. Über jedem Zeichen steht beim Überfahren, wofür es gedacht ist.",
+          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
+          "Die Auswahl bleibt nach dem Einsetzen offen, damit mehrere Zeichen hintereinander gehen. Sie schließt mit Escape, mit einem Klick daneben oder mit einem zweiten Druck auf den Emoji-Knopf."
+        ]
+      }
+    ]
+  },
+  {
+    version: "1.7",
+    groups: [
+      {
+        title: "Nachricht an alle Handys: wen sie wirklich erreicht",
+        items: [
+          "Im Panel „Nachricht an alle Handys“ stand bisher nur, wie viele Personen erreicht werden. Jetzt steht die Gesamtzahl daneben — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht.",
+          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet.",
+          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
+          "Beide Listen sieht nur, wer die Nachricht auch verschicken darf."
+        ]
+      }
+    ]
+  },
   {
     version: "1.6",
     groups: [

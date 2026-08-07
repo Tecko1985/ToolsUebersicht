@@ -1023,6 +1023,96 @@ main { flex: 1; min-width: 0; }
 .rund-verlauf-eintrag:first-child { border-top: none; }
 .rund-verlauf-eintrag > div { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 
+/* Wen die Nachricht erreicht und wen nicht (seit 2026-08-07). Kleiner als die
+   uebrigen aufklappbaren Bereiche: das sind Fussnoten zur Reichweitenzeile,
+   keine eigenen Abschnitte. */
+.rund-wer-block > summary { font-size: 13px; font-weight: 600; padding: 4px 0; }
+.rund-wer-liste {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--gray);
+  /* Doppelnamen sollen umbrechen statt den Kasten zu sprengen, und bei "Alle
+     Konten" stehen mehrere hundert Namen in der zweiten Liste -- die scrollt
+     dann in sich, statt das Panel unbedienbar lang zu machen. */
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+/* ---------- Emoji-Auswahl für die Rundnachricht (seit 2026-08-07) ---------- */
+
+/* Die Leiste ist der Bezugspunkt der Palette (die haengt per JS darin und liegt
+   absolut darunter). Sie traegt die volle Feldbreite, damit die Palette links
+   buendig zum Feld beginnt und rechts nicht darueber hinauslaeuft. */
+.emoji-leiste {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+
+/* ⚠️ Bewusst NICHT .form-field-Regeln ueberlassen: dort gilt
+   input/select/textarea { width: 100% }, und ein Knopf in der Zeile soll seine
+   eigene Breite behalten. */
+.emoji-knopf {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.emoji-knopf:hover { background: var(--gray); }
+.emoji-knopf[aria-expanded="true"] { border-color: var(--blue); background: var(--blue-light); }
+
+/* display wird per JS zwischen none und flex geschaltet -- der Startwert steht
+   hier, damit die Palette schon vor dem ersten Oeffnen unsichtbar ist. */
+.emoji-palette {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  /* right: 0 statt einer festen Breite: am Handy ist das genau die Feldbreite,
+     am Rechner wuerde eine feste Spaltenzahl entweder umbrechen oder Luft
+     lassen. max-width haelt sie zusaetzlich im Kasten. */
+  right: 0;
+  max-width: 100%;
+  z-index: 20;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  /* Bei sehr kleinen Fenstern lieber in sich scrollen als das Panel aufblaehen. */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.emoji-wahl {
+  flex: 0 0 auto;
+  /* 36 px sind die Fingerbreite, um die es am Handy geht -- ein Emoji in
+     Textgroesse waere ein 16-px-Ziel. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.emoji-wahl:hover, .emoji-wahl:focus { background: var(--blue-light); border-color: var(--blue); }
+
 /* ---------- Dokumente zum Unterschreiben ---------- */
 
 /* Eine Aufgabe mit Dokument sieht anders aus als eine normale: ihr Haken ist

@@ -11002,18 +11002,51 @@ function rundEmpfaenger(usersDoc, kreis) {
 function rundErreichbar(doc, empfaenger) {
   let personen = 0;
   let geraete = 0;
-  const gesehen = {};
+  const wer = [];
+  const ohne = [];
+  // ⚠️ Object.create(null), nicht {}: ein Konto namens "__proto__" traefe sonst
+  // den Prototyp, gaelte als "schon gesehen" und fiele aus BEIDEN Listen --
+  // spurlos, was bei einer angezeigten Namensliste schlimmer ist als bei einer
+  // blossen Zahl. Gleiche Stelle in pushSenden mitgezogen.
+  const gesehen = Object.create(null);
   for (const roh of empfaenger) {
     const u = normalizeUsername(String(roh || ""));
     if (!u || gesehen[u]) continue;
     gesehen[u] = true;
-    if (!pushAnlaesseFuer(doc, u).mitteilung) continue;
-    const abos = pushAbosFuer(doc, u);
-    if (!abos.length) continue;
+    // Schalter aus und kein Geraet angemeldet fallen bewusst in DIESELBE Liste:
+    // fuer den Absender ist beides derselbe Fall -- diese Person erreicht er
+    // nicht. Die Unterscheidung waere zudem eine Aussage darueber, wer die
+    // Benachrichtigungen absichtlich abgestellt hat, und das geht niemanden an.
+    const abos = pushAnlaesseFuer(doc, u).mitteilung ? pushAbosFuer(doc, u) : [];
+    if (!abos.length) { ohne.push(u); continue; }
     personen++;
     geraete += abos.length;
+    wer.push(u);
   }
-  return { personen, geraete };
+  return { personen, geraete, wer, ohne };
+}
+
+// Dieselben Zahlen plus Klarnamen und Nenner -- fuer das Panel, nicht fuer den
+// Versand. ⚠️ Kostet KEINEN zusaetzlichen Nextcloud-Read: `usersDoc` steckt
+// ohnehin in der Sitzung, aufgeloest wird ueber denselben Helfer wie bei den
+// Neuigkeiten-Reaktionen (und nicht ueber mitgespeicherte Namen, die nach einer
+// Umbenennung veraltet waeren).
+//
+// Die Liste `ohne` ist der eigentliche Nutzen: eine blosse Zahl sagt nur, DASS
+// jemand fehlt, nicht wer angestupst werden muss.
+function rundReichweiteMitNamen(abosDoc, usersDoc, kreis) {
+  const empfaenger = rundEmpfaenger(usersDoc, kreis);
+  const z = rundErreichbar(abosDoc, empfaenger);
+  const namen = (liste) => liste
+    .map((u) => aufgabenAnzeigeName(usersDoc, u))
+    .sort((a, b) => a.localeCompare(b, "de"));
+  return {
+    personen: z.personen,
+    geraete: z.geraete,
+    infrage: empfaenger.length,
+    wer: namen(z.wer),
+    ohne: namen(z.ohne)
+  };
 }
 
 async function handlePushRundnachricht(request, body, env, authHeader, corsHeaders, execCtx) {
@@ -11091,8 +11124,8 @@ async function handlePushRundnachrichtVerlauf(request, env, authHeader, corsHead
     ok: true,
     verlauf: eintraege.slice(0, PUSH_RUND_VERLAUF_MAX),
     erreichbar: {
-      personal: rundErreichbar(abosDoc, rundEmpfaenger(session.usersDoc, "personal")),
-      alle: rundErreichbar(abosDoc, rundEmpfaenger(session.usersDoc, "alle"))
+      personal: rundReichweiteMitNamen(abosDoc, session.usersDoc, "personal"),
+      alle: rundReichweiteMitNamen(abosDoc, session.usersDoc, "alle")
     },
     grenzen: { titel: PUSH_RUND_TITEL_MAX, text: PUSH_RUND_TEXT_MAX }
   }, 200, corsHeaders);
@@ -11127,7 +11160,9 @@ function pushSenden(env, authHeader, ctx, empfaenger, anlass, text, optionen) {
       const doc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
 
       const ziele = [];
-      const gesehen = {};
+      // Object.create(null) aus demselben Grund wie in rundErreichbar: ein
+      // Konto "__proto__" bekaeme sonst nie eine Nachricht.
+      const gesehen = Object.create(null);
       for (const roh of empfaenger) {
         const u = normalizeUsername(String(roh || ""));
         if (!u || gesehen[u]) continue;

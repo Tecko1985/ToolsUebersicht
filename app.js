@@ -5451,10 +5451,30 @@ function setupTabs() {
   // Abfrage auf .open.
   document.getElementById("admin-rundnachricht-panel").addEventListener("toggle", (e) => {
     if (e.target.open) rundnachrichtPanelLaden();
+    else rundEmojiSchliessen();
   });
   document.getElementById("btn-rund-senden").addEventListener("click", sendeRundnachricht);
   document.getElementById("rund-kreis").addEventListener("change", rundnachrichtReichweiteZeigen);
   document.getElementById("rund-text").addEventListener("input", rundnachrichtZaehler);
+
+  // Emoji-Auswahl. ⚠️ Der Schließen-Handler an document muss den Klick auf einen
+  // .emoji-knopf und auf die Palette selbst durchlassen: beide bubbeln bis
+  // hierher, und sonst schlösse der Öffnen-Klick die Palette sofort wieder.
+  const emojiKnoepfe = document.querySelectorAll(".emoji-knopf");
+  for (let i = 0; i < emojiKnoepfe.length; i++) {
+    emojiKnoepfe[i].addEventListener("click", (e) => rundEmojiUmschalten(e.currentTarget));
+  }
+  document.addEventListener("click", (e) => {
+    if (!rundEmojiOffen()) return;
+    if (rundEmojiPalette.contains(e.target)) return;
+    if (e.target.closest && e.target.closest(".emoji-knopf")) return;
+    rundEmojiSchliessen();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !rundEmojiOffen()) return;
+    rundEmojiSchliessen();
+    e.escapeVerbraucht = true;
+  });
 
   const jumpToAdminPanel = (panelId) => {
     activateTab("admin");
@@ -6506,14 +6526,44 @@ function rundnachrichtReichweiteZeigen() {
   if (!el) return;
   const kreis = document.getElementById("rund-kreis").value === "alle" ? "alle" : "personal";
   const zahlen = rundErreichbarCache && rundErreichbarCache[kreis];
-  if (!zahlen) { el.textContent = ""; return; }
+  if (!zahlen) { el.textContent = ""; rundnachrichtWerZeigen(null); return; }
   if (!zahlen.personen) {
     el.textContent = "Erreicht im Moment niemanden — in diesem Kreis hat noch niemand Benachrichtigungen eingeschaltet.";
+    rundnachrichtWerZeigen(zahlen);
     return;
   }
+  // Der Nenner steht bewusst dabei: „15 Personen" allein klingt nach einer
+  // vollständigen Zustellung, „15 von 87" sagt, dass die Nachricht die meisten
+  // gar nicht erreicht -- und genau das entscheidet, ob man sie so verschickt.
   el.textContent = "Erreicht im Moment "
-    + zahlen.personen + (zahlen.personen === 1 ? " Person" : " Personen")
+    + zahlen.personen
+    + (typeof zahlen.infrage === "number" ? " von " + zahlen.infrage : "")
+    + (zahlen.personen === 1 ? " Person" : " Personen")
     + " auf " + zahlen.geraete + (zahlen.geraete === 1 ? " Gerät." : " Geräten.");
+  rundnachrichtWerZeigen(zahlen);
+}
+
+// ⚠️ Fehlen die Listen (aelterer Worker), bleibt der Bereich LEER statt eine
+// leere Liste zu behaupten -- „niemand wird erreicht" waere eine falsche
+// Aussage, wo in Wahrheit nur die Angabe fehlt.
+function rundnachrichtWerZeigen(zahlen) {
+  const el = document.getElementById("rund-wer");
+  if (!el) return;
+  const wer = (zahlen && Array.isArray(zahlen.wer)) ? zahlen.wer : null;
+  const ohne = (zahlen && Array.isArray(zahlen.ohne)) ? zahlen.ohne : null;
+  if (!wer && !ohne) { el.innerHTML = ""; return; }
+
+  const block = (titel, liste) => {
+    if (!liste || !liste.length) return "";
+    return '<details class="collapsible rund-wer-block"><summary>'
+      + escapeHtml(titel) + " (" + liste.length + ")</summary>"
+      + '<div class="rund-wer-liste">'
+      + liste.map((n) => escapeHtml(n)).join(" · ")
+      + "</div></details>";
+  };
+
+  el.innerHTML = block("Erreicht die Nachricht", wer)
+    + block("Bekommt nichts — kein Gerät angemeldet oder Mitteilungen aus", ohne);
 }
 
 function rundnachrichtVerlaufRendern(liste) {
@@ -6542,6 +6592,90 @@ function rundnachrichtZaehler() {
   if (!el) return;
   const rest = 200 - document.getElementById("rund-text").value.length;
   el.textContent = "Noch " + rest + " Zeichen. Längere Texte schneiden die Handys ohnehin ab.";
+}
+
+// ---------- Emoji-Auswahl für die Rundnachricht (seit 2026-08-07) ----------
+// Genau EIN Palettenelement für beide Felder; es wird beim Öffnen in die Leiste
+// des angeklickten Knopfes umgehängt. Zwei Paletten wären zwei Orte, an denen
+// dieselbe Liste gerendert wird -- die liefen beim ersten Nachtragen auseinander.
+let rundEmojiPalette = null;
+let rundEmojiZielId = null;
+
+function rundEmojiPaletteBauen() {
+  if (rundEmojiPalette) return rundEmojiPalette;
+  const box = document.createElement("div");
+  box.className = "emoji-palette";
+  box.id = "rund-emoji-palette";
+  const liste = (typeof MITTEILUNG_EMOJIS !== "undefined" && Array.isArray(MITTEILUNG_EMOJIS)) ? MITTEILUNG_EMOJIS : [];
+  liste.forEach((eintrag) => {
+    const knopf = document.createElement("button");
+    knopf.type = "button";
+    knopf.className = "emoji-wahl";
+    knopf.textContent = eintrag.e;
+    // Der Name steht im title UND im aria-label: ohne ihn heißt der Knopf für
+    // ein Vorlese-Programm nur "Schaltfläche".
+    knopf.title = eintrag.name;
+    knopf.setAttribute("aria-label", eintrag.name);
+    knopf.addEventListener("click", () => rundEmojiEinfuegen(eintrag.e));
+    box.appendChild(knopf);
+  });
+  rundEmojiPalette = box;
+  return box;
+}
+
+function rundEmojiOffen() {
+  return !!rundEmojiPalette && rundEmojiPalette.style.display !== "none" && !!rundEmojiPalette.parentElement;
+}
+
+function rundEmojiSchliessen() {
+  if (rundEmojiPalette) rundEmojiPalette.style.display = "none";
+  rundEmojiZielId = null;
+  const knoepfe = document.querySelectorAll(".emoji-knopf");
+  for (let i = 0; i < knoepfe.length; i++) knoepfe[i].setAttribute("aria-expanded", "false");
+}
+
+function rundEmojiUmschalten(knopf) {
+  const leiste = knopf.parentElement;
+  const box = rundEmojiPaletteBauen();
+  // Zweiter Druck auf denselben Knopf schließt wieder -- ein Knopf, der nur
+  // aufmacht, zwingt zum Klick irgendwohin daneben.
+  const warOffenHier = rundEmojiOffen() && box.parentElement === leiste;
+  rundEmojiSchliessen();
+  if (warOffenHier) return;
+  leiste.appendChild(box);
+  box.style.display = "flex";
+  rundEmojiZielId = knopf.getAttribute("data-ziel");
+  knopf.setAttribute("aria-expanded", "true");
+}
+
+function rundEmojiEinfuegen(emoji) {
+  const feld = rundEmojiZielId ? document.getElementById(rundEmojiZielId) : null;
+  if (!feld) return;
+  const errEl = document.getElementById("rund-error");
+  const grenze = Number(feld.getAttribute("maxlength")) || 0;
+  // ⚠️ maxlength bremst nur das TIPPEN, nicht das Setzen per JS -- und der
+  // Worker kürzt hart auf dieselbe Länge. Ein Emoji genau an der Grenze käme
+  // dort halbiert an und stünde als leeres Kästchen auf dem Sperrbildschirm.
+  // Deshalb absagen statt still zu kürzen.
+  if (grenze && feld.value.length + emoji.length > grenze) {
+    if (errEl) {
+      errEl.textContent = "Kein Platz mehr für ein weiteres Emoji — "
+        + (rundEmojiZielId === "rund-titel" ? "die Überschrift ist voll." : "der Text ist voll.");
+      errEl.style.display = "block";
+    }
+    return;
+  }
+  if (errEl) errEl.style.display = "none";
+
+  const start = (typeof feld.selectionStart === "number") ? feld.selectionStart : feld.value.length;
+  const ende = (typeof feld.selectionEnd === "number") ? feld.selectionEnd : start;
+  feld.value = feld.value.slice(0, start) + emoji + feld.value.slice(ende);
+  // Schreibmarke HINTER das Emoji und Fokus zurück ins Feld: sonst tippt man
+  // nach der Auswahl wieder am Anfang der Zeile weiter.
+  feld.focus();
+  const neu = start + emoji.length;
+  if (feld.setSelectionRange) feld.setSelectionRange(neu, neu);
+  rundnachrichtZaehler();
 }
 
 async function sendeRundnachricht() {
