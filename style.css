@@ -1046,6 +1046,11 @@ main { flex: 1; min-width: 0; }
 
 /* ---------- Eingrenzen auf Gruppen und Personen (seit 2026-08-07) ---------- */
 
+/* Nimmt die volle Breite des Formular-Rasters ein. Steht hier statt als
+   .form-field im Markup, weil dessen `label { display: block }` die
+   Häkchenzeilen unten plattmachen würde. */
+.rund-eingrenzen-feld { grid-column: 1 / -1; }
+
 .rund-eingrenzen > summary { font-size: 13px; font-weight: 600; padding: 4px 0; }
 
 /* Zwei Spalten am Rechner, untereinander am Handy. minmax(0, 1fr) statt 1fr:
@@ -1077,11 +1082,18 @@ main { flex: 1; min-width: 0; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  padding: 5px 0;
   font-size: 13px;
   cursor: pointer;
   /* Lange Doppelnamen sollen umbrechen statt die Liste breiter zu machen. */
   overflow-wrap: anywhere;
+}
+
+/* Am Finger ist eine 23-px-Zeile zu knapp; am Zeiger waere dieselbe Hoehe
+   verschenkter Platz in einer Liste, die mehrere hundert Zeilen lang sein kann.
+   pointer: coarse trennt beides, wie beim Kamera-Knopf im Konto-Tab. */
+@media (pointer: coarse) {
+  .rund-auswahl-zeile { padding: 9px 0; }
 }
 .rund-auswahl-zeile input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; }
 .rund-auswahl-zeile small { margin-left: auto; color: var(--muted); font-size: 12px; flex: 0 0 auto; padding-left: 8px; }

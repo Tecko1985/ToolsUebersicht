@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.49" />
+<link rel="stylesheet" href="style.css?v=1.50" />
 </head>
 <body>
 
@@ -580,7 +580,13 @@
              eine Eingrenzung an, die ein älterer Worker stillschweigend verwirft
              — und die Nachricht ginge an alle statt an drei Leute.
              Zugeklappt als Vorgabe: der Normalfall ist der ganze Kreis. -->
-        <div class="form-field" style="grid-column:1 / -1; display:none;" id="rund-eingrenzen-feld">
+        <!-- ⚠️ Bewusst KEIN .form-field: dort gilt `label { display: block }`, und
+             das ist spezifischer als eine einzelne Klasse — es überstimmt das
+             `display:flex` der Häkchenzeilen, womit Abstand und rechtsbündige
+             Zusatzangabe wegfallen. Am 2026-08-07 genau so ausgeliefert und von
+             Michel per Screenshot gemeldet. Dieselbe Familie wie die
+             input-Falle, die bei den Push-Schaltern schon vermerkt ist. -->
+        <div class="rund-eingrenzen-feld" style="display:none;" id="rund-eingrenzen-feld">
           <details class="collapsible rund-eingrenzen" id="rund-eingrenzen">
             <summary>Eingrenzen — <span id="rund-eingrenzen-status">alle im gewählten Kreis</span></summary>
             <p class="muted" style="font-size:12px; margin:8px 0 12px;">
@@ -1282,6 +1288,6 @@
 
 <script src="signature-pad.js?v=1.0"></script>
 <script src="config.js?v=1.82"></script>
-<script src="app.js?v=1.67"></script>
+<script src="app.js?v=1.68"></script>
 </body>
 </html>

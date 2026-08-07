@@ -6655,7 +6655,10 @@ function rundAuswahlRendern() {
   const feld = document.getElementById("rund-eingrenzen-feld");
   if (!feld) return;
   if (!rundAuswahlQuelle) { feld.style.display = "none"; return; }
-  feld.style.display = "";
+  // "block", nicht "": der Startwert im Markup ist display:none, und ein leerer
+  // Wert fiele auf den Standard des Elements zurueck -- der ist hier block, aber
+  // ausdruecklich gesetzt bleibt es unabhaengig vom Element.
+  feld.style.display = "block";
 
   const imKreis = rundImKreis();
   const imKreisNamen = Object.create(null);
