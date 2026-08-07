@@ -4273,6 +4273,31 @@ function aufnahmeFormat(mitTon) {
   return "";
 }
 
+// Welcher Tab steht gerade offen? Wird vor dem Start gemerkt, um hinterher
+// dorthin zurückzukehren.
+function aufnahmeAktiverTab() {
+  const sec = document.querySelector(".tab-section.active");
+  return sec && sec.id.indexOf("tab-") === 0 ? sec.id.slice(4) : "uebersicht";
+}
+
+// ⚠️ Michel-Vorgabe 2026-08-07: die Aufnahme beginnt IMMER auf der Übersicht.
+// Der Knopf steht im Neuigkeiten-Formular, also in den Einstellungen -- ohne
+// diesen Wechsel wäre das erste Bild jeder Vorführung das Pflege-Formular samt
+// offener Admin-Maske. Der Sprung passiert VOR der Freigabe-Abfrage, damit auch
+// die Vorschau im Auswahlfenster des Browsers schon das Richtige zeigt.
+function aufnahmeAufsDashboard() {
+  activateTab("uebersicht");
+  // Ohne das begänne die Aufnahme an der Stelle, bis zu der zum Formular
+  // heruntergescrollt war -- also mitten in der Seite statt oben.
+  window.scrollTo(0, 0);
+}
+
+function aufnahmeTabZurueck(name) {
+  if (!name || name === "uebersicht") return;
+  if (!document.getElementById("tab-" + name)) return;
+  activateTab(name);
+}
+
 function aufnahmeMoeglich() {
   return !!(window.MediaRecorder && navigator.mediaDevices
     && typeof navigator.mediaDevices.getDisplayMedia === "function"
@@ -4332,6 +4357,9 @@ function aufnahmeHinweisSetzen() {
   teile.push("Höchstens " + aufnahmeMB(AUFNAHME_ZIEL_BYTES) + ": die Bildqualität wird so eingestellt, "
     + "dass " + aufnahmeDauerText(maxSek) + " in dieses Budget passen. Nach "
     + aufnahmeDauerText(maxSek) + " endet die Aufnahme von selbst.");
+  if (quelle === "seite") {
+    teile.push("Die Aufnahme beginnt oben auf der Übersicht, nicht hier in den Einstellungen. Danach bist du wieder bei deinem Meldungs-Entwurf.");
+  }
   if (quelle === "frei") {
     teile.push("In dieser Betriebsart gibt es keine Klick-Kreise — eine Seite erfährt nichts von Klicks außerhalb ihres eigenen Tabs. Der Mauszeiger des Rechners wird aber mit aufgezeichnet.");
   } else {
@@ -4631,9 +4659,13 @@ async function aufnahmeStarten() {
 
   startBtn.disabled = true;
   startBtn.textContent = "Wird vorbereitet…";
+  // Vor dem Aufräumen merken: aufnahmeAufraeumen() wirft den Zustand weg.
+  const vorherTab = aufnahmeAktiverTab();
   aufnahmeAufraeumen();
+  aufnahmeAufsDashboard();
 
   aufnahmeState = {
+    vorherTab: vorherTab,
     quelle: quelle, maxSek: maxSek, ringeAn: ringeAn, fps: fps,
     stream: null, tonStream: null, video: null, canvas: null, ctx: null,
     rec: null, chunks: [], bytes: 0, blob: null, blobUrl: null, dateiname: "",
@@ -4678,6 +4710,9 @@ async function aufnahmeStarten() {
   } catch (e) {
     const abgebrochen = e && (e.name === "NotAllowedError" || e.name === "AbortError");
     aufnahmeAufraeumen();
+    // Bricht die Freigabe ab, war der Sprung aufs Dashboard umsonst -- zurück,
+    // wo der Nutzer herkam, sonst steht er nach einem Fehlklick woanders.
+    aufnahmeTabZurueck(vorherTab);
     aufnahmeEl("aufnahme-overlay").style.display = "flex";
     startBtn.disabled = false;
     startBtn.textContent = "Aufnahme starten";
@@ -4748,12 +4783,14 @@ async function aufnahmeStarten() {
   };
   s.rec.onstop = aufnahmeErgebnisZeigen;
 
-  s.startMs = Date.now();
-  // Ein Block je Sekunde: nur so lässt sich die Größe überhaupt LAUFEND messen.
-  // Ohne Zeitscheibe käme alles erst am Ende, und die Grenze wäre dann längst gerissen.
-  s.rec.start(1000);
+  // ⚠️ Erst das Fenster wegblenden, DANN aufnehmen -- andersherum könnte der
+  // Einstellungs-Dialog im ersten Bild der Vorführung stehen.
   aufnahmeEl("aufnahme-leiste").style.display = "flex";
   if (quelle !== "tool") aufnahmeEl("aufnahme-overlay").style.display = "none";
+  s.startMs = Date.now();
+  // Ein Block je Sekunde: nur so lässt sich die Größe überhaupt laufend messen,
+  // wo der Muxer sie herausgibt (bei MP4 tut er das nicht, siehe oben).
+  s.rec.start(1000);
   s.tick = setInterval(aufnahmeLeisteZeigen, 250);
   aufnahmeLeisteZeigen();
 }
@@ -4782,6 +4819,12 @@ function aufnahmeErgebnisZeigen() {
   const rahmen = aufnahmeEl("aufnahme-iframe");
   if (rahmen) { rahmen.onload = null; rahmen.src = "about:blank"; }
   aufnahmeEl("aufnahme-leiste").style.display = "none";
+  // ⚠️ Zurück in den Tab, aus dem gestartet wurde -- praktisch immer die
+  // Einstellungen mit dem halbfertigen Meldungs-Entwurf. Ohne das hinge das
+  // Video gleich an einer Meldung, deren Formular nicht mehr zu sehen ist.
+  // Steht hier und nicht in aufnahmeStoppen(): erst wenn der Rekorder wirklich
+  // fertig ist, kann kein Bild mehr in die Aufnahme geraten.
+  aufnahmeTabZurueck(s.vorherTab);
 
   const dauer = (Date.now() - s.startMs) / 1000;
   const basisTyp = s.mimeType.indexOf("mp4") !== -1 ? "video/mp4" : "video/webm";
