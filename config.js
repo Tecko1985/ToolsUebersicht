@@ -397,6 +397,22 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.6",
+    groups: [
+      {
+        title: "Bildschirmvideos für die Neuigkeiten",
+        items: [
+          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ jetzt „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
+          "Unter dem Mauszeiger liegt im Video ein Kreis, und jeder Klick hinterlässt einen kurzen roten Ring — so ist beim Zusehen wirklich zu erkennen, wo gedrückt wurde. Bei einer reinen Bildschirmaufnahme zeichnet der Browser den Mauszeiger nicht mit; ohne diesen Kreis wäre gar nicht zu sehen, wohin die Maus zeigt.",
+          "Aufnehmen lässt sich ein einzelnes Vereins-Werkzeug, die Tools-Übersicht selbst, oder frei ein beliebiges Fenster des Rechners. Die Klick-Kreise gibt es bei den ersten beiden — von Klicks außerhalb des Browsers erfährt eine Internetseite grundsätzlich nichts.",
+          "Die Länge ist begrenzt und die Bildqualität wird vorher passend eingestellt, damit das fertige Video sicher unter die Anhang-Grenze von 10 MB passt. Während der Aufnahme laufen Zeit und Größe in einer Leiste am unteren Rand mit; diese Leiste wird aus dem Bild herausgeschnitten und steht nicht im fertigen Video.",
+          "Ist die Aufnahme fertig, lässt sie sich ansehen und mit einem Knopf direkt an die Meldung hängen — oder herunterladen, wenn sie woanders gebraucht wird.",
+          "Aufgenommen wird als MP4, damit das Video auch auf älteren iPhones abspielt. Auf dem Handy selbst gibt es das Aufnehmen nicht: Bildschirmaufnahme im Browser können nur die Rechner-Browser."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.5",
     groups: [
       {

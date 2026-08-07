@@ -4197,6 +4197,699 @@ function newsMedienThumbsBeleben(banner, n) {
   });
 }
 
+// ---------- Bildschirmvideo für eine Meldung (seit 2026-08-07) ----------
+//
+// Zweck: eine kurze Vorführung aufnehmen ("so schaltest du Push ein") und direkt
+// an eine Neuigkeit hängen. Zwei Dinge machen das Ganze aus:
+//
+// ⚠️ 1. Die Klick-Kreise gibt es NUR bei einer Tab-Aufnahme. Eine Seite bekommt
+// keine Maus-Ereignisse von außerhalb ihres eigenen Tabs -- wer den ganzen
+// Bildschirm aufnimmt, kann deshalb prinzipiell nicht wissen, wo geklickt wurde.
+// Deshalb lädt die Betriebsart "tool" das Werkzeug in einen RAHMEN auf dieser
+// Seite: die ganze Flotte liegt auf sc1911heiligenstadt.github.io, der Rahmen ist
+// also gleichen Ursprungs und sein contentDocument lesbar. Bei "frei" gibt es
+// bewusst keine Kreise statt schlecht geratener.
+//
+// ⚠️ 2. Bei "tool"/"seite" läuft das Bild über ein Canvas (Kreise einzeichnen,
+// Bedienleiste wegschneiden), bei "frei" wird der Stream DIREKT aufgenommen.
+// Grund: für "frei" schaut der Nutzer in ein anderes Fenster, der Tab kann dabei
+// in den Hintergrund geraten -- und dort drosselt der Browser sowohl
+// requestAnimationFrame als auch setInterval auf ~1 Bild je Sekunde. Eine
+// Canvas-Aufnahme fröre in dem Moment ein, die Direktaufnahme läuft weiter.
+
+// ⚠️ 3. Die Größe wird GERECHNET, nicht gemessen -- das ist der tragende Punkt.
+// Chromes MP4-Muxer gibt seine Daten trotz Zeitscheibe erst beim Stopp heraus
+// (am 2026-08-07 nachgemessen: 6 Sekunden Aufnahme, NULL Datenereignisse, Datei
+// hinterher 299 KB da; auch requestData() erzwingt keine Herausgabe). Eine
+// Notbremse "bei 9 MB abbrechen" hätte also nie ausgelöst. WebM liefert zwar im
+// Sekundentakt, spielt aber auf den älteren iPhones der Flotte nicht ab -- und
+// genau dort werden die Meldungen gelesen. Deshalb bleibt es bei MP4, und die
+// Zusage kommt aus der Rechnung: Bitrate × Höchstdauer ≤ Zielgröße. Die Dauer
+// ist hart begrenzt, die Bitrate ist vorgegeben, damit steht die Obergrenze
+// VOR der ersten Sekunde fest. Die Byte-Notbremse bleibt als zusätzliches Netz
+// für die Fälle, in denen doch laufend Daten kommen.
+
+const AUFNAHME_ZIEL_BYTES = 8 * 1024 * 1024;     // Budget: Bitrate × Höchstdauer
+const AUFNAHME_HART_BYTES = 9.3 * 1024 * 1024;   // Netz, falls doch laufend gemessen wird
+const AUFNAHME_RING_MS = 550;                    // Lebensdauer eines Klick-Rings
+
+let aufnahmeState = null;
+
+function aufnahmeEl(id) { return document.getElementById(id); }
+
+function aufnahmeFehler(text, feldId) {
+  const el = aufnahmeEl(feldId || "aufnahme-fehler");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "block" : "none";
+}
+
+// Unter einem Megabyte in KB: ein 25-KB-Video als "0,0 MB" auszuweisen sieht aus,
+// als wäre die Aufnahme leer geblieben.
+function aufnahmeMB(bytes) {
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
+}
+
+function aufnahmeZeitText(sek) {
+  const m = Math.floor(sek / 60);
+  const s = Math.floor(sek % 60);
+  return m + ":" + (s < 10 ? "0" : "") + s;
+}
+
+// Der Browser entscheidet, was er kann. MP4/H.264 steht bewusst VORN: WebM/VP9
+// spielt auf den älteren iPhones der Flotte nicht ab, und die Meldungen werden
+// überwiegend am Handy gelesen.
+function aufnahmeFormat(mitTon) {
+  const kandidaten = mitTon
+    ? ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', "video/mp4",
+       "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+    : ['video/mp4;codecs="avc1.42E01E"', "video/mp4",
+       "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+  if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== "function") return "";
+  for (let i = 0; i < kandidaten.length; i++) {
+    if (MediaRecorder.isTypeSupported(kandidaten[i])) return kandidaten[i];
+  }
+  return "";
+}
+
+function aufnahmeMoeglich() {
+  return !!(window.MediaRecorder && navigator.mediaDevices
+    && typeof navigator.mediaDevices.getDisplayMedia === "function"
+    && document.createElement("canvas").captureStream);
+}
+
+const AUFNAHME_TON_BITS = 64000;
+
+// Zielgröße geteilt durch Höchstdauer. Der Tonanteil geht vom Videoanteil AB,
+// sonst käme er oben drauf und die Rechnung stimmte nicht mehr.
+//
+// ⚠️ Die untere Schranke ist bewusst niedrig (120 kbit/s). Zöge man sie höher,
+// risse bei den langen Aufnahmen genau die Zusage, um die es hier geht: bei
+// 250 kbit/s und 5 Minuten wären es 9,4 MB Video plus 2,4 MB Ton — über der
+// Grenze. Alle angebotenen Dauern liegen über der Schranke, sie greift also
+// nie; wer eine längere Dauer anbietet, muss das nachrechnen.
+function aufnahmeBitrate(maxSek, mitTon) {
+  const ton = mitTon ? AUFNAHME_TON_BITS : 0;
+  const roh = Math.floor((AUFNAHME_ZIEL_BYTES * 8) / Math.max(1, maxSek)) - ton;
+  return Math.max(120000, Math.min(4000000, roh));
+}
+
+function aufnahmeDauerText(sek) {
+  if (sek < 60) return sek + " Sekunden";
+  const m = sek / 60;
+  return m === 1 ? "1 Minute" : m + " Minuten";
+}
+
+function aufnahmeToolListe() {
+  const sel = aufnahmeEl("aufnahme-tool");
+  if (!sel) return;
+  sel.innerHTML = "";
+  TOOLS.filter((t) => t.url && isVisibleToUser(t.id, currentUser)).forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t.url;
+    o.textContent = (t.icon ? t.icon + " " : "") + t.name;
+    sel.appendChild(o);
+  });
+  if (!sel.options.length) {
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "— kein Werkzeug sichtbar —";
+    sel.appendChild(o);
+  }
+}
+
+function aufnahmeHinweisSetzen() {
+  const el = aufnahmeEl("aufnahme-hinweis");
+  if (!el) return;
+  const quelle = aufnahmeEl("aufnahme-quelle").value;
+  const maxSek = Number(aufnahmeEl("aufnahme-dauer").value) || 60;
+  const mitTon = aufnahmeEl("aufnahme-ton").checked;
+  const format = aufnahmeFormat(mitTon);
+  const teile = [];
+  // Die Zusage steht hier ehrlich als Rechnung da, nicht als Versprechen:
+  // die Höchstdauer ist es, die die Größe deckelt.
+  teile.push("Höchstens " + aufnahmeMB(AUFNAHME_ZIEL_BYTES) + ": die Bildqualität wird so eingestellt, "
+    + "dass " + aufnahmeDauerText(maxSek) + " in dieses Budget passen. Nach "
+    + aufnahmeDauerText(maxSek) + " endet die Aufnahme von selbst.");
+  if (quelle === "frei") {
+    teile.push("In dieser Betriebsart gibt es keine Klick-Kreise — eine Seite erfährt nichts von Klicks außerhalb ihres eigenen Tabs. Der Mauszeiger des Rechners wird aber mit aufgezeichnet.");
+  } else {
+    teile.push("Bleib während der Aufnahme in diesem Browser-Tab: im Hintergrund bremst der Browser das Zeichnen aus, und das Video stünde still.");
+  }
+  // Ehrlich benennen statt still ausliefern: ein WebM lässt sich auf älteren
+  // iPhones nicht abspielen, und genau dort werden die Meldungen gelesen.
+  if (!format) {
+    teile.push("⚠️ Dieser Browser kann gar kein Video aufnehmen.");
+  } else if (format.indexOf("mp4") === -1) {
+    teile.push("⚠️ Dieser Browser nimmt nur WebM auf. Das spielt auf älteren iPhones nicht ab — für eine Meldung an alle besser Chrome oder Edge benutzen.");
+  }
+  el.textContent = teile.join(" ");
+}
+
+function aufnahmeQuelleUmschalten() {
+  const quelle = aufnahmeEl("aufnahme-quelle").value;
+  const zeile = aufnahmeEl("aufnahme-tool-zeile");
+  if (zeile) zeile.style.display = quelle === "tool" ? "" : "none";
+  const ringeZeile = aufnahmeEl("aufnahme-ringe").closest(".aufnahme-haken");
+  if (ringeZeile) ringeZeile.style.display = quelle === "frei" ? "none" : "";
+  aufnahmeHinweisSetzen();
+}
+
+function aufnahmeOeffnen() {
+  const ov = aufnahmeEl("aufnahme-overlay");
+  if (!ov) return;
+  aufnahmeAufraeumen();
+  aufnahmeFehler("");
+  aufnahmeFehler("", "aufnahme-ergebnis-fehler");
+  aufnahmeEl("aufnahme-setup").style.display = "";
+  aufnahmeEl("aufnahme-ergebnis").style.display = "none";
+  aufnahmeToolListe();
+  aufnahmeQuelleUmschalten();
+  const start = aufnahmeEl("btn-aufnahme-start");
+  if (!aufnahmeMoeglich()) {
+    start.disabled = true;
+    aufnahmeFehler("Dieser Browser kann keine Bildschirmaufnahme. Am Rechner geht es mit Chrome oder Edge; auf dem Handy gibt es diesen Weg nicht.");
+  } else {
+    start.disabled = false;
+  }
+  ov.style.display = "flex";
+}
+
+function aufnahmeSchliessen() {
+  const ov = aufnahmeEl("aufnahme-overlay");
+  aufnahmeAufraeumen();
+  if (ov) ov.style.display = "none";
+}
+
+// Räumt ALLES ab, was eine laufende Aufnahme hält. Wird sowohl beim Schließen
+// als auch vor jedem neuen Anlauf gerufen -- eine zweite Aufnahme über einer
+// noch laufenden ersten wäre der klassische Weg zu zwei Aufnahmezeigern.
+function aufnahmeAufraeumen() {
+  const s = aufnahmeState;
+  aufnahmeState = null;
+  const ov = aufnahmeEl("aufnahme-overlay");
+  if (ov) ov.classList.remove("laeuft");
+  const buehne = aufnahmeEl("aufnahme-buehne");
+  if (buehne) buehne.style.display = "none";
+  const rahmen = aufnahmeEl("aufnahme-iframe");
+  if (rahmen) rahmen.src = "about:blank";
+  const leiste = aufnahmeEl("aufnahme-leiste");
+  if (leiste) leiste.style.display = "none";
+  if (!s) return;
+  if (s.tick) clearInterval(s.tick);
+  if (s.maltakt) clearInterval(s.maltakt);
+  try { if (s.rec && s.rec.state !== "inactive") s.rec.stop(); } catch (_) {}
+  [s.stream, s.tonStream].forEach((st) => {
+    if (!st) return;
+    st.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+  });
+  if (s.video) { try { s.video.pause(); } catch (_) {} s.video.srcObject = null; }
+  aufnahmeLauscherLoesen(s);
+  if (s.blobUrl) { try { URL.revokeObjectURL(s.blobUrl); } catch (_) {} }
+}
+
+// ---- Maus mitschreiben ----
+//
+// Zwei Dokumente können Ereignisse liefern: diese Seite und der Rahmen. Beide
+// zählen in ihren EIGENEN Fensterkoordinaten -- die des Rahmens müssen deshalb
+// um dessen Position auf der Seite verschoben werden, sonst säße der Kreis bei
+// jedem Klick oben links.
+function aufnahmeVersatz(imRahmen) {
+  if (!imRahmen) return { x: 0, y: 0 };
+  const f = aufnahmeEl("aufnahme-iframe");
+  if (!f) return { x: 0, y: 0 };
+  const r = f.getBoundingClientRect();
+  return { x: r.left, y: r.top };
+}
+
+function aufnahmeLauscherAn(doc, imRahmen) {
+  const s = aufnahmeState;
+  if (!s || !doc) return;
+  const move = (ev) => {
+    const o = aufnahmeVersatz(imRahmen);
+    s.maus = { x: ev.clientX + o.x, y: ev.clientY + o.y, da: true };
+  };
+  const down = (ev) => {
+    const o = aufnahmeVersatz(imRahmen);
+    s.maus = { x: ev.clientX + o.x, y: ev.clientY + o.y, da: true };
+    s.klicks.push({ x: s.maus.x, y: s.maus.y, t: performance.now() });
+  };
+  const weg = () => { s.maus = { x: 0, y: 0, da: false }; };
+  // capture: true -- ein Werkzeug, das den Klick mit stopPropagation abfängt,
+  // dürfte den Kreis nicht verschlucken.
+  doc.addEventListener("pointermove", move, true);
+  doc.addEventListener("pointerdown", down, true);
+  doc.addEventListener("pointerleave", weg, true);
+  s.lauscher.push({ doc: doc, move: move, down: down, weg: weg, imRahmen: !!imRahmen });
+}
+
+function aufnahmeLauscherLoesen(s, nurRahmen) {
+  if (!s || !s.lauscher) return;
+  const bleiben = [];
+  s.lauscher.forEach((l) => {
+    if (nurRahmen && !l.imRahmen) { bleiben.push(l); return; }
+    try {
+      l.doc.removeEventListener("pointermove", l.move, true);
+      l.doc.removeEventListener("pointerdown", l.down, true);
+      l.doc.removeEventListener("pointerleave", l.weg, true);
+    } catch (_) { /* Dokument des Rahmens kann schon fort sein */ }
+  });
+  s.lauscher = bleiben;
+}
+
+// Nach jedem Seitenwechsel im Rahmen sind die Lauscher weg -- der Klick auf
+// einen Link im Werkzeug lädt ein neues Dokument. Ohne dieses Nachhängen
+// verschwänden die Kreise beim ersten Navigieren.
+function aufnahmeRahmenAnbinden() {
+  const s = aufnahmeState;
+  const f = aufnahmeEl("aufnahme-iframe");
+  if (!s || !f) return;
+  // ⚠️ Erst die alten lösen. Der Rahmen lädt mindestens zweimal (about:blank,
+  // dann das Werkzeug), und ohne diese Zeile hingen danach zwei Lauscher am
+  // selben Dokument -- jeder Klick hätte ZWEI deckungsgleiche Ringe erzeugt.
+  // Am 2026-08-07 im Preview genau so gemessen (2 Einträge statt 1).
+  aufnahmeLauscherLoesen(s, true);
+  let doc = null;
+  try { doc = f.contentDocument; } catch (_) { doc = null; }
+  if (!doc) {
+    s.rahmenStumm = true;
+    return;
+  }
+  aufnahmeLauscherAn(doc, true);
+}
+
+// ---- Der aufgenommene Ausschnitt ----
+//
+// Gemessen wird bei JEDEM Bild neu: die Leiste bricht am Handy um, und der
+// Rahmen ändert seine Höhe mit ihr.
+function aufnahmeBereich() {
+  const s = aufnahmeState;
+  if (!s || s.quelle === "frei") return null;
+  if (s.quelle === "tool") {
+    const f = aufnahmeEl("aufnahme-iframe");
+    if (!f) return null;
+    const r = f.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+  const leiste = aufnahmeEl("aufnahme-leiste");
+  const h = leiste && leiste.style.display !== "none" ? leiste.getBoundingClientRect().height : 0;
+  return {
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: Math.max(60, window.innerHeight - h)
+  };
+}
+
+// Fensterkoordinate -> Bildpunkt auf dem Canvas. Gibt null zurück, wenn der
+// Punkt außerhalb des aufgenommenen Ausschnitts liegt (Maus über der Leiste).
+function aufnahmeZuCanvas(vx, vy) {
+  const s = aufnahmeState;
+  if (!s || !s.bereich || !s.ziel || s.bereich.width <= 0 || s.bereich.height <= 0) return null;
+  const ax = (vx - s.bereich.left) / s.bereich.width;
+  const ay = (vy - s.bereich.top) / s.bereich.height;
+  if (ax < 0 || ax > 1 || ay < 0 || ay > 1) return null;
+  return {
+    x: s.ziel.x + ax * s.ziel.w,
+    y: s.ziel.y + ay * s.ziel.h,
+    k: s.ziel.w / s.bereich.width
+  };
+}
+
+function aufnahmeZeichnen() {
+  const s = aufnahmeState;
+  if (!s || !s.ctx || !s.video) return;
+  const ctx = s.ctx;
+  const vw = s.video.videoWidth;
+  const vh = s.video.videoHeight;
+  if (!vw || !vh) return;
+
+  s.bereich = aufnahmeBereich();
+  let sx = 0, sy = 0, sw = vw, sh = vh;
+  if (s.bereich && window.innerWidth > 0 && window.innerHeight > 0) {
+    // Der aufgenommene Tab ist genau das Sichtfenster -- das Verhältnis
+    // Videobreite/innerWidth rechnet Fenster- in Bildpunkte um, unabhängig
+    // davon, mit welcher Pixeldichte der Browser aufnimmt.
+    const kx = vw / window.innerWidth;
+    const ky = vh / window.innerHeight;
+    sx = s.bereich.left * kx;
+    sy = s.bereich.top * ky;
+    sw = s.bereich.width * kx;
+    sh = s.bereich.height * ky;
+  }
+  if (sw <= 0 || sh <= 0) return;
+
+  // Seitenverhältnis halten statt zu verzerren: das Fenster kann sich während
+  // der Aufnahme ändern, die Canvas-Größe darf es nicht (das risse den Strom ab).
+  const f = Math.min(s.canvas.width / sw, s.canvas.height / sh);
+  const zw = sw * f;
+  const zh = sh * f;
+  s.ziel = { x: (s.canvas.width - zw) / 2, y: (s.canvas.height - zh) / 2, w: zw, h: zh };
+
+  ctx.fillStyle = "#11151d";
+  ctx.fillRect(0, 0, s.canvas.width, s.canvas.height);
+  try {
+    ctx.drawImage(s.video, sx, sy, sw, sh, s.ziel.x, s.ziel.y, zw, zh);
+  } catch (_) { return; }
+
+  if (!s.ringeAn) return;
+
+  // Weicher Kreis unter dem Zeiger. Bei einer Tab-Aufnahme zeichnet der Browser
+  // den Mauszeiger NICHT mit -- ohne diesen Kreis wäre im Video gar nicht zu
+  // sehen, wo die Maus steht.
+  if (s.maus.da) {
+    const p = aufnahmeZuCanvas(s.maus.x, s.maus.y);
+    if (p) {
+      const r = 15 * Math.max(0.5, p.k);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 214, 64, 0.30)";
+      ctx.fill();
+      ctx.lineWidth = Math.max(1.5, 2 * p.k);
+      ctx.strokeStyle = "rgba(201, 148, 31, 0.85)";
+      ctx.stroke();
+    }
+  }
+
+  const jetzt = performance.now();
+  s.klicks = s.klicks.filter((k) => jetzt - k.t < AUFNAHME_RING_MS);
+  s.klicks.forEach((k) => {
+    const p = aufnahmeZuCanvas(k.x, k.y);
+    if (!p) return;
+    const a = (jetzt - k.t) / AUFNAHME_RING_MS;
+    const r = (12 + a * 34) * Math.max(0.5, p.k);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, 4 * (1 - a) * p.k);
+    ctx.strokeStyle = "rgba(229, 72, 77, " + (0.9 * (1 - a)).toFixed(3) + ")";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(229, 72, 77, " + (0.18 * (1 - a)).toFixed(3) + ")";
+    ctx.fill();
+  });
+}
+
+function aufnahmeLeisteZeigen() {
+  const s = aufnahmeState;
+  const leiste = aufnahmeEl("aufnahme-leiste");
+  if (!leiste || !s) return;
+  const sek = (Date.now() - s.startMs) / 1000;
+  aufnahmeEl("aufnahme-zeit").textContent = aufnahmeZeitText(sek) + " / " + aufnahmeZeitText(s.maxSek);
+  // ⚠️ Bei MP4 kommt bis zum Stopp kein einziges Byte heraus (siehe Kopf des
+  // Abschnitts). Dann steht hier die Rechnung aus der eingestellten Bitrate --
+  // und zwar als "max.", denn genau das ist sie: eine OBERGRENZE, keine Schätzung.
+  // Ruhige Bilder bleiben weit darunter (gemessen: 25 KB, wo 1,1 MB möglich
+  // gewesen wären). Eine Anzeige, die drei Minuten lang "0 KB" behauptet, wäre falsch.
+  const gemessen = s.bytes > 0;
+  const zeigeBytes = gemessen ? s.bytes : Math.round((sek * s.gesamtBits) / 8);
+  aufnahmeEl("aufnahme-groesse").textContent = (gemessen ? "" : "max. ") + aufnahmeMB(zeigeBytes);
+  // Der Balken zeigt, was zuerst voll wird: die Zeit oder der Platz.
+  const anteil = Math.max(sek / s.maxSek, zeigeBytes / AUFNAHME_HART_BYTES);
+  const fuell = aufnahmeEl("aufnahme-balken-fuellung");
+  fuell.style.width = Math.min(100, anteil * 100).toFixed(1) + "%";
+  fuell.classList.toggle("knapp", anteil >= 0.75 && anteil < 0.92);
+  fuell.classList.toggle("voll", anteil >= 0.92);
+  if (sek >= s.maxSek) aufnahmeStoppen("Die eingestellte Höchstdauer war erreicht.");
+}
+
+async function aufnahmeStarten() {
+  const startBtn = aufnahmeEl("btn-aufnahme-start");
+  aufnahmeFehler("");
+  const quelle = aufnahmeEl("aufnahme-quelle").value;
+  const breite = Number(aufnahmeEl("aufnahme-breite").value) || 960;
+  const fps = Number(aufnahmeEl("aufnahme-fps").value) || 15;
+  const maxSek = Number(aufnahmeEl("aufnahme-dauer").value) || 60;
+  const mitTon = aufnahmeEl("aufnahme-ton").checked;
+  const ringeAn = aufnahmeEl("aufnahme-ringe").checked && quelle !== "frei";
+  const toolUrl = aufnahmeEl("aufnahme-tool").value;
+  const format = aufnahmeFormat(mitTon);
+
+  if (!format) return aufnahmeFehler("Dieser Browser kann kein Video aufnehmen.");
+  if (quelle === "tool" && !toolUrl) return aufnahmeFehler("Für dich ist gerade kein Werkzeug sichtbar, das sich aufnehmen ließe.");
+
+  startBtn.disabled = true;
+  startBtn.textContent = "Wird vorbereitet…";
+  aufnahmeAufraeumen();
+
+  aufnahmeState = {
+    quelle: quelle, maxSek: maxSek, ringeAn: ringeAn, fps: fps,
+    stream: null, tonStream: null, video: null, canvas: null, ctx: null,
+    rec: null, chunks: [], bytes: 0, blob: null, blobUrl: null, dateiname: "",
+    mimeType: format, startMs: 0, tick: null, maltakt: null, gesamtBits: 0,
+    klicks: [], maus: { x: 0, y: 0, da: false }, lauscher: [],
+    bereich: null, ziel: null, rahmenStumm: false, grund: ""
+  };
+  const s = aufnahmeState;
+
+  try {
+    if (mitTon) {
+      // Vor dem Bildschirm fragen: bricht das Mikrofon ab, soll nicht schon eine
+      // laufende Bildschirmfreigabe im Raum stehen, die wieder eingesammelt werden muss.
+      s.tonStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    if (quelle === "tool") {
+      const rahmen = aufnahmeEl("aufnahme-iframe");
+      const buehne = aufnahmeEl("aufnahme-buehne");
+      const ov = aufnahmeEl("aufnahme-overlay");
+      ov.classList.add("laeuft");
+      buehne.style.display = "block";
+      aufnahmeEl("aufnahme-leiste").style.display = "flex";
+      buehne.style.bottom = aufnahmeEl("aufnahme-leiste").getBoundingClientRect().height + "px";
+      rahmen.onload = aufnahmeRahmenAnbinden;
+      rahmen.src = toolUrl;
+      // Ein Bild abwarten, damit der Rahmen seine endgültige Größe hat, bevor
+      // daraus die Canvas-Maße gerechnet werden.
+      await new Promise((r) => setTimeout(r, 60));
+    }
+
+    const wunsch = { video: { frameRate: { ideal: fps } }, audio: false };
+    if (quelle !== "frei") {
+      // Chrome zeigt damit gleich den richtigen Eintrag an. Kennt ein Browser die
+      // Angabe nicht, überspringt er sie und der Nutzer wählt von Hand.
+      wunsch.preferCurrentTab = true;
+    } else {
+      wunsch.video.cursor = "always";
+      wunsch.video.width = { max: breite };
+    }
+    s.stream = await navigator.mediaDevices.getDisplayMedia(wunsch);
+  } catch (e) {
+    const abgebrochen = e && (e.name === "NotAllowedError" || e.name === "AbortError");
+    aufnahmeAufraeumen();
+    aufnahmeEl("aufnahme-overlay").style.display = "flex";
+    startBtn.disabled = false;
+    startBtn.textContent = "Aufnahme starten";
+    return aufnahmeFehler(abgebrochen
+      ? "Die Aufnahme wurde nicht freigegeben."
+      : "Die Aufnahme ließ sich nicht starten: " + (e && e.message ? e.message : "unbekannter Fehler"));
+  }
+
+  startBtn.disabled = false;
+  startBtn.textContent = "Aufnahme starten";
+
+  // Beendet der Nutzer die Freigabe über die Leiste des Browsers, ist das ein
+  // gültiges "fertig" -- nicht ein Fehler.
+  const spur = s.stream.getVideoTracks()[0];
+  if (spur) spur.addEventListener("ended", () => aufnahmeStoppen("Die Freigabe wurde beendet."));
+
+  let aufnahmeStream;
+  if (quelle === "frei") {
+    // Direktaufnahme, siehe Begründung am Kopf des Abschnitts.
+    aufnahmeStream = new MediaStream(s.stream.getVideoTracks());
+  } else {
+    s.video = document.createElement("video");
+    s.video.muted = true;
+    s.video.playsInline = true;
+    s.video.srcObject = s.stream;
+    try { await s.video.play(); } catch (_) { /* stumm abspielen darf nicht scheitern */ }
+
+    const b = aufnahmeBereich() || { width: window.innerWidth, height: window.innerHeight };
+    const seiten = b.height > 0 ? b.width / b.height : 16 / 9;
+    s.canvas = document.createElement("canvas");
+    // Gerade Kantenlängen: ungerade Maße mag kein H.264-Encoder.
+    s.canvas.width = Math.max(2, Math.round(breite / 2) * 2);
+    s.canvas.height = Math.max(2, Math.round(breite / seiten / 2) * 2);
+    s.ctx = s.canvas.getContext("2d");
+
+    aufnahmeLauscherAn(document, false);
+    if (quelle === "tool") aufnahmeRahmenAnbinden();
+
+    // setInterval statt requestAnimationFrame: der Strom nimmt ohnehin nur fps
+    // Bilder je Sekunde ab, 60 Zeichenläufe wären verschenkte Rechenzeit.
+    s.maltakt = setInterval(aufnahmeZeichnen, Math.round(1000 / fps));
+    aufnahmeZeichnen();
+    aufnahmeStream = s.canvas.captureStream(fps);
+  }
+
+  if (s.tonStream) s.tonStream.getAudioTracks().forEach((t) => aufnahmeStream.addTrack(t));
+
+  const optionen = { mimeType: format, videoBitsPerSecond: aufnahmeBitrate(maxSek, mitTon) };
+  if (mitTon) optionen.audioBitsPerSecond = AUFNAHME_TON_BITS;
+  // Grundlage der Hochrechnung in der Leiste, solange nichts gemessen werden kann.
+  s.gesamtBits = optionen.videoBitsPerSecond + (mitTon ? AUFNAHME_TON_BITS : 0);
+  try {
+    s.rec = new MediaRecorder(aufnahmeStream, optionen);
+  } catch (e) {
+    aufnahmeAufraeumen();
+    aufnahmeEl("aufnahme-overlay").style.display = "flex";
+    return aufnahmeFehler("Die Aufnahme ließ sich nicht einrichten: " + (e && e.message ? e.message : "unbekannter Fehler"));
+  }
+
+  s.rec.ondataavailable = (ev) => {
+    if (!ev.data || !ev.data.size) return;
+    s.chunks.push(ev.data);
+    s.bytes += ev.data.size;
+    // Der Notaus. Die Bitrate ist so gerechnet, dass er im Normalfall nie greift.
+    if (s.bytes >= AUFNAHME_HART_BYTES) {
+      aufnahmeStoppen("Die Aufnahme wurde bei " + aufnahmeMB(s.bytes) + " beendet, damit sie anhängbar bleibt.");
+    }
+  };
+  s.rec.onstop = aufnahmeErgebnisZeigen;
+
+  s.startMs = Date.now();
+  // Ein Block je Sekunde: nur so lässt sich die Größe überhaupt LAUFEND messen.
+  // Ohne Zeitscheibe käme alles erst am Ende, und die Grenze wäre dann längst gerissen.
+  s.rec.start(1000);
+  aufnahmeEl("aufnahme-leiste").style.display = "flex";
+  if (quelle !== "tool") aufnahmeEl("aufnahme-overlay").style.display = "none";
+  s.tick = setInterval(aufnahmeLeisteZeigen, 250);
+  aufnahmeLeisteZeigen();
+}
+
+function aufnahmeStoppen(grund) {
+  const s = aufnahmeState;
+  if (!s || !s.rec || s.rec.state === "inactive") return;
+  s.grund = grund || "";
+  if (s.tick) { clearInterval(s.tick); s.tick = null; }
+  try { s.rec.stop(); } catch (_) { /* onstop kommt dann nicht -- Fenster bleibt offen */ }
+}
+
+function aufnahmeErgebnisZeigen() {
+  const s = aufnahmeState;
+  if (!s) return;
+  if (s.maltakt) { clearInterval(s.maltakt); s.maltakt = null; }
+  [s.stream, s.tonStream].forEach((st) => {
+    if (!st) return;
+    st.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+  });
+  aufnahmeLauscherLoesen(s);
+
+  const ov = aufnahmeEl("aufnahme-overlay");
+  ov.classList.remove("laeuft");
+  aufnahmeEl("aufnahme-buehne").style.display = "none";
+  const rahmen = aufnahmeEl("aufnahme-iframe");
+  if (rahmen) { rahmen.onload = null; rahmen.src = "about:blank"; }
+  aufnahmeEl("aufnahme-leiste").style.display = "none";
+
+  const dauer = (Date.now() - s.startMs) / 1000;
+  const basisTyp = s.mimeType.indexOf("mp4") !== -1 ? "video/mp4" : "video/webm";
+  s.blob = new Blob(s.chunks, { type: basisTyp });
+  s.bytes = s.blob.size;
+  s.blobUrl = URL.createObjectURL(s.blob);
+  const stempel = new Date();
+  const zwei = (n) => (n < 10 ? "0" : "") + n;
+  s.dateiname = "Bildschirmvideo-" + stempel.getFullYear() + "-" + zwei(stempel.getMonth() + 1)
+    + "-" + zwei(stempel.getDate()) + "-" + zwei(stempel.getHours()) + zwei(stempel.getMinutes())
+    + (basisTyp === "video/mp4" ? ".mp4" : ".webm");
+
+  aufnahmeEl("aufnahme-setup").style.display = "none";
+  aufnahmeEl("aufnahme-ergebnis").style.display = "";
+  aufnahmeFehler("", "aufnahme-ergebnis-fehler");
+
+  const saetze = ["Länge " + aufnahmeZeitText(dauer) + ", " + aufnahmeMB(s.bytes) + ", " + s.dateiname + "."];
+  if (s.grund) saetze.push(s.grund);
+  if (s.bytes > NEWS_MEDIEN_MAX_BYTES) {
+    saetze.push("⚠️ Damit liegt es über den 10 MB und lässt sich nicht anhängen — lade es herunter und verlinke es, oder nimm es kürzer oder kleiner noch einmal auf.");
+  }
+  if (s.rahmenStumm) {
+    saetze.push("Hinweis: die Klicks im Rahmen ließen sich nicht mitlesen, dort fehlen die Kreise.");
+  }
+  aufnahmeEl("aufnahme-ergebnis-text").textContent = saetze.join(" ");
+
+  const v = aufnahmeEl("aufnahme-video");
+  v.src = s.blobUrl;
+  aufnahmeEl("btn-aufnahme-anhaengen").disabled = s.bytes > NEWS_MEDIEN_MAX_BYTES || !s.bytes;
+  ov.style.display = "flex";
+}
+
+async function aufnahmeAnhaengen() {
+  const s = aufnahmeState;
+  if (!s || !s.blob) return;
+  if (newsMedienEntwurf.length >= NEWS_MEDIEN_MAX) {
+    return aufnahmeFehler("Mehr als " + NEWS_MEDIEN_MAX + " Anhänge gehen nicht.", "aufnahme-ergebnis-fehler");
+  }
+  if (s.blob.size > NEWS_MEDIEN_MAX_BYTES) {
+    return aufnahmeFehler("Das Video ist " + aufnahmeMB(s.blob.size) + " groß — anhängen lassen sich 10 MB.", "aufnahme-ergebnis-fehler");
+  }
+  const btn = aufnahmeEl("btn-aufnahme-anhaengen");
+  btn.disabled = true;
+  btn.textContent = "Lädt hoch…";
+  try {
+    const bytes = await dateiAlsBytes(s.blob);
+    const id = neueDateiId();
+    const res = await callWorker("news-datei-put", { id, dataBase64: bytesZuBase64(bytes) });
+    newsMedienEntwurf.push({ id, mime: res.mime, art: res.art, name: s.dateiname });
+    newsMedienEditorRendern();
+    aufnahmeSchliessen();
+  } catch (e) {
+    aufnahmeFehler(e && e.message ? e.message : "Hochladen fehlgeschlagen.", "aufnahme-ergebnis-fehler");
+    btn.disabled = false;
+  } finally {
+    btn.textContent = "An die Meldung anhängen";
+  }
+}
+
+function aufnahmeHerunterladen() {
+  const s = aufnahmeState;
+  if (!s || !s.blobUrl) return;
+  const a = document.createElement("a");
+  a.href = s.blobUrl;
+  a.download = s.dateiname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function setupAufnahme() {
+  const oeffnen = document.getElementById("btn-news-video-aufnehmen");
+  if (oeffnen) oeffnen.addEventListener("click", aufnahmeOeffnen);
+  const ov = document.getElementById("aufnahme-overlay");
+  if (!ov) return;
+
+  ["btn-aufnahme-close", "btn-aufnahme-abbrechen"].forEach((id) => {
+    const b = document.getElementById(id);
+    if (b) b.addEventListener("click", aufnahmeSchliessen);
+  });
+  const start = document.getElementById("btn-aufnahme-start");
+  if (start) start.addEventListener("click", aufnahmeStarten);
+  const stopp = document.getElementById("btn-aufnahme-stopp");
+  if (stopp) stopp.addEventListener("click", () => aufnahmeStoppen(""));
+  const anhaengen = document.getElementById("btn-aufnahme-anhaengen");
+  if (anhaengen) anhaengen.addEventListener("click", aufnahmeAnhaengen);
+  const runter = document.getElementById("btn-aufnahme-download");
+  if (runter) runter.addEventListener("click", aufnahmeHerunterladen);
+  const neu = document.getElementById("btn-aufnahme-neu");
+  if (neu) neu.addEventListener("click", aufnahmeOeffnen);
+
+  const quelle = document.getElementById("aufnahme-quelle");
+  if (quelle) quelle.addEventListener("change", aufnahmeQuelleUmschalten);
+  ["aufnahme-dauer", "aufnahme-ton", "aufnahme-breite", "aufnahme-fps"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", aufnahmeHinweisSetzen);
+  });
+
+  // ⚠️ Kein Schließen per Hintergrundklick und kein Escape, SOLANGE aufgenommen
+  // wird -- ein Fehlgriff neben den Dialog würfe sonst die laufende Aufnahme weg.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape" || ov.style.display !== "flex") return;
+    if (aufnahmeState && aufnahmeState.rec && aufnahmeState.rec.state === "recording") return;
+    ev.escapeVerbraucht = true;
+    aufnahmeSchliessen();
+  });
+}
+
 // ---- Feedback & Hilfe ----
 
 // Bewusst kein "Once"-Cache wie bei newsToolOptionsOnce: welche Tools zur Auswahl
@@ -6120,6 +6813,8 @@ function setupAuthForms() {
       });
       newsMedienEditorRendern();
     }
+    // Zweiter Weg zu einem Anhang: selbst aufgenommen statt aus einer Datei.
+    setupAufnahme();
     const medienClose = document.getElementById("btn-news-medien-close");
     if (medienClose) medienClose.addEventListener("click", newsMedienOverlaySchliessen);
     const medienOverlay = document.getElementById("news-medien-overlay");

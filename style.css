@@ -1650,3 +1650,141 @@ nav .nav-right { margin-left: auto; display: flex; gap: inherit; }
 /* Der Trenner zwischen den beiden Links braucht Luft, sonst kleben sie am
    Handy aneinander und der Tippbereich wird mehrdeutig. */
 .seiten-fuss span { margin: 0 8px; color: #b0b6c0; }
+/* ---------- Bildschirmvideo aufnehmen (seit 2026-08-07) ---------- */
+
+/* Die beiden Knöpfe unter den Anhängen brechen am Handy um, statt die Karte
+   seitlich aufzuziehen -- "🎥 Bildschirmvideo aufnehmen" ist die längere von
+   beiden Beschriftungen und passt bei 375 px nicht neben die erste. */
+.news-medien-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ⚠️ Liegt über den gestaffelten Dialogen (1010), weil in der Betriebsart
+   "Ein Werkzeug" der Rahmen den ganzen Bildschirm einnimmt und nichts
+   darüber liegen darf. */
+.aufnahme-overlay { z-index: 1010; }
+
+/* Während der Aufnahme trägt der Overlay keinen Rand mehr: der Rahmen füllt
+   alles bis zur Bedienleiste, und genau dieser Bereich wird aufgenommen. */
+.aufnahme-overlay.laeuft {
+  padding: 0;
+  background: #11151d;
+}
+
+.aufnahme-dialog { max-width: 560px; }
+.aufnahme-overlay.laeuft .aufnahme-dialog { display: none; }
+
+.aufnahme-buehne {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* Der Wert wird beim Start aus der gemessenen Höhe der Leiste gesetzt --
+     fest verdrahtet stimmte er am Handy nicht, wo die Leiste umbricht. */
+  bottom: 0;
+  background: var(--white);
+}
+.aufnahme-buehne iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* Drei schmale Auswahlfelder nebeneinander, am Handy untereinander.
+   minmax(0, 1fr) statt 1fr: ein <select> mit langer Beschriftung zöge die
+   Spalte sonst über die Dialogbreite hinaus. */
+.aufnahme-optionen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.aufnahme-optionen .form-field { min-width: 0; }
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% }, was aus
+   jedem Kästchen einen Balken macht (gleiche Falle wie bei den Push-Schaltern). */
+.aufnahme-haken {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.aufnahme-haken input { width: auto; margin-top: 2px; flex: none; }
+
+.aufnahme-hinweis { font-size: 12.5px; margin: 10px 0 0; }
+.aufnahme-fehler { color: var(--red); font-size: 13px; margin: 10px 0 0; }
+
+.aufnahme-knoepfe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.aufnahme-vorschau {
+  background: #11151d;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.aufnahme-vorschau video {
+  display: block;
+  width: 100%;
+  max-height: 46vh;
+  background: #11151d;
+}
+
+/* Die Leiste steht IMMER am unteren Rand und wird bei der Tab-Aufnahme aus dem
+   Bild geschnitten -- ohne das stünde die eigene Bedienung im fertigen Video. */
+.aufnahme-leiste {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1020;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #11151d;
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.35);
+}
+.aufnahme-punkt {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e5484d;
+  flex: none;
+  animation: aufnahme-blinken 1.4s ease-in-out infinite;
+}
+@keyframes aufnahme-blinken { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.aufnahme-zeit,
+.aufnahme-groesse {
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.aufnahme-balken {
+  flex: 1 1 120px;
+  min-width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+.aufnahme-balken-fuellung {
+  height: 100%;
+  width: 0;
+  background: #4ea15f;
+  transition: width 0.3s linear;
+}
+.aufnahme-balken-fuellung.knapp { background: var(--gold); }
+.aufnahme-balken-fuellung.voll { background: #e5484d; }
+.aufnahme-leiste .btn { flex: none; }

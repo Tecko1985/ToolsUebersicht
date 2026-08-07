@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.44" />
+<link rel="stylesheet" href="style.css?v=1.45" />
 </head>
 <body>
 
@@ -509,7 +509,10 @@
         <div class="form-field" style="grid-column:1 / -1;">
           <label>Bilder und Videos (optional, bis 4 Stück, je max. 10 MB)</label>
           <div class="news-medien-edit" id="news-medien-edit"></div>
-          <button type="button" class="btn secondary small" id="btn-news-medien-add">📎 Bild oder Video hinzufügen</button>
+          <div class="news-medien-knoepfe">
+            <button type="button" class="btn secondary small" id="btn-news-medien-add">📎 Bild oder Video hinzufügen</button>
+            <button type="button" class="btn secondary small" id="btn-news-video-aufnehmen">🎥 Bildschirmvideo aufnehmen</button>
+          </div>
           <input type="file" id="news-medien-datei" style="display:none;" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm" />
           <p class="muted" style="font-size:12px; margin-top:6px;">JPEG, PNG, GIF, WebP, MP4 oder WebM. Die Dateien liegen auf der Vereins-Nextcloud und sind nur für Angemeldete abrufbar.</p>
         </div>
@@ -839,6 +842,115 @@
   </div>
 </div>
 
+<!-- Bildschirmvideo für eine Meldung aufnehmen (seit 2026-08-07, nur Admin).
+     Nimmt NICHT den Bildschirm des Rechners auf, sondern den Tab -- nur so kommen die
+     Klicks überhaupt an, aus denen die Kreise entstehen. Ein Werkzeug wird dafür in den
+     Rahmen unten geladen; das geht, weil die ganze Flotte auf derselben Adresse liegt.
+     Die Bedienleiste steht am unteren Rand und wird aus dem Bild GESCHNITTEN, sonst
+     stünde sie im fertigen Video. -->
+<div class="code-overlay aufnahme-overlay" id="aufnahme-overlay" style="display:none;">
+
+  <div class="aufnahme-buehne" id="aufnahme-buehne" style="display:none;">
+    <iframe id="aufnahme-iframe" title="Aufgenommenes Werkzeug" src="about:blank"></iframe>
+  </div>
+
+  <div class="code-dialog aufnahme-dialog" id="aufnahme-dialog" role="dialog" aria-modal="true" aria-labelledby="aufnahme-titel">
+    <div class="code-dialog-head">
+      <h2 id="aufnahme-titel">🎥 Bildschirmvideo aufnehmen</h2>
+      <button type="button" class="code-dialog-close" id="btn-aufnahme-close" title="Schließen" aria-label="Schließen">✕</button>
+    </div>
+
+    <div id="aufnahme-setup">
+      <p class="muted" style="margin-bottom:14px;">
+        Zeichnet auf, was du anklickst — mit einem Kreis unter dem Mauszeiger und einem Ring bei
+        jedem Klick, damit hinterher zu sehen ist, wo du hingedrückt hast. Die Größe wird vorher so
+        eingestellt, dass das fertige Video als Anhang unter die Grenze von 10 MB passt.
+      </p>
+
+      <div class="form-field">
+        <label for="aufnahme-quelle">Was soll aufgenommen werden?</label>
+        <select class="form-select" id="aufnahme-quelle">
+          <option value="tool">Ein Vereins-Werkzeug — mit Klick-Kreisen</option>
+          <option value="seite">Diese Seite, die Tools-Übersicht — mit Klick-Kreisen</option>
+          <option value="frei">Bildschirm oder anderes Fenster — ohne Klick-Kreise</option>
+        </select>
+      </div>
+
+      <div class="form-field" id="aufnahme-tool-zeile">
+        <label for="aufnahme-tool">Welches Werkzeug?</label>
+        <select class="form-select" id="aufnahme-tool"></select>
+      </div>
+
+      <div class="aufnahme-optionen">
+        <div class="form-field">
+          <label for="aufnahme-breite">Bildbreite</label>
+          <select class="form-select" id="aufnahme-breite">
+            <option value="1280">1280 Pixel — scharf</option>
+            <option value="960" selected>960 Pixel — empfohlen</option>
+            <option value="720">720 Pixel — sehr sparsam</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="aufnahme-fps">Bilder je Sekunde</label>
+          <select class="form-select" id="aufnahme-fps">
+            <option value="25">25 — flüssig</option>
+            <option value="15" selected>15 — empfohlen</option>
+            <option value="10">10 — sehr sparsam</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="aufnahme-dauer">Höchstdauer</label>
+          <select class="form-select" id="aufnahme-dauer">
+            <option value="30">30 Sekunden</option>
+            <option value="60" selected>1 Minute</option>
+            <option value="120">2 Minuten</option>
+            <option value="180">3 Minuten</option>
+            <option value="300">5 Minuten</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="aufnahme-haken">
+        <input type="checkbox" id="aufnahme-ringe" checked />
+        <span>Mauszeiger und Klicks hervorheben</span>
+      </label>
+      <label class="aufnahme-haken">
+        <input type="checkbox" id="aufnahme-ton" />
+        <span>Ton vom Mikrofon mit aufnehmen (erklärt das Gezeigte)</span>
+      </label>
+
+      <p class="muted aufnahme-hinweis" id="aufnahme-hinweis"></p>
+      <p class="muted aufnahme-fehler" id="aufnahme-fehler" style="display:none;"></p>
+
+      <div class="aufnahme-knoepfe">
+        <button type="button" class="btn" id="btn-aufnahme-start">Aufnahme starten</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-abbrechen">Abbrechen</button>
+      </div>
+    </div>
+
+    <div id="aufnahme-ergebnis" style="display:none;">
+      <p class="muted" id="aufnahme-ergebnis-text" style="margin-bottom:12px;"></p>
+      <div class="aufnahme-vorschau"><video id="aufnahme-video" controls playsinline preload="metadata"></video></div>
+      <p class="muted aufnahme-fehler" id="aufnahme-ergebnis-fehler" style="display:none;"></p>
+      <div class="aufnahme-knoepfe">
+        <button type="button" class="btn" id="btn-aufnahme-anhaengen">An die Meldung anhängen</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-download">Herunterladen</button>
+        <button type="button" class="btn secondary" id="btn-aufnahme-neu">Noch einmal aufnehmen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Steht bewusst AUSSERHALB des Fensters: in der Betriebsart „Diese Seite" wird das
+     Fenster ausgeblendet, die Leiste muss trotzdem bedienbar bleiben. -->
+<div class="aufnahme-leiste" id="aufnahme-leiste" style="display:none;">
+  <span class="aufnahme-punkt" aria-hidden="true"></span>
+  <span class="aufnahme-zeit" id="aufnahme-zeit">0:00</span>
+  <div class="aufnahme-balken"><div class="aufnahme-balken-fuellung" id="aufnahme-balken-fuellung"></div></div>
+  <span class="aufnahme-groesse" id="aufnahme-groesse">0,0 MB</span>
+  <button type="button" class="btn small" id="btn-aufnahme-stopp">■ Aufnahme beenden</button>
+</div>
+
 <div class="code-overlay" id="materialcontainer-overlay" style="display:none;">
   <div class="code-dialog" role="dialog" aria-modal="true" aria-labelledby="materialcontainer-titel">
     <div class="code-dialog-head">
@@ -1126,7 +1238,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.75"></script>
-<script src="app.js?v=1.60"></script>
+<script src="config.js?v=1.76"></script>
+<script src="app.js?v=1.61"></script>
 </body>
 </html>
