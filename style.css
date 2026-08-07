@@ -1044,6 +1044,57 @@ main { flex: 1; min-width: 0; }
   padding-bottom: 4px;
 }
 
+/* ---------- Eingrenzen auf Gruppen und Personen (seit 2026-08-07) ---------- */
+
+.rund-eingrenzen > summary { font-size: 13px; font-weight: 600; padding: 4px 0; }
+
+/* Zwei Spalten am Rechner, untereinander am Handy. minmax(0, 1fr) statt 1fr:
+   ein langer Gruppen- oder Personenname zoege die Spalte sonst ueber die
+   Kartenbreite hinaus und die ganze Seite bekaeme einen seitlichen Ueberlauf. */
+.rund-auswahl-spalten {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 14px;
+}
+.rund-auswahl-spalte { min-width: 0; }
+.rund-auswahl-titel { margin: 0 0 6px; font-size: 13px; color: var(--blue); }
+
+/* Scrollt in sich: die Personenliste kann mehrere hundert Eintraege lang sein,
+   und ein Panel, das dadurch zwanzig Bildschirme hoch wird, ist unbedienbar. */
+.rund-auswahl-liste {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 6px;
+}
+
+/* ⚠️ Bewusst NICHT in .form-field: dort gilt input { width: 100% }, was aus
+   jedem Kaestchen einen Balken quer durch die Karte macht (dieselbe Falle wie
+   bei den Push-Schaltern und den Aufnahme-Haken). */
+.rund-auswahl-zeile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  cursor: pointer;
+  /* Lange Doppelnamen sollen umbrechen statt die Liste breiter zu machen. */
+  overflow-wrap: anywhere;
+}
+.rund-auswahl-zeile input { width: 16px; height: 16px; flex: 0 0 auto; margin: 0; }
+.rund-auswahl-zeile small { margin-left: auto; color: var(--muted); font-size: 12px; flex: 0 0 auto; padding-left: 8px; }
+
+#rund-personen-suche {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
 /* ---------- Emoji-Auswahl für die Rundnachricht (seit 2026-08-07) ---------- */
 
 /* Die Leiste ist der Bezugspunkt der Palette (die haengt per JS darin und liegt

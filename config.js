@@ -441,6 +441,23 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
+    version: "2.0",
+    groups: [
+      {
+        title: "Nachricht an alle Handys: gezielt an Gruppen oder Einzelne",
+        items: [
+          "Unter dem Empfängerkreis steht jetzt „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt.",
+          "Ohne Haken bleibt alles wie bisher: die Nachricht geht an den ganzen gewählten Kreis.",
+          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
+          "Die Reichweitenzeile rechnet sofort mit: „Erreicht im Moment 4 von 7 Personen auf 6 Geräten. Eingegrenzt.“ Dieselbe Zahl steht in der Sicherheitsabfrage, zusammen mit den Namen der gewählten Gruppen.",
+          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
+          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
+          "Im Verlauf steht bei jeder Nachricht, worauf sie eingegrenzt war."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.9",
     groups: [
       {

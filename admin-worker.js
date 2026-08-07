@@ -10973,6 +10973,13 @@ const PUSH_RUND_TITEL_MAX = 100;   // wie im push-worker, dort wird hart gekuerz
 const PUSH_RUND_TEXT_MAX = 200;    // ebenso -- laenger kommt gar nicht erst an
 const PUSH_RUND_SPERRE_MS = 15000;
 
+// Deckel fuer die Eingrenzung (seit 2026-08-07). Keine fachliche Grenze, sondern
+// eine gegen absurd grosse Koerper -- der Verein hat rund 20 Gruppen und 540
+// Konten. Ueberzaehliges wird abgeschnitten, nicht abgelehnt: die Nachricht
+// ginge dadurch nur an weniger Leute, nie an mehr.
+const RUND_AUSWAHL_GRUPPEN_MAX = 50;
+const RUND_AUSWAHL_PERSONEN_MAX = 600;
+
 function leereRundDoc() { return { version: 1, eintraege: [] }; }
 
 // Wer ueberhaupt in Frage kommt. Archivierte Konten sind draussen; Spieler nur
@@ -10982,17 +10989,99 @@ function leereRundDoc() { return { version: 1, eintraege: [] }; }
 // Anlaessen. Dort weiss der Ausloeser ohnehin, was er getan hat; hier ist die
 // eigene Nachricht auf dem eigenen Handy der einzige Zustellnachweis, den es
 // gibt (der Versand laeuft in waitUntil und meldet nichts zurueck).
-function rundEmpfaenger(usersDoc, kreis) {
+function rundEmpfaenger(usersDoc, kreis, auswahl) {
   const users = (usersDoc && usersDoc.users) || {};
+  const filter = rundAuswahlFilter(usersDoc, auswahl);
   const out = [];
   for (const schluessel of Object.keys(users)) {
     const u = users[schluessel];
     if (!u || u.archiviert) continue;
     if (kreis !== "alle" && !istPersonal(u)) continue;
     const name = normalizeUsername(u.username || schluessel);
-    if (name) out.push(name);
+    if (!name) continue;
+    // ⚠️ Die Eingrenzung wirkt NACH dem Kreis und kann nur verkleinern. Wer eine
+    // Person auswaehlt, die der Kreis ausschliesst (Spielerkonto bei "ohne
+    // Spielerkonten"), erreicht sie nicht -- dafuer ist der Kreis umzustellen.
+    // Andersherum waere die Personenliste ein Weg, die Kreis-Grenze zu umgehen.
+    if (filter && !filter[name]) continue;
+    out.push(name);
   }
   return out;
+}
+
+// Erlaubte Namen als Menge -- oder `null`, wenn gar nicht eingegrenzt wurde.
+//
+// ⚠️ Der Unterschied zwischen `null` und einer LEEREN Menge ist der ganze Punkt
+// dieser Funktion: nichts gewaehlt heisst "der ganze Kreis" (unveraendertes
+// Verhalten, ein alter Client schickt keine Auswahl mit), eine Auswahl, die
+// niemanden trifft, heisst NIEMAND. Faellt das zusammen, geht eine Nachricht,
+// die an drei Leute gedacht war, an die ganze Belegschaft -- und zurueckholen
+// laesst sie sich nicht. Deshalb hier fail-closed, anders als beim optionalen
+// Verteiler in PUSH_VORGANG_APPS (dort ist ein ausbleibendes Push der Schaden,
+// hier ein zu weit gegangenes).
+function rundAuswahlFilter(usersDoc, auswahl) {
+  const gruppen = (auswahl && Array.isArray(auswahl.gruppen)) ? auswahl.gruppen : [];
+  const personen = (auswahl && Array.isArray(auswahl.personen)) ? auswahl.personen : [];
+  if (!gruppen.length && !personen.length) return null;
+
+  const erlaubt = Object.create(null);
+  const alleGruppen = (usersDoc && usersDoc.groups) || {};
+  gruppen.slice(0, RUND_AUSWAHL_GRUPPEN_MAX).forEach((gid) => {
+    // getOwn statt direktem Zugriff: eine Gruppen-Id "__proto__" traefe sonst
+    // den Prototyp und lieferte ein Objekt ohne memberUsernames.
+    const g = getOwn(alleGruppen, String(gid || ""));
+    if (!g || !Array.isArray(g.memberUsernames)) return;
+    g.memberUsernames.forEach((m) => {
+      const n = normalizeUsername(String(m || ""));
+      if (n) erlaubt[n] = true;
+    });
+  });
+  personen.slice(0, RUND_AUSWAHL_PERSONEN_MAX).forEach((p) => {
+    const n = normalizeUsername(String(p || ""));
+    if (n) erlaubt[n] = true;
+  });
+  return erlaubt;
+}
+
+// Gruppen und Konten fuer die Auswahl im Panel. ⚠️ Kostet KEINEN zusaetzlichen
+// Nextcloud-Read: `usersDoc` steckt ohnehin in der Sitzung, und `abosDoc` liest
+// der Verlauf-Handler bereits fuer die Reichweite.
+//
+// `erreichbar` je Konto ist der Grund, warum der Client die Reichweite einer
+// Auswahl selbst ausrechnen kann, ohne fuer jeden Haken den Worker zu fragen --
+// "erreicht 4 von 7 Ausgewaehlten" steht damit sofort da.
+function rundAuswahlDaten(abosDoc, usersDoc) {
+  const users = (usersDoc && usersDoc.users) || {};
+  const personen = [];
+  for (const schluessel of Object.keys(users)) {
+    const u = users[schluessel];
+    if (!u || u.archiviert) continue;
+    const name = normalizeUsername(u.username || schluessel);
+    if (!name) continue;
+    // Die GERAETEZAHL, nicht bloss ein Ja/Nein: nur damit kann der Client die
+    // Reichweite einer Auswahl exakt ausrechnen ("erreicht 4 Personen auf 6
+    // Geraeten") statt sie zu schaetzen -- und ohne fuer jeden gesetzten Haken
+    // den Worker zu fragen. Schalter aus zaehlt wie kein Geraet, genau wie in
+    // rundErreichbar.
+    personen.push({
+      username: name,
+      name: aufgabenAnzeigeName(usersDoc, name),
+      art: userArt(u),
+      geraete: pushAnlaesseFuer(abosDoc, name).mitteilung ? pushAbosFuer(abosDoc, name).length : 0
+    });
+  }
+  personen.sort((a, b) => a.name.localeCompare(b.name, "de"));
+
+  const gruppen = Object.values((usersDoc && usersDoc.groups) || {}).map((g) => ({
+    id: g.id,
+    name: g.name,
+    mitglieder: (Array.isArray(g.memberUsernames) ? g.memberUsernames : [])
+      .map((m) => normalizeUsername(String(m || "")))
+      .filter((m) => !!m)
+  }));
+  gruppen.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "de"));
+
+  return { gruppen, personen };
 }
 
 // Zaehlt, wen es WIRKLICH erreicht: Gerät angemeldet und Schalter an. Die
@@ -11059,9 +11148,25 @@ async function handlePushRundnachricht(request, body, env, authHeader, corsHeade
   if (!text) return json({ error: "Text fehlt" }, 400, corsHeaders);
 
   const kreis = (body && body.kreis === "alle") ? "alle" : "personal";
+  const auswahl = {
+    gruppen: (body && Array.isArray(body.gruppen)) ? body.gruppen.map((g) => String(g || "")) : [],
+    personen: (body && Array.isArray(body.personen)) ? body.personen.map((p) => String(p || "")) : []
+  };
+  const eingegrenzt = !!(auswahl.gruppen.length || auswahl.personen.length);
 
   const abosDoc = await readJson(PUSH_ABOS_URL, authHeader, leerePushDoc());
-  const empfaenger = rundEmpfaenger(session.usersDoc, kreis);
+  const empfaenger = rundEmpfaenger(session.usersDoc, kreis, auswahl);
+
+  // ⚠️ Eine Eingrenzung, die niemanden trifft, ist ein Fehler und kein Versand
+  // an null Leute: sonst meldet das Panel "verschickt" und der Absender wartet
+  // auf eine Reaktion, die nie kommt (Gruppe leer, Person inzwischen
+  // archiviert, Spielerkonto im Kreis "ohne Spielerkonten"). Ohne Eingrenzung
+  // bleibt der Weg unveraendert -- dort ist eine leere Liste ein Zustand des
+  // Vereins, kein Bedienfehler.
+  if (eingegrenzt && !empfaenger.length) {
+    return json({ error: "Diese Auswahl trifft niemanden — Gruppe leer, oder die Gewählten passen nicht zum Empfängerkreis." }, 400, corsHeaders);
+  }
+
   const reichweite = rundErreichbar(abosDoc, empfaenger);
 
   // ⚠️ Doppelklick-Sperre, nicht Missbrauchsschutz. Der Versand laeuft in
@@ -11084,6 +11189,9 @@ async function handlePushRundnachricht(request, body, env, authHeader, corsHeade
   // Protokoll. Ein Versand an alle Handys des Vereins soll nachlesbar sein --
   // wer, wann, was. Fehler beim Schreiben duerfen den Versand nicht kippen: er
   // ist zu diesem Zeitpunkt bereits beauftragt (gleiche Linie wie pushSenden).
+  // ⚠️ Im Protokoll stehen Ids und Nutzernamen, KEINE Klarnamen -- sonst zeigt
+  // ein alter Eintrag nach einer Umbenennung weiter den frueheren Namen (gleiche
+  // Linie wie aufgabenAnzeigeName). Aufgeloest wird beim Anzeigen.
   const eintrag = {
     id: crypto.randomUUID().replace(/-/g, ""),
     titel, text, kreis,
@@ -11092,6 +11200,17 @@ async function handlePushRundnachricht(request, body, env, authHeader, corsHeade
     personen: reichweite.personen,
     geraete: reichweite.geraete
   };
+  // ⚠️ `anGruppen`/`anPersonen`, NICHT `gruppen`/`personen`: `eintrag.personen`
+  // ist seit dem ersten Tag die ZAHL der erreichten Personen und wird im
+  // Verlauf als solche angezeigt. Gleicher Name, zwei Bedeutungen -- die Zeile
+  // "15 Personen, 15 Geraete" haette dann ein Array gerechnet.
+  if (eingegrenzt) {
+    eintrag.anGruppen = auswahl.gruppen.slice(0, RUND_AUSWAHL_GRUPPEN_MAX);
+    eintrag.anPersonen = auswahl.personen
+      .slice(0, RUND_AUSWAHL_PERSONEN_MAX)
+      .map((p) => normalizeUsername(p))
+      .filter((p) => !!p);
+  }
   try {
     rundDoc.eintraege = [eintrag].concat(bisher).slice(0, PUSH_RUND_VERLAUF_MAX);
     rundDoc.version = 1;
@@ -11120,6 +11239,10 @@ async function handlePushRundnachrichtVerlauf(request, env, authHeader, corsHead
   const rundDoc = await readJson(PUSH_RUNDNACHRICHTEN_URL, authHeader, leereRundDoc());
   const eintraege = Array.isArray(rundDoc.eintraege) ? rundDoc.eintraege : [];
 
+  // `auswahl` ist additiv: ein aelterer Client ignoriert das Feld, ein neuer
+  // Client zeigt den Eingrenzen-Block nur, wenn es da ist -- sonst boete die
+  // Oberflaeche eine Auswahl an, die ein alter Worker stillschweigend verwirft
+  // und die Nachricht ginge an alle.
   return json({
     ok: true,
     verlauf: eintraege.slice(0, PUSH_RUND_VERLAUF_MAX),
@@ -11127,6 +11250,7 @@ async function handlePushRundnachrichtVerlauf(request, env, authHeader, corsHead
       personal: rundReichweiteMitNamen(abosDoc, session.usersDoc, "personal"),
       alle: rundReichweiteMitNamen(abosDoc, session.usersDoc, "alle")
     },
+    auswahl: rundAuswahlDaten(abosDoc, session.usersDoc),
     grenzen: { titel: PUSH_RUND_TITEL_MAX, text: PUSH_RUND_TEXT_MAX }
   }, 200, corsHeaders);
 }

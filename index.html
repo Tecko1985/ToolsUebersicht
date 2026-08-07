@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.48" />
+<link rel="stylesheet" href="style.css?v=1.49" />
 </head>
 <body>
 
@@ -572,6 +572,35 @@
         </div>
         <div class="form-field">
           <button type="button" class="btn small" id="btn-rund-senden">Jetzt senden</button>
+        </div>
+
+        <!-- Eingrenzen auf Gruppen und einzelne Personen (seit 2026-08-07).
+             ⚠️ Der Block bleibt versteckt, solange der Worker die Auswahl nicht
+             kennt (Feld `auswahl` in der Verlauf-Antwort). Sonst böte die Maske
+             eine Eingrenzung an, die ein älterer Worker stillschweigend verwirft
+             — und die Nachricht ginge an alle statt an drei Leute.
+             Zugeklappt als Vorgabe: der Normalfall ist der ganze Kreis. -->
+        <div class="form-field" style="grid-column:1 / -1; display:none;" id="rund-eingrenzen-feld">
+          <details class="collapsible rund-eingrenzen" id="rund-eingrenzen">
+            <summary>Eingrenzen — <span id="rund-eingrenzen-status">alle im gewählten Kreis</span></summary>
+            <p class="muted" style="font-size:12px; margin:8px 0 12px;">
+              Ohne Haken geht die Nachricht an den ganzen oben gewählten Kreis. Gesetzte Haken
+              <strong>verkleinern</strong> ihn nur: wer ausgewählt ist, aber nicht in den Kreis passt
+              (Spielerkonto bei „ohne Spielerkonten“), bekommt nichts.
+            </p>
+            <div class="rund-auswahl-spalten">
+              <div class="rund-auswahl-spalte">
+                <h4 class="rund-auswahl-titel">Gruppen</h4>
+                <div id="rund-gruppen-liste" class="rund-auswahl-liste"></div>
+              </div>
+              <div class="rund-auswahl-spalte">
+                <h4 class="rund-auswahl-titel">Einzelne Personen</h4>
+                <input type="search" id="rund-personen-suche" placeholder="Name suchen" autocomplete="off" />
+                <div id="rund-personen-liste" class="rund-auswahl-liste"></div>
+              </div>
+            </div>
+            <button type="button" class="btn secondary small" id="btn-rund-auswahl-leeren" style="margin-top:10px;">Auswahl aufheben</button>
+          </details>
         </div>
       </div>
       <p class="muted" id="rund-reichweite" style="margin-top:10px; font-size:12px;"></p>
@@ -1252,7 +1281,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.81"></script>
-<script src="app.js?v=1.66"></script>
+<script src="config.js?v=1.82"></script>
+<script src="app.js?v=1.67"></script>
 </body>
 </html>

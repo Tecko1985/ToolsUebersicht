@@ -5454,8 +5454,17 @@ function setupTabs() {
     else rundEmojiSchliessen();
   });
   document.getElementById("btn-rund-senden").addEventListener("click", sendeRundnachricht);
-  document.getElementById("rund-kreis").addEventListener("change", rundnachrichtReichweiteZeigen);
+  document.getElementById("rund-kreis").addEventListener("change", () => {
+    // ⚠️ Reihenfolge bindend: erst die Auswahl an den neuen Kreis anpassen, dann
+    // rendern, dann die Reichweite. Andersherum stünde eine Zahl da, die eine
+    // gerade entfernte Person noch mitzählt.
+    rundAuswahlAnKreisAnpassen();
+    rundAuswahlRendern();
+    rundnachrichtReichweiteZeigen();
+  });
   document.getElementById("rund-text").addEventListener("input", rundnachrichtZaehler);
+  document.getElementById("rund-personen-suche").addEventListener("input", rundAuswahlRendern);
+  document.getElementById("btn-rund-auswahl-leeren").addEventListener("click", () => rundAuswahlLeeren(false));
 
   // Emoji-Auswahl. ⚠️ Der Schließen-Handler an document muss den Klick auf einen
   // .emoji-knopf und auf die Palette selbst durchlassen: beide bubbeln bis
@@ -6517,29 +6526,265 @@ async function rundnachrichtPanelLaden() {
   if (errEl) errEl.style.display = "none";
 
   rundErreichbarCache = (data && data.erreichbar) || null;
+  // ⚠️ Fehlt das Feld (aelterer Worker), bleibt der Eingrenzen-Block versteckt.
+  // Eine Auswahl anzubieten, die der Server verwirft, hiesse: die Nachricht geht
+  // an alle, obwohl die Maske drei Haken zeigt.
+  rundAuswahlQuelle = (data && data.auswahl && Array.isArray(data.auswahl.personen)) ? data.auswahl : null;
+  rundAuswahlLeeren(true);
+  rundAuswahlRendern();
   rundnachrichtReichweiteZeigen();
   rundnachrichtVerlaufRendern((data && data.verlauf) || []);
+}
+
+function rundKreis() {
+  const el = document.getElementById("rund-kreis");
+  return (el && el.value === "alle") ? "alle" : "personal";
+}
+
+// ---------- Eingrenzen auf Gruppen und Personen (seit 2026-08-07) ----------
+//
+// Michel-Wunsch: nicht immer an den ganzen Kreis. Gerechnet wird die Auswahl
+// clientseitig aus den Daten, die der Verlauf-Aufruf ohnehin mitliefert -- der
+// Worker prueft dieselbe Regel beim Senden noch einmal selbst (rundEmpfaenger),
+// die Anzeige hier ist Vorschau, keine Schranke.
+let rundAuswahlQuelle = null;
+const rundAuswahl = { gruppen: [], personen: [] };
+const RUND_PERSONEN_SICHTBAR = 60;   // darueber hilft nur noch das Suchfeld
+
+function rundAuswahlAktiv() {
+  return !!(rundAuswahl.gruppen.length || rundAuswahl.personen.length);
+}
+
+// Konten, die der Kreis zulaesst -- die aeussere Grenze, wie im Worker.
+function rundImKreis() {
+  if (!rundAuswahlQuelle) return [];
+  const kreis = rundKreis();
+  return rundAuswahlQuelle.personen.filter((p) => kreis === "alle" || p.art !== "spieler");
+}
+
+// Wen die Nachricht bei der aktuellen Einstellung wirklich trifft: erst der
+// Kreis, dann die Eingrenzung -- dieselbe Reihenfolge wie rundEmpfaenger im
+// Worker. Ohne Auswahl ist es der ganze Kreis.
+function rundGetroffene() {
+  const imKreis = rundImKreis();
+  if (!rundAuswahlAktiv()) return imKreis;
+  // Object.create(null): ein Konto oder eine Gruppe namens "__proto__" traefe
+  // sonst den Prototyp und gaelte faelschlich als ausgewaehlt.
+  const erlaubt = Object.create(null);
+  rundAuswahl.gruppen.forEach((gid) => {
+    const g = rundAuswahlQuelle.gruppen.filter((x) => x.id === gid)[0];
+    if (g && Array.isArray(g.mitglieder)) g.mitglieder.forEach((m) => { erlaubt[m] = true; });
+  });
+  rundAuswahl.personen.forEach((u) => { erlaubt[u] = true; });
+  return imKreis.filter((p) => erlaubt[p.username] === true);
+}
+
+// Liefert dieselben Felder wie die Worker-Antwort, damit Reichweitenzeile und
+// die beiden Namenslisten unveraendert weiterlaufen -- ohne Auswahl kommt der
+// Wert direkt vom Server, mit Auswahl aus der Rechnung oben.
+function rundZahlenFuerAnzeige() {
+  const ausCache = rundErreichbarCache && rundErreichbarCache[rundKreis()];
+  if (!rundAuswahlAktiv() || !rundAuswahlQuelle) return ausCache || null;
+  const treffer = rundGetroffene();
+  const namen = (liste) => liste.map((p) => p.name).sort((a, b) => a.localeCompare(b, "de"));
+  const mit = treffer.filter((p) => p.geraete > 0);
+  return {
+    personen: mit.length,
+    geraete: mit.reduce((s, p) => s + p.geraete, 0),
+    infrage: treffer.length,
+    wer: namen(mit),
+    ohne: namen(treffer.filter((p) => !(p.geraete > 0)))
+  };
+}
+
+// Klartext fuer die Sicherheitsabfrage und den Verlauf. Gruppen mit NAMEN, weil
+// eine Id wie "foerderung" vor dem Absenden nichts sagt; Personen als Zahl, weil
+// zwanzig Namen die Abfrage unlesbar machen.
+function rundAuswahlBeschreibung(gruppenIds, personenAnzahl) {
+  const ids = Array.isArray(gruppenIds) ? gruppenIds : rundAuswahl.gruppen;
+  const anzahl = (typeof personenAnzahl === "number") ? personenAnzahl : rundAuswahl.personen.length;
+  const namen = ids.map((gid) => {
+    const g = rundAuswahlQuelle ? rundAuswahlQuelle.gruppen.filter((x) => x.id === gid)[0] : null;
+    // Ohne Quelle (oder bei geloeschter Gruppe) die Id zeigen statt nichts --
+    // ein leerer Platz sieht aus, als sei gar nicht eingegrenzt worden.
+    return (g && g.name) ? g.name : gid;
+  });
+  const teile = [];
+  if (namen.length) teile.push(namen.join(", "));
+  if (anzahl) teile.push(anzahl + (anzahl === 1 ? " einzelne Person" : " einzelne Personen"));
+  return teile.join(" und ");
+}
+
+function rundAuswahlLeeren(stumm) {
+  rundAuswahl.gruppen = [];
+  rundAuswahl.personen = [];
+  if (!stumm) {
+    rundAuswahlRendern();
+    rundnachrichtReichweiteZeigen();
+  }
+}
+
+function rundHakenZeile(text, gesetzt, beiWechsel, zusatz) {
+  const label = document.createElement("label");
+  label.className = "rund-auswahl-zeile";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = !!gesetzt;
+  box.addEventListener("change", () => beiWechsel(box.checked));
+  const span = document.createElement("span");
+  span.textContent = text;
+  label.appendChild(box);
+  label.appendChild(span);
+  if (zusatz) {
+    const klein = document.createElement("small");
+    klein.textContent = zusatz;
+    label.appendChild(klein);
+  }
+  return label;
+}
+
+function rundAuswahlUmschalten(liste, wert, an) {
+  const i = liste.indexOf(wert);
+  if (an && i < 0) liste.push(wert);
+  if (!an && i >= 0) liste.splice(i, 1);
+  rundAuswahlRendern();
+  rundnachrichtReichweiteZeigen();
+}
+
+function rundAuswahlRendern() {
+  const feld = document.getElementById("rund-eingrenzen-feld");
+  if (!feld) return;
+  if (!rundAuswahlQuelle) { feld.style.display = "none"; return; }
+  feld.style.display = "";
+
+  const imKreis = rundImKreis();
+  const imKreisNamen = Object.create(null);
+  imKreis.forEach((p) => { imKreisNamen[p.username] = true; });
+
+  // --- Gruppen ---
+  const gEl = document.getElementById("rund-gruppen-liste");
+  gEl.innerHTML = "";
+  if (!rundAuswahlQuelle.gruppen.length) {
+    gEl.innerHTML = '<p class="muted" style="font-size:13px;">Keine Gruppen angelegt.</p>';
+  }
+  rundAuswahlQuelle.gruppen.forEach((g) => {
+    // Gezaehlt wird, wie viele Mitglieder der KREIS zulaesst -- eine Gruppe mit
+    // 12 Spielern zeigt bei "ohne Spielerkonten" sonst 12 und trifft null.
+    const zahl = (g.mitglieder || []).filter((m) => imKreisNamen[m] === true).length;
+    gEl.appendChild(rundHakenZeile(
+      g.name,
+      rundAuswahl.gruppen.indexOf(g.id) >= 0,
+      (an) => rundAuswahlUmschalten(rundAuswahl.gruppen, g.id, an),
+      zahl === 1 ? "1 Konto" : zahl + " Konten"
+    ));
+  });
+
+  // --- Personen ---
+  const pEl = document.getElementById("rund-personen-liste");
+  const sucheEl = document.getElementById("rund-personen-suche");
+  const suche = sucheEl ? sucheEl.value.trim().toLowerCase() : "";
+  pEl.innerHTML = "";
+  // ⚠️ Gewaehlte stehen IMMER oben und werden von der Suche nie ausgeblendet:
+  // ein gesetzter Haken, den man nicht mehr sieht, bleibt trotzdem gesetzt und
+  // verschickt an jemanden, an den man nicht mehr denkt.
+  const gewaehlt = imKreis.filter((p) => rundAuswahl.personen.indexOf(p.username) >= 0);
+  const rest = imKreis.filter((p) => rundAuswahl.personen.indexOf(p.username) < 0
+    && (!suche || p.name.toLowerCase().indexOf(suche) >= 0 || p.username.indexOf(suche) >= 0));
+  const zeigen = gewaehlt.concat(rest.slice(0, RUND_PERSONEN_SICHTBAR));
+  zeigen.forEach((p) => {
+    pEl.appendChild(rundHakenZeile(
+      p.name,
+      rundAuswahl.personen.indexOf(p.username) >= 0,
+      (an) => rundAuswahlUmschalten(rundAuswahl.personen, p.username, an),
+      p.geraete > 0 ? null : "kein Gerät"
+    ));
+  });
+  const verborgen = rest.length - Math.min(rest.length, RUND_PERSONEN_SICHTBAR);
+  if (verborgen > 0) {
+    const hin = document.createElement("p");
+    hin.className = "muted";
+    hin.style.fontSize = "12px";
+    hin.textContent = verborgen + " weitere — über das Suchfeld einschränken.";
+    pEl.appendChild(hin);
+  }
+  if (!zeigen.length && !verborgen) {
+    pEl.innerHTML = '<p class="muted" style="font-size:13px;">Kein Treffer.</p>';
+  }
+
+  // --- Zusammenfassung in der Zeile zum Aufklappen ---
+  const status = document.getElementById("rund-eingrenzen-status");
+  if (status) {
+    if (!rundAuswahlAktiv()) {
+      status.textContent = "alle im gewählten Kreis";
+    } else {
+      const teile = [];
+      if (rundAuswahl.gruppen.length) teile.push(rundAuswahl.gruppen.length + (rundAuswahl.gruppen.length === 1 ? " Gruppe" : " Gruppen"));
+      if (rundAuswahl.personen.length) teile.push(rundAuswahl.personen.length + (rundAuswahl.personen.length === 1 ? " Person" : " Personen"));
+      const treffer = rundGetroffene().length;
+      status.textContent = teile.join(" und ") + " · " + treffer + (treffer === 1 ? " Konto" : " Konten");
+    }
+  }
+}
+
+// ⚠️ Beim Wechsel des Kreises fallen Ausgewaehlte weg, die der neue Kreis nicht
+// zulaesst -- und das wird GESAGT. Sie stumm stehen zu lassen hiesse: der Haken
+// ist gesetzt, sichtbar, und trifft trotzdem niemanden (siehe
+// [[feedback-filter-hides-selection-persists]]).
+function rundAuswahlAnKreisAnpassen() {
+  if (!rundAuswahlQuelle || !rundAuswahl.personen.length) return;
+  const erlaubt = Object.create(null);
+  rundImKreis().forEach((p) => { erlaubt[p.username] = true; });
+  const vorher = rundAuswahl.personen.length;
+  rundAuswahl.personen = rundAuswahl.personen.filter((u) => erlaubt[u] === true);
+  const weg = vorher - rundAuswahl.personen.length;
+  if (weg > 0) {
+    const errEl = document.getElementById("rund-error");
+    if (errEl) {
+      errEl.textContent = weg + (weg === 1 ? " Spielerkonto wurde" : " Spielerkonten wurden")
+        + " aus der Auswahl genommen — der Empfängerkreis „Mitarbeiter“ schließt Spielerkonten aus.";
+      errEl.style.display = "block";
+    }
+  }
 }
 
 function rundnachrichtReichweiteZeigen() {
   const el = document.getElementById("rund-reichweite");
   if (!el) return;
-  const kreis = document.getElementById("rund-kreis").value === "alle" ? "alle" : "personal";
-  const zahlen = rundErreichbarCache && rundErreichbarCache[kreis];
+  const zahlen = rundZahlenFuerAnzeige();
   if (!zahlen) { el.textContent = ""; rundnachrichtWerZeigen(null); return; }
+  // ⚠️ Der Bezug muss mitwandern: steht eine Eingrenzung, ist "in diesem Kreis"
+  // schlicht falsch -- die Zahl bezieht sich dann auf die Ausgewählten.
+  const bezug = rundAuswahlAktiv() ? "in dieser Auswahl" : "in diesem Kreis";
+  // ⚠️ Zwei verschiedene Gründe, und der Unterschied ist der zwischen "geht
+  // raus, kommt nur nirgends an" und "der Worker lehnt das ab": trifft die
+  // Eingrenzung schon gar kein Konto, liegt es nicht an ausgeschalteten
+  // Benachrichtigungen, sondern an der Auswahl selbst (leere Gruppe,
+  // Spielerkonto im falschen Kreis).
+  if (rundAuswahlAktiv() && !zahlen.infrage) {
+    el.textContent = "Diese Auswahl trifft niemanden — Gruppe leer, oder die Gewählten passen nicht zum Empfängerkreis.";
+    rundnachrichtWerZeigen(zahlen);
+    return;
+  }
   if (!zahlen.personen) {
-    el.textContent = "Erreicht im Moment niemanden — in diesem Kreis hat noch niemand Benachrichtigungen eingeschaltet.";
+    el.textContent = "Erreicht im Moment niemanden — " + bezug
+      + " hat noch niemand Benachrichtigungen eingeschaltet.";
     rundnachrichtWerZeigen(zahlen);
     return;
   }
   // Der Nenner steht bewusst dabei: „15 Personen" allein klingt nach einer
   // vollständigen Zustellung, „15 von 87" sagt, dass die Nachricht die meisten
   // gar nicht erreicht -- und genau das entscheidet, ob man sie so verschickt.
+  // ⚠️ Bei einem Nenner richtet sich das Wort nach DIESEM, nicht nach dem
+  // Zähler: "1 von 2 Person" stand vorher da, sobald genau eine Person erreicht
+  // wurde. Ohne Nenner zählt weiter der Zähler ("1 Person").
+  const hatNenner = typeof zahlen.infrage === "number";
+  const massgeblich = hatNenner ? zahlen.infrage : zahlen.personen;
   el.textContent = "Erreicht im Moment "
     + zahlen.personen
-    + (typeof zahlen.infrage === "number" ? " von " + zahlen.infrage : "")
-    + (zahlen.personen === 1 ? " Person" : " Personen")
-    + " auf " + zahlen.geraete + (zahlen.geraete === 1 ? " Gerät." : " Geräten.");
+    + (hatNenner ? " von " + zahlen.infrage : "")
+    + (massgeblich === 1 ? " Person" : " Personen")
+    + " auf " + zahlen.geraete + (zahlen.geraete === 1 ? " Gerät." : " Geräten.")
+    + (rundAuswahlAktiv() ? " Eingegrenzt." : "");
   rundnachrichtWerZeigen(zahlen);
 }
 
@@ -6588,13 +6833,23 @@ function rundnachrichtVerlaufRendern(liste) {
         const d = new Date((e && e.am) || "");
         const wann = isNaN(d.getTime()) ? "" : d.toLocaleString("de-DE");
         const kreis = (e && e.kreis === "alle") ? "alle Konten" : "Mitarbeiter";
+        // Eingrenzung nur zeigen, wenn eine da war -- ein Eintrag von vor dieser
+        // Änderung trägt die Felder gar nicht und soll aussehen wie bisher.
+        const anGruppen = (e && Array.isArray(e.anGruppen)) ? e.anGruppen : [];
+        const anPersonen = (e && Array.isArray(e.anPersonen)) ? e.anPersonen : [];
+        const eingegrenzt = (anGruppen.length || anPersonen.length)
+          ? " · nur " + rundAuswahlBeschreibung(anGruppen, anPersonen.length)
+          : "";
+        const anzahlPersonen = Number((e && e.personen) || 0);
+        const anzahlGeraete = Number((e && e.geraete) || 0);
         return '<div class="rund-verlauf-eintrag">'
           + '<strong>' + escapeHtml(e && e.titel) + '</strong>'
           + '<div>' + escapeHtml(e && e.text) + '</div>'
           + '<div class="muted" style="font-size:12px;">'
           + escapeHtml(wann) + ' · ' + escapeHtml(String((e && e.von) || ""))
-          + ' · an ' + kreis + ' · ' + Number((e && e.personen) || 0) + ' Personen, '
-          + Number((e && e.geraete) || 0) + ' Geräte</div></div>';
+          + ' · an ' + kreis + escapeHtml(eingegrenzt)
+          + ' · ' + anzahlPersonen + (anzahlPersonen === 1 ? ' Person, ' : ' Personen, ')
+          + anzahlGeraete + (anzahlGeraete === 1 ? ' Gerät' : ' Geräte') + '</div></div>';
       }).join("")
     + "</div></details>";
 }
@@ -6708,18 +6963,34 @@ async function sendeRundnachricht() {
 
   // ⚠️ Sicherheitsabfrage mit der ECHTEN Zahl, nicht mit "an alle". Eine
   // Push-Nachricht laesst sich nicht zurueckholen, und der Unterschied zwischen
-  // 3 und 200 geweckten Handys soll vor dem Klick dastehen.
-  const zahlen = rundErreichbarCache && rundErreichbarCache[kreis];
+  // 3 und 200 geweckten Handys soll vor dem Klick dastehen. Bei einer
+  // Eingrenzung ist das die Zahl der AUSGEWAEHLTEN, nicht die des Kreises --
+  // sonst nennt die Abfrage 87, wo drei gemeint sind.
+  const zahlen = rundZahlenFuerAnzeige();
   const wieviele = zahlen
     ? zahlen.personen + " Person" + (zahlen.personen === 1 ? "" : "en") + " auf " + zahlen.geraete + " Gerät" + (zahlen.geraete === 1 ? "" : "en")
     : "alle erreichbaren Geräte";
-  if (!window.confirm("Jetzt an " + wieviele + " senden?\n\n" + titel + "\n" + text + "\n\nDas lässt sich nicht zurückholen.")) return;
+  const anWen = rundAuswahlAktiv()
+    ? "\n\nEingegrenzt auf: " + rundAuswahlBeschreibung()
+    : "";
+  if (!window.confirm("Jetzt an " + wieviele + " senden?" + anWen + "\n\n" + titel + "\n" + text + "\n\nDas lässt sich nicht zurückholen.")) return;
 
   knopf.disabled = true;
   try {
-    const data = await callWorker("push-rundnachricht", { titel, text, kreis });
+    const data = await callWorker("push-rundnachricht", {
+      titel, text, kreis,
+      // Leere Listen mitzuschicken ist unschaedlich: der Worker wertet sie wie
+      // "nicht eingegrenzt" (rundAuswahlFilter gibt dann null zurueck).
+      gruppen: rundAuswahl.gruppen.slice(),
+      personen: rundAuswahl.personen.slice()
+    });
     document.getElementById("rund-titel").value = "";
     document.getElementById("rund-text").value = "";
+    // ⚠️ Auch die Eingrenzung faellt zurueck. Sie gilt fuer DIESE Nachricht --
+    // eine stehengebliebene Auswahl waere beim naechsten Mal ein stiller
+    // Blindgaenger (gleiche Linie wie das Mail-Haekchen beim Anfordern).
+    rundAuswahlLeeren(true);
+    rundAuswahlRendern();
     rundnachrichtZaehler();
     okEl.textContent = "Verschickt an " + Number((data && data.personen) || 0)
       + " Personen auf " + Number((data && data.geraete) || 0) + " Geräten.";
