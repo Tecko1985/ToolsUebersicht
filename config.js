@@ -397,6 +397,21 @@ const NEWS_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👏", "🔥", "😍", 
 
 const APP_CHANGELOG = [
   {
+    version: "1.5",
+    groups: [
+      {
+        title: "Kacheln oder Liste — und die eigene Reihenfolge",
+        items: [
+          "Über den Werkzeugen steht ein Umschalter: Kacheln wie bisher, oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
+          "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren — mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
+          "Vorher hing der Greifpunkt dauerhaft an jeder Kachel; ein Fehlgriff daneben verschob etwas, ohne dass jemand das vorhatte.",
+          "Ansicht und Reihenfolge hängen jetzt am Konto statt am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich. Bisher merkte sich das jedes Gerät für sich — die Sortierung vom Laptop kannte das Handy nicht.",
+          "Eine schon vorhandene Reihenfolge wird beim ersten Aufruf einmalig ans Konto übernommen und geht damit nicht verloren."
+        ]
+      }
+    ]
+  },
+  {
     version: "1.4",
     groups: [
       {
@@ -470,7 +485,7 @@ const APP_CHANGELOG = [
         title: "Die Übersicht",
         items: [
           "Kachelraster mit allen Vereins-Werkzeugen, nach Kategorie gruppiert. Jede Kachel nennt das geeignete Gerät — Handy, Laptop oder beides.",
-          "Die Kacheln lassen sich am Greifpunkt frei verschieben und innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger. Die eigene Reihenfolge merkt sich der Browser.",
+          "Die Werkzeuge lassen sich innerhalb ihrer Kategorie neu anordnen, mit Maus wie mit dem Finger — seit 1.5 über den Knopf „Anordnen“ über den Kacheln. Die eigene Reihenfolge hängt am Konto und gilt auf jedem Gerät.",
           "Ein Briefumschlag unten links auf einer Kachel bedeutet: dieses Werkzeug verschickt E-Mails. Die Handlung landet dort also im Postfach eines Empfängers und nicht nur in einer Liste.",
           "Eine Glocke daneben bedeutet: hier kommt eine Handlung als Nachricht auf einem Handy an. Betroffen sind Vereinsaufgaben, Vereinskalender, Testspielplaner, Materialbedarf, Raumnutzung, Fotoaufträge, Schulsport und der externe Fahrtenbuch-Link.",
           "Beide Symbole stehen bei dem Werkzeug, in dem die Nachricht ENTSTEHT — beim Fahrtenbuch also am externen Link, über den eingereicht wird, nicht am Fahrtenbuch selbst.",

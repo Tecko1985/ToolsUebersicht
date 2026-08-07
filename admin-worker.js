@@ -615,6 +615,24 @@ const FEEDBACK_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/
 // Zähler = auszählen. Der öffentliche GET liefert daraus NUR Zähler (keine Namen).
 const NEWS_REACTIONS_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/neuigkeiten-reaktionen.json";
 
+// Persönliche Ansicht der Startseite (seit 2026-08-07): Kacheln oder Liste, dazu die
+// selbst gewählte Reihenfolge je Kategorie. Aufbau:
+//   { version:1, byUser: { "<username>": { modus, reihenfolge: {"<kategorie>":[toolIds]}, gespeichertAm } } }
+//
+// ⚠️ BEWUSST eine eigene Datei und KEIN Feld in nutzer.json — dieselbe Überlegung wie
+// bei push-abos.json und kalender-abos.json: nutzer.json wird bei jeder
+// Sitzungsprüfung der GANZEN Flotte gelesen, und jedes Verschieben einer Kachel
+// schriebe sie neu. Ein Last-Write-Wins-Konflikt trifft dort Passwort-Hashes und
+// Gruppen; hier trifft er nur eine Anzeige-Vorliebe.
+const ANSICHT_URL = "https://nx88695.your-storageshare.de/remote.php/dav/files/admin/05_Nachwuchsbereich/02_Förderung/Tools/ToolsUebersicht/ansicht.json";
+
+// Deckel gegen das Aufblähen einer Datei, die jeder Angemeldete beschreiben darf.
+// Die Flotte hat rund 35 Werkzeuge in einer Handvoll Kategorien — die Grenzen liegen
+// weit darüber und werden im Normalbetrieb nie erreicht.
+const ANSICHT_MAX_KATEGORIEN = 40;
+const ANSICHT_MAX_IDS_PRO_KATEGORIE = 200;
+const ANSICHT_MODI = ["kacheln", "liste"];
+
 // Persönliche Aufgabenlisten (seit 1.5) — eigene Datei aus demselben Grund wie die
 // Neuigkeiten-Reaktionen: sichtbarkeit.json wird von Admin-Aktionen komplett
 // ersetzt (save-visibility/save-news), die Aufgaben schreibt dagegen jeder
@@ -1070,6 +1088,12 @@ export default {
         return handleToggleNewsReaction(request, body, env, authHeader, corsHeaders);
       case "my-news-reactions":
         return handleMyNewsReactions(request, env, authHeader, corsHeaders);
+      // Persoenliche Ansicht der Startseite (Kacheln/Liste + eigene Reihenfolge).
+      // Beide wirken ausschliesslich auf das eigene Konto.
+      case "meine-ansicht":
+        return handleMeineAnsicht(request, env, authHeader, corsHeaders);
+      case "meine-ansicht-speichern":
+        return handleMeineAnsichtSpeichern(request, body, env, authHeader, corsHeaders);
       case "aufgaben-load":
         return handleAufgabenLoad(request, env, authHeader, corsHeaders);
       case "aufgabe-speichern":
@@ -3324,6 +3348,86 @@ async function handleMyNewsReactions(request, env, authHeader, corsHeaders) {
     if (NEWS_REACTION_EMOJIS.includes(emoji)) mine[newsId] = emoji;
   }
   return json({ mine }, 200, corsHeaders);
+}
+
+// ---------- Aktionen: persönliche Ansicht der Startseite ----------
+
+// Prüft und säubert, was der Client als Reihenfolge schickt. Es entsteht IMMER ein
+// frisches Objekt aus geprüften Einzelteilen — nichts aus dem Körper wird als Ganzes
+// übernommen. Unbekannte Tool-Ids bleiben absichtlich erhalten (ein Werkzeug kann
+// vorübergehend unsichtbar sein, ohne dass der Nutzer seine Sortierung verliert);
+// applyCustomOrder im Client ignoriert sie folgenlos.
+function ansichtReihenfolgeSaeubern(roh) {
+  const sauber = {};
+  if (!roh || typeof roh !== "object" || Array.isArray(roh)) return sauber;
+  let kategorien = 0;
+  for (const kategorie of Object.keys(roh)) {
+    if (kategorie === "__proto__" || !kategorie || kategorie.length > 60) continue;
+    if (++kategorien > ANSICHT_MAX_KATEGORIEN) break;
+    const ids = Array.isArray(roh[kategorie]) ? roh[kategorie] : [];
+    const gesehen = new Set();
+    const liste = [];
+    for (const roheId of ids) {
+      const id = String(roheId || "");
+      if (!/^[a-z0-9_-]{1,40}$/i.test(id) || gesehen.has(id)) continue;
+      gesehen.add(id);
+      liste.push(id);
+      if (liste.length >= ANSICHT_MAX_IDS_PRO_KATEGORIE) break;
+    }
+    if (liste.length) sauber[kategorie] = liste;
+  }
+  return sauber;
+}
+
+function leeresAnsichtDoc() {
+  return { version: 1, byUser: {} };
+}
+
+// Liefert NUR den eigenen Eintrag. Fremde Ansichten verlassen den Worker nie — sie
+// gehen niemanden etwas an und wären zugleich eine Liste, wer welches Werkzeug oben
+// stehen hat.
+async function handleMeineAnsicht(request, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+  const doc = await readJson(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+  const byUser = (doc && doc.byUser && typeof doc.byUser === "object") ? doc.byUser : {};
+  const eigen = Object.prototype.hasOwnProperty.call(byUser, session.username) ? byUser[session.username] : null;
+  const modus = (eigen && ANSICHT_MODI.includes(eigen.modus)) ? eigen.modus : "kacheln";
+  const reihenfolge = ansichtReihenfolgeSaeubern(eigen && eigen.reihenfolge);
+  return json({ ansicht: { modus, reihenfolge } }, 200, corsHeaders);
+}
+
+// Schreibt ausschließlich den eigenen Eintrag. Der Nutzername kommt aus der Sitzung,
+// nie aus dem Körper — sonst schriebe jeder Angemeldete jedem anderen die Startseite um.
+// Wiederholversuch bei Konflikt wie bei toggle-news-reaction: zwei Geräte desselben
+// Nutzers (oder zwei Nutzer gleichzeitig) schreiben dieselbe Datei.
+async function handleMeineAnsichtSpeichern(request, body, env, authHeader, corsHeaders) {
+  const session = await getVerifiedSession(request, env, authHeader);
+  if (!session) return json({ error: "Nicht angemeldet" }, 401, corsHeaders);
+
+  const modus = String((body && body.modus) || "");
+  if (!ANSICHT_MODI.includes(modus)) return json({ error: "Unbekannte Ansicht" }, 400, corsHeaders);
+  const reihenfolge = ansichtReihenfolgeSaeubern(body && body.reihenfolge);
+
+  const username = session.username;
+  // "__proto__" als Nutzername ist über USERNAME_RE ohnehin ausgeschlossen; die Prüfung
+  // steht hier, weil der Wert direkt als Objekt-Schlüssel dient (Muster wie bei create-user).
+  if (username === "__proto__") return json({ error: "Ungültiger Nutzer" }, 400, corsHeaders);
+
+  for (let versuch = 0; versuch < 3; versuch++) {
+    const { data: doc, rev } = await readJsonWithRev(ANSICHT_URL, authHeader, leeresAnsichtDoc());
+    doc.version = doc.version || 1;
+    if (!doc.byUser || typeof doc.byUser !== "object") doc.byUser = {};
+    doc.byUser[username] = { modus, reihenfolge, gespeichertAm: new Date().toISOString() };
+    try {
+      await writeJson(ANSICHT_URL, authHeader, doc, rev || undefined);
+      return json({ ok: true, ansicht: { modus, reihenfolge } }, 200, corsHeaders);
+    } catch (e) {
+      if (e instanceof ConflictError && versuch < 2) continue;
+      return json({ error: "Speicherfehler: " + e.message }, 502, corsHeaders);
+    }
+  }
+  return json({ error: "Ansicht konnte nicht gespeichert werden" }, 502, corsHeaders);
 }
 
 // ---------- Aktionen: Materialcontainer-Code ----------
@@ -11224,6 +11328,11 @@ const PUNKTE_IGNORIERT = new Set([
   // Laeuft beim Oeffnen des Feedback-Tabs von selbst, ist also eine Anzeige und
   // keine Handlung -- das Einreichen (submit-feedback) zaehlt ohnehin fuer sich.
   "meine-feedbacks",
+  // Die eigene Ansicht der Startseite. Das Lesen laeuft bei jedem Seitenaufbau von
+  // selbst. ⚠️ Auch das SPEICHERN bleibt draussen, obwohl es eine Handlung ist: es ist
+  // eine reine Anzeige-Vorliebe ohne Vereinsarbeit dahinter, und Hin- und Herschalten
+  // zwischen Kacheln und Liste waere sonst der billigste Weg zu Punkten.
+  "meine-ansicht", "meine-ansicht-speichern",
   // Laeuft beim Oeffnen des Info-Tabs im Vereinskalender von selbst. Das Erzeugen
   // und Entwerten des Abo-Links sind Handlungen und zaehlen weiter mit.
   "vereinskalender-abo-status",

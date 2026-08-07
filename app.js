@@ -3,6 +3,12 @@ const WORKER_URL = "https://landingpage.michel-brunner.workers.dev";
 const WIKI_WORKER_URL = "https://vereinswiki.michel-brunner.workers.dev";
 const TOKEN_STORAGE_KEY = "tu_session_token";
 const TOOL_ORDER_STORAGE_KEY = "tu_tool_order";
+// Zwischenspeicher der persoenlichen Ansicht, damit die Startseite beim naechsten
+// Aufruf auf DIESEM Geraet sofort richtig aufbaut. ⚠️ Nur ein Cache -- massgeblich ist
+// die Antwort des Workers, die ihn bei jedem Seitenaufbau ueberschreibt. Nach Nutzer
+// getrennt abgelegt, sonst erbte der naechste Angemeldete am selben Geraet die
+// Reihenfolge des vorigen.
+const ANSICHT_STORAGE_KEY = "tu_ansicht";
 
 let visibilityState = {};
 let newsState = (typeof NEWS !== "undefined" ? NEWS.slice() : []); // Server-News, initial das statische Seed/Fallback aus config.js
@@ -78,6 +84,15 @@ let usersFilter = { text: "", groupId: "" };
 // Filterwechsel) den gerade geöffneten Abschnitt nicht wieder zuklappt.
 let userArtOpen = { personal: false, spieler: false };
 let dragState = null; // aktiver Drag-Vorgang beim Verschieben einer Tool-Karte, sonst null
+// Persoenliche Ansicht der Startseite (seit 2026-08-07): Kacheln oder Liste + eigene
+// Reihenfolge je Kategorie. Liegt am Konto (Aktion "meine-ansicht"), gilt also auf
+// jedem Geraet gleich.
+let ansichtState = { modus: "kacheln", reihenfolge: {} };
+let ansichtBearbeiten = false;   // Anordnen-Modus an? Nur dann laesst sich etwas verschieben.
+let _ansichtSaveTimer = null;    // gebuendeltes Speichern nach dem Verschieben
+let _ansichtSaveLaeuft = false;  // In-Flight-Guard: waehrend ein Speichern laeuft, wird nicht parallel gestartet
+let _ansichtSaveNachholen = false; // waehrend des laufenden Speicherns kam eine weitere Aenderung
+let ansichtVomServer = false;    // hat meine-ansicht geantwortet? sonst greift der Zwischenspeicher
 let feedbackState = []; // Feedback-/Wunsch-Einträge, nur für eingeloggte Admins geladen (siehe loadAndRenderFeedback)
 
 function defaultVisibility() {
@@ -206,6 +221,12 @@ function logout() {
   pendingFirstLoginUsername = null;
   pendingLoginUsername = null;
   storeToken(null);
+  // Ansicht und Reihenfolge gehoeren zum Konto -- der naechste, der sich an diesem
+  // Geraet anmeldet, soll nicht die Sortierung des vorigen vorfinden. Der
+  // Zwischenspeicher bleibt (er ist nach Nutzername getrennt und wird beim naechsten
+  // Anmelden ohnehin von der Server-Antwort ueberschrieben).
+  ansichtState = ansichtStandard();
+  ansichtBearbeiten = false;
   // Geladene Fotos freigeben: eine Objekt-URL bleibt sonst gueltig, solange die
   // Seite offen ist -- auch fuer den naechsten, der sich hier anmeldet.
   nutzerfotoBlobsLeeren();
@@ -1001,27 +1022,160 @@ function isVisibleToUser(toolId, user) {
   return groupIds.some((gid) => (user.groupIds || []).includes(gid));
 }
 
-// Reihenfolge ist eine rein lokale Anzeige-Präferenz (pro Browser via localStorage,
-// kein Sync über den Worker) — jede Kategorie wird unabhängig gespeichert, da die
-// Karten pro Kategorie in einem eigenen Grid liegen.
-function loadToolOrder() {
+// ---- Persoenliche Ansicht: Kacheln/Liste + eigene Reihenfolge (seit 2026-08-07) ----
+//
+// Bis dahin war die Reihenfolge eine rein lokale Vorliebe (localStorage, pro Browser)
+// -- auf dem Laptop stand also etwas anderes als am Handy. Sie liegt jetzt am Konto
+// (Worker-Aktionen meine-ansicht / meine-ansicht-speichern) und gilt ueberall gleich.
+// localStorage bleibt ausschliesslich als Zwischenspeicher fuer den Seitenaufbau.
+
+function ansichtStandard() {
+  return { modus: "kacheln", reihenfolge: {} };
+}
+
+// Nimmt an, was vom Server oder aus dem Zwischenspeicher kommt, und baut daraus einen
+// geprueften Zustand -- nie das fremde Objekt selbst.
+function ansichtUebernehmen(roh) {
+  const modus = (roh && (roh.modus === "liste" || roh.modus === "kacheln")) ? roh.modus : "kacheln";
+  const rohReihenfolge = (roh && roh.reihenfolge && typeof roh.reihenfolge === "object" && !Array.isArray(roh.reihenfolge)) ? roh.reihenfolge : {};
+  const reihenfolge = {};
+  Object.keys(rohReihenfolge).forEach((kategorie) => {
+    if (kategorie === "__proto__") return;
+    const ids = rohReihenfolge[kategorie];
+    if (Array.isArray(ids)) reihenfolge[kategorie] = ids.map((id) => String(id || "")).filter(Boolean);
+  });
+  ansichtState = { modus, reihenfolge };
+}
+
+function ansichtCacheLesen(username) {
+  if (!username) return null;
   try {
-    return JSON.parse(localStorage.getItem(TOOL_ORDER_STORAGE_KEY)) || {};
+    const alle = JSON.parse(localStorage.getItem(ANSICHT_STORAGE_KEY)) || {};
+    return Object.prototype.hasOwnProperty.call(alle, username) ? alle[username] : null;
   } catch (_) {
-    return {};
+    return null;
   }
 }
 
+function ansichtCacheSchreiben(username, ansicht) {
+  if (!username) return;
+  try {
+    let alle = {};
+    try { alle = JSON.parse(localStorage.getItem(ANSICHT_STORAGE_KEY)) || {}; } catch (_) { alle = {}; }
+    alle[username] = ansicht;
+    localStorage.setItem(ANSICHT_STORAGE_KEY, JSON.stringify(alle));
+  } catch (_) { /* localStorage nicht verfügbar */ }
+}
+
+// Holt die Ansicht des angemeldeten Nutzers.
+//
+// ⚠️ Baut den Aufruf selbst statt ueber callWorker(): die Funktion laeuft in init()
+// PARALLEL zu checkSession(), und currentToken ist zu dem Zeitpunkt noch null. Gleiche
+// Lage und gleicher Weg wie bei fetchVisibility().
+//
+// Der Zwischenspeicher wird zuerst angewandt, damit die Kacheln beim Rendern schon
+// richtig stehen, falls der Aufruf laenger braucht als der Rest des Seitenaufbaus.
+// Massgeblich bleibt die Server-Antwort, die ihn ueberschreibt.
+async function ladeAnsicht() {
+  const token = currentToken || loadStoredToken();
+  if (!token) { ansichtState = ansichtStandard(); return; }
+
+  let data = null;
+  try {
+    const resp = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      body: JSON.stringify({ action: "meine-ansicht" })
+    });
+    if (!resp.ok) return; // 401 (Token abgelaufen) oder alter Worker ohne die Aktion -> Standardansicht
+    data = await resp.json();
+  } catch (_) {
+    return; // offline: bei der Standardansicht bzw. beim Zwischenspeicher bleiben
+  }
+  ansichtUebernehmen(data && data.ansicht);
+  ansichtVomServer = true;
+
+  // Einmalige Uebernahme der alten, rein lokalen Reihenfolge: wer vor dieser Aenderung
+  // schon einmal Kacheln verschoben hat, soll seine Anordnung nicht verlieren. Nur wenn
+  // am Konto noch gar nichts steht -- eine am anderen Geraet gespeicherte Reihenfolge
+  // darf die alte lokale nie ueberschreiben.
+  if (!Object.keys(ansichtState.reihenfolge).length) {
+    let alt = null;
+    try { alt = JSON.parse(localStorage.getItem(TOOL_ORDER_STORAGE_KEY)); } catch (_) { alt = null; }
+    if (alt && typeof alt === "object" && Object.keys(alt).length) {
+      ansichtUebernehmen({ modus: ansichtState.modus, reihenfolge: alt });
+      ansichtSpeichernGeplant();
+    }
+  }
+
+  const username = currentUser && currentUser.username;
+  if (username) ansichtCacheSchreiben(username, ansichtState);
+}
+
+// Wendet den Zwischenspeicher an, bevor der Server geantwortet hat. Wird beim
+// Seitenaufbau aufgerufen, sobald der Nutzername bekannt ist.
+function ansichtAusCacheVorbelegen() {
+  const username = currentUser && currentUser.username;
+  const zwischen = ansichtCacheLesen(username);
+  if (zwischen) ansichtUebernehmen(zwischen);
+}
+
+// Speichern wird gebuendelt: beim Verschieben mehrerer Karten hintereinander sonst ein
+// Worker-Aufruf (und ein Nextcloud-Schreibvorgang) je Ablegen.
+function ansichtSpeichernGeplant() {
+  if (_ansichtSaveTimer) clearTimeout(_ansichtSaveTimer);
+  _ansichtSaveTimer = setTimeout(() => { _ansichtSaveTimer = null; ansichtJetztSpeichern(); }, 800);
+}
+
+// ⚠️ In-Flight-Guard: waehrend ein Speichern laeuft, wird kein zweites gestartet --
+// zwei parallele Schreibvorgaenge auf dieselbe Datei sind ein Konflikt mit sich selbst.
+// Eine Aenderung, die waehrenddessen eintrifft, wird gemerkt und danach nachgezogen.
+async function ansichtJetztSpeichern() {
+  if (!currentUser) return;
+  if (_ansichtSaveLaeuft) { _ansichtSaveNachholen = true; return; }
+  _ansichtSaveLaeuft = true;
+  const statusEl = document.getElementById("ansicht-status");
+  try {
+    await callWorker("meine-ansicht-speichern", { modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge });
+    ansichtCacheSchreiben(currentUser.username, ansichtState);
+    if (statusEl) { statusEl.classList.remove("fehler"); statusEl.textContent = "Gespeichert"; setTimeout(() => { if (statusEl.textContent === "Gespeichert") statusEl.textContent = ""; }, 2000); }
+  } catch (e) {
+    // ⚠️ Nicht still schlucken: die Zusage ist, dass die Ansicht auf jedem Geraet
+    // gleich ist. Scheitert das Speichern, stimmt sie nur hier -- das muss dastehen.
+    console.warn("Ansicht nicht speicherbar:", e);
+    if (statusEl) { statusEl.classList.add("fehler"); statusEl.textContent = "Nicht gespeichert — nur auf diesem Gerät."; }
+  } finally {
+    _ansichtSaveLaeuft = false;
+    if (_ansichtSaveNachholen) { _ansichtSaveNachholen = false; ansichtSpeichernGeplant(); }
+  }
+}
+
+// ⚠️ Beim Verlassen der Seite das gebuendelte Speichern nachholen. Ohne keepalive
+// bricht der Browser den Aufruf beim Schliessen des Tabs ab, und die letzte
+// Verschiebung waere weg -- siehe dieselbe Falle bei den Autosave-Apps der Flotte.
+function ansichtFlushBeiVerlassen() {
+  if (!_ansichtSaveTimer || !currentToken) return;
+  clearTimeout(_ansichtSaveTimer);
+  _ansichtSaveTimer = null;
+  try {
+    fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + currentToken },
+      body: JSON.stringify({ action: "meine-ansicht-speichern", modus: ansichtState.modus, reihenfolge: ansichtState.reihenfolge }),
+      keepalive: true
+    });
+  } catch (_) { /* mehr geht beim Schliessen nicht */ }
+}
+
 function saveToolOrder(category, orderedIds) {
-  const all = loadToolOrder();
-  all[category] = orderedIds;
-  try { localStorage.setItem(TOOL_ORDER_STORAGE_KEY, JSON.stringify(all)); } catch (_) { /* localStorage nicht verfügbar */ }
+  ansichtState.reihenfolge[category] = orderedIds;
+  ansichtSpeichernGeplant();
 }
 
 // Wendet eine gespeicherte Reihenfolge an; neue/unbekannte Tools (kein Eintrag in der
 // gespeicherten Reihenfolge, z.B. weil gerade erst hinzugefügt) hängen unverändert hinten an.
 function applyCustomOrder(category, tools) {
-  const order = loadToolOrder()[category];
+  const order = ansichtState.reihenfolge[category];
   if (!order || !order.length) return tools;
   const remaining = new Map(tools.map((t) => [t.id, t]));
   const ordered = [];
@@ -1080,6 +1234,75 @@ function startCardDrag(e, card, grid, category) {
   document.addEventListener("pointercancel", onUp);
 }
 
+// ---- Bedienleiste ueber den Kacheln ----
+
+// Wird am Ende von renderToolGrid() aufgerufen, damit Leiste und Kacheln nie
+// auseinanderlaufen. Setzt ausschliesslich Anzeige-Zustaende und rendert bewusst NICHT
+// nach -- sonst riefen sich die beiden gegenseitig auf.
+function renderAnsichtLeiste(hatKacheln) {
+  const leiste = document.getElementById("ansicht-leiste");
+  if (!leiste) return;
+  // Nur fuer Angemeldete: die Einstellung haengt am Konto, ein unangemeldeter Besucher
+  // haette nichts, woran sie sich merken liesse. Gleiche Linie wie Info-Tab und
+  // Neuigkeiten.
+  const sichtbar = !!currentUser && !!hatKacheln;
+  leiste.style.display = sichtbar ? "flex" : "none";
+  if (!sichtbar && ansichtBearbeiten) {
+    ansichtBearbeiten = false;
+    const container = document.getElementById("tool-groups");
+    if (container) container.classList.remove("anordnen");
+  }
+
+  const kachelBtn = document.getElementById("btn-ansicht-kacheln");
+  const listeBtn = document.getElementById("btn-ansicht-liste");
+  if (kachelBtn) kachelBtn.setAttribute("aria-pressed", ansichtState.modus === "kacheln" ? "true" : "false");
+  if (listeBtn) listeBtn.setAttribute("aria-pressed", ansichtState.modus === "liste" ? "true" : "false");
+
+  const anordnenBtn = document.getElementById("btn-ansicht-anordnen");
+  if (anordnenBtn) {
+    anordnenBtn.textContent = ansichtBearbeiten ? "✓ Fertig" : "✏️ Anordnen";
+    anordnenBtn.classList.toggle("aktiv", ansichtBearbeiten);
+    anordnenBtn.title = ansichtBearbeiten ? "Anordnen beenden" : "Reihenfolge der Werkzeuge ändern";
+  }
+  const hinweis = document.getElementById("ansicht-hinweis");
+  if (hinweis) hinweis.style.display = ansichtBearbeiten ? "inline" : "none";
+}
+
+function ansichtModusSetzen(modus) {
+  if (ansichtState.modus === modus) return;
+  ansichtState.modus = modus;
+  renderToolGrid();
+  ansichtSpeichernGeplant();
+}
+
+function ansichtBearbeitenUmschalten() {
+  ansichtBearbeiten = !ansichtBearbeiten;
+  renderToolGrid();
+  // Beim Beenden nicht auf den Buendel-Timer warten: wer auf Fertig drueckt, erwartet,
+  // dass es jetzt steht.
+  if (!ansichtBearbeiten && _ansichtSaveTimer) {
+    clearTimeout(_ansichtSaveTimer);
+    _ansichtSaveTimer = null;
+    ansichtJetztSpeichern();
+  }
+}
+
+function setupAnsichtLeiste() {
+  const kachelBtn = document.getElementById("btn-ansicht-kacheln");
+  const listeBtn = document.getElementById("btn-ansicht-liste");
+  const anordnenBtn = document.getElementById("btn-ansicht-anordnen");
+  if (kachelBtn) kachelBtn.addEventListener("click", () => ansichtModusSetzen("kacheln"));
+  if (listeBtn) listeBtn.addEventListener("click", () => ansichtModusSetzen("liste"));
+  if (anordnenBtn) anordnenBtn.addEventListener("click", ansichtBearbeitenUmschalten);
+  // Ein noch nicht abgeschickter Buendel-Speichervorgang darf beim Wegwischen der Seite
+  // nicht verloren gehen. pagehide feuert auf iOS zuverlaessiger als unload; der
+  // versteckte Tab ist der zweite Fall (Tab-Wechsel, App in den Hintergrund).
+  window.addEventListener("pagehide", ansichtFlushBeiVerlassen);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") ansichtFlushBeiVerlassen();
+  });
+}
+
 // Baut die Endgeräte-Icons (📱/💻) für eine Tool-Karte aus t.devices (["mobile","desktop"]).
 function deviceIcons(devices) {
   if (!devices || !devices.length) return "";
@@ -1092,7 +1315,12 @@ function deviceIcons(devices) {
 
 function renderToolGrid() {
   const container = document.getElementById("tool-groups");
+  // ⚠️ Waehrend eine Karte am Finger haengt, nicht neu bauen: die Statusabfragen
+  // (Trainerdaten/Testspielplaner) rendern von selbst nach und rissen der laufenden
+  // Verschiebung sonst die Karte unter dem Zeiger weg. Der naechste Aufruf holt es nach.
+  if (dragState) return;
   container.innerHTML = "";
+  container.classList.toggle("anordnen", ansichtBearbeiten);
 
   const categories = [...new Set(TOOLS.map((t) => t.category))];
   let anyVisible = false;
@@ -1108,7 +1336,9 @@ function renderToolGrid() {
     group.innerHTML = `<h2>${escapeHtml(category)}</h2>`;
 
     const grid = document.createElement("div");
-    grid.className = "tool-grid";
+    // Dieselben Karten in beiden Ansichten -- nur der Container wechselt die Klasse,
+    // das Aussehen macht das CSS (siehe .tool-grid.als-liste in style.css).
+    grid.className = "tool-grid" + (ansichtState.modus === "liste" ? " als-liste" : "");
     toolsInCategory.forEach((t) => {
       const card = document.createElement("a");
       card.className = "tool-card" + (t.wip ? " wip" : "");
@@ -1140,7 +1370,11 @@ function renderToolGrid() {
           + '</div>' : ""}
       `;
       card.querySelector(".tool-drag-handle").addEventListener("pointerdown", (ev) => startCardDrag(ev, card, grid, category));
-      card.addEventListener("click", (ev) => { if (card.dataset.justDragged === "1") ev.preventDefault(); });
+      // Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug: wer gerade sortiert,
+      // trifft sonst beim Danebengreifen eine Kachel und ist aus der Uebersicht raus.
+      card.addEventListener("click", (ev) => {
+        if (ansichtBearbeiten || card.dataset.justDragged === "1") ev.preventDefault();
+      });
       const badgeRefreshBtn = card.querySelector(".badge-refresh");
       if (badgeRefreshBtn) {
         // Eigener Klick-Handler statt Karten-Navigation -- erlaubt ein sofortiges
@@ -1171,6 +1405,7 @@ function renderToolGrid() {
       : "Melde dich an, um deine Tools zu sehen.";
     document.getElementById("btn-empty-login").style.display = currentUser ? "none" : "inline-block";
   }
+  renderAnsichtLeiste(anyVisible);
 }
 
 // Leitet aus visible/loginRequired/groupIds den anzuzeigenden Sichtbarkeits-Modus ab.
@@ -1771,7 +2006,10 @@ function placeSidebarWidget() {
   if (!widget || !pageBody || !mainEl || !toolGroups) return;
   const mobil = window.matchMedia(SIDEBAR_MOBILE_BREAKPOINT).matches;
   const ziel = mobil ? toolGroups.parentNode : pageBody;
-  const davor = mobil ? toolGroups : mainEl;
+  // Am Handy VOR die Ansicht-Leiste, nicht erst vor die Kacheln: die Leiste gehoert zu
+  // den Kacheln, das Widget schoebe sich sonst zwischen Umschalter und Raster.
+  const ansichtLeiste = document.getElementById("ansicht-leiste");
+  const davor = mobil ? ((ansichtLeiste && ansichtLeiste.parentNode === ziel) ? ansichtLeiste : toolGroups) : mainEl;
   // Nur umhängen, wenn es nicht ohnehin schon richtig steht — ein insertBefore auf
   // die eigene Position nimmt das Element aus dem DOM und fügt es neu ein.
   if (widget.parentNode === ziel && widget.nextElementSibling === davor) return;
@@ -5566,6 +5804,10 @@ async function sendeRundnachricht() {
 }
 
 async function afterAuthChange() {
+  // Vor dem ersten Rendern: die Kacheln sollen gleich in der Ansicht und Reihenfolge
+  // stehen, die am Konto haengt -- sonst blitzt nach jeder Anmeldung kurz die
+  // Standardsortierung auf. Ohne Token setzt die Funktion auf den Standard zurueck.
+  await ladeAnsicht();
   renderAdminPanels();
   renderToolGrid();
   renderFeedbackTab();
@@ -6601,6 +6843,7 @@ async function init() {
   setupWhatsappLink();
   setupWikiFrage();
   setupViewAsControl();
+  setupAnsichtLeiste();
   // Frueh registrieren: beforeinstallprompt kann jederzeit eintreffen, auch
   // bevor die Worker-Aufrufe unten zurueck sind.
   setupAppInstallation();
@@ -6608,7 +6851,17 @@ async function init() {
   // fetchVisibility() (öffentlich, kein Login nötig) und checkSession() (prüft
   // ein vorhandenes Token) sind voneinander unabhängige Worker-Aufrufe — parallel
   // statt seriell spart einen kompletten Roundtrip beim Erstladen.
-  const [data] = await Promise.all([fetchVisibility(), checkSession()]);
+  // ladeAnsicht() laeuft im selben Zug mit: es liest den Token direkt aus dem Speicher
+  // und braucht checkSession() nicht abzuwarten -- so kostet die persoenliche Ansicht
+  // keinen zusaetzlichen Roundtrip beim Erstladen.
+  const [data] = await Promise.all([fetchVisibility(), checkSession(), ladeAnsicht()]);
+  // Hat der Worker nicht geantwortet (offline, alter Worker), greift der
+  // Zwischenspeicher dieses Geraets -- besser die zuletzt bekannte eigene Ansicht als
+  // eine fremde Standardsortierung.
+  if (currentUser) {
+    if (ansichtVomServer) ansichtCacheSchreiben(currentUser.username, ansichtState);
+    else ansichtAusCacheVorbelegen();
+  }
   visibilityState = (data && data.tools) || defaultVisibility();
   newsState = (data && Array.isArray(data.news)) ? data.news : newsState; // Server-News, sonst statisches Seed behalten
   newsReactionCounts = (data && data.newsReactions && typeof data.newsReactions === "object") ? data.newsReactions : {}; // öffentliche Zähler

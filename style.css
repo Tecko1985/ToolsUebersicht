@@ -1134,6 +1134,60 @@ main { flex: 1; min-width: 0; }
   .calendar-widget { flex-basis: auto; width: 100%; padding: 0; margin-bottom: 26px; }
 }
 
+/* ---------- Ansicht-Leiste ueber den Kacheln ---------- */
+
+.ansicht-leiste {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+/* Segmentierter Umschalter: die beiden Knoepfe teilen sich einen Rahmen, damit
+   sichtbar ist, dass genau einer von beiden gilt. */
+.ansicht-umschalter {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  overflow: hidden;
+}
+.ansicht-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ansicht-btn + .ansicht-btn { border-left: 1px solid var(--border); }
+.ansicht-btn:hover { background: var(--gray); }
+/* Der gewaehlte Zustand haengt an aria-pressed statt an einer eigenen Klasse --
+   so koennen Anzeige und Vorlesehilfe nicht auseinanderlaufen. */
+.ansicht-btn[aria-pressed="true"] { background: var(--blue); color: var(--white); }
+.ansicht-btn[aria-pressed="true"]:hover { background: var(--blue); }
+.ansicht-edit-btn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ansicht-edit-btn:hover { background: var(--gray); }
+.ansicht-edit-btn.aktiv { background: var(--green); border-color: var(--green); color: var(--white); }
+.ansicht-edit-btn.aktiv:hover { background: var(--green); }
+.ansicht-hinweis { font-size: 12px; color: var(--muted); }
+.ansicht-status { font-size: 12px; color: var(--muted); min-height: 1em; }
+.ansicht-status.fehler { color: var(--red); font-weight: 600; }
+
 /* ---------- Kategorie-Gruppen ---------- */
 
 .category-group { margin-bottom: 26px; }
@@ -1170,7 +1224,13 @@ main { flex: 1; min-width: 0; }
   align-items: center;
   gap: 6px;
 }
+/* ⚠️ Der Greifpunkt ist NUR im Anordnen-Modus da (seit 2026-08-07). Vorher stand er
+   dauerhaft auf jeder Kachel und jeder Fehlgriff daneben verschob etwas, ohne dass
+   jemand das vorhatte -- die Karte ist ein Link, kein Werkzeugkasten. Bewusst
+   display:none statt Sichtbarkeit oder Deckkraft: ein unsichtbarer Greifpunkt bliebe
+   greifbar. */
 .tool-drag-handle {
+  display: none;
   font-size: 16px;
   line-height: 1;
   color: var(--muted);
@@ -1180,6 +1240,16 @@ main { flex: 1; min-width: 0; }
   user-select: none;
 }
 .tool-drag-handle:active { cursor: grabbing; }
+#tool-groups.anordnen .tool-drag-handle { display: inline-block; }
+/* Im Anordnen-Modus fuehrt kein Klick mehr ins Werkzeug (app.js faengt ihn ab) --
+   das muss man sehen, bevor man klickt. Der gestrichelte Rahmen liegt als outline
+   INNEN (outline-offset negativ) und aendert deshalb keine einzige Kachelgroesse. */
+#tool-groups.anordnen .tool-card {
+  cursor: default;
+  outline: 2px dashed var(--border);
+  outline-offset: -2px;
+}
+#tool-groups.anordnen .tool-card:hover { transform: none; box-shadow: var(--shadow); }
 .tool-devices {
   font-size: 12px;
   line-height: 1;
@@ -1211,6 +1281,67 @@ main { flex: 1; min-width: 0; }
   line-height: 1;
   opacity: 0.8;
 }
+/* ---------- Listenansicht (seit 2026-08-07) ----------
+   Dieselben .tool-card-Elemente wie im Raster, nur der Container traegt zusaetzlich
+   .als-liste. Bewusst KEIN zweiter Renderpfad in app.js: die Badges, die Statusampeln
+   und der ganze Verschiebe-Code bleiben dadurch unveraendert und koennen zwischen den
+   beiden Ansichten nicht auseinanderlaufen.
+
+   ⚠️ Die Reihenfolge in der Zeile macht `order`, nicht das Markup: die beiden
+   Badge-Gruppen stehen im DOM am Anfang bzw. in der Mitte und gehoeren in der Zeile
+   nach rechts. Und nur EINE davon traegt margin-left:auto -- zwei Geschwister mit je
+   eigenem auto-Margin teilen sich den Rest und stuenden auseinandergezogen. */
+.tool-grid.als-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tool-grid.als-liste .tool-card {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 12px 16px;
+}
+.tool-grid.als-liste .tool-card:hover { transform: none; background: var(--blue-light); box-shadow: var(--shadow); }
+.tool-grid.als-liste .tool-card .tool-icon { font-size: 22px; }
+.tool-grid.als-liste .tool-card h3 { flex: 0 0 auto; }
+/* Einzeilig mit Auslassung: eine umbrechende Beschreibung macht aus der Zeile wieder
+   einen Block, und genau das soll die Liste ja vermeiden. */
+.tool-grid.als-liste .tool-card p {
+  flex: 1 1 200px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Am Handy reicht die Breite fuer Name UND Beschreibung nicht: gemessen bei 375px
+   wurde die Zeile sonst 173px hoch -- kaum weniger als die Kachel (205px), womit die
+   Liste ihren Zweck verfehlt. Der Name allein traegt hier, die Beschreibung steht in
+   der Kachelansicht. */
+@media (max-width: 560px) {
+  .tool-grid.als-liste .tool-card p { display: none; }
+}
+/* Statt oben rechts absolut: in der Zeile mitlaufend ganz hinten. */
+.tool-grid.als-liste .tool-card-badges {
+  position: static;
+  top: auto;
+  right: auto;
+  order: 99;
+}
+.tool-grid.als-liste .tool-hinweis-badges {
+  margin-top: 0;
+  margin-left: auto;
+  align-self: center;
+  order: 98;
+}
+/* Die Statusampeln (Trainerdaten/Testspielplaner) sind im Raster eigene Bloecke
+   unter dem Symbol; in der Zeile stehen sie hinter dem Namen und duerfen nicht
+   auf die volle Breite wachsen. */
+.tool-grid.als-liste .badge-wip,
+.tool-grid.als-liste .badge-status-ok,
+.tool-grid.als-liste .badge-status-fail { order: 97; align-self: center; }
+
 .tool-card.wip { opacity: 0.82; }
 .badge-wip {
   display: inline-flex;

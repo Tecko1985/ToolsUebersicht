@@ -16,7 +16,7 @@
 <link rel="icon" href="/favicon.png" type="image/png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-title" content="SC 1911" />
-<link rel="stylesheet" href="style.css?v=1.43" />
+<link rel="stylesheet" href="style.css?v=1.44" />
 </head>
 <body>
 
@@ -87,6 +87,23 @@
 
   <section class="tab-section active" id="tab-uebersicht">
     <div id="news-banner" class="news-banner" style="display:none;"></div>
+    <!-- Ansicht und Anordnung der Kacheln. Steht bewusst HIER und nicht in der
+         Kopfzeile: die ist am Handy schon so eng, dass ein weiterer Knopf eine
+         ganze Zeile kostet (siehe CLAUDE.md, Abschnitt "Als App ablegen"), und
+         die Leiste betrifft ohnehin nur diesen Tab. Nur fuer Angemeldete
+         sichtbar -- die Einstellung wird am Konto gespeichert. -->
+    <div class="ansicht-leiste" id="ansicht-leiste" style="display:none;">
+      <div class="ansicht-umschalter" role="group" aria-label="Ansicht der Werkzeuge">
+        <!-- Beschriftung bewusst OHNE .btn-lang: die Klasse faellt unter 860px
+             global weg, und ▦ bzw. ☰ allein sagt niemandem etwas. Die Leiste hat
+             eine eigene Zeile, der Platz reicht auch am Handy. -->
+        <button type="button" class="ansicht-btn" id="btn-ansicht-kacheln" aria-pressed="true" title="Werkzeuge als Kacheln anzeigen">▦ Kacheln</button>
+        <button type="button" class="ansicht-btn" id="btn-ansicht-liste" aria-pressed="false" title="Werkzeuge als Liste anzeigen">☰ Liste</button>
+      </div>
+      <button type="button" class="ansicht-edit-btn" id="btn-ansicht-anordnen" title="Reihenfolge der Werkzeuge aendern">✏️ Anordnen</button>
+      <span class="ansicht-hinweis" id="ansicht-hinweis" style="display:none;">Am Greifpunkt ⠿ verschieben — innerhalb der eigenen Kategorie.</span>
+      <span class="ansicht-status" id="ansicht-status" aria-live="polite"></span>
+    </div>
     <div id="tool-groups"></div>
     <div class="empty-state" id="uebersicht-empty" style="display:none;">
       <p id="uebersicht-empty-text" style="margin:0;">Aktuell sind keine Tools sichtbar.</p>
@@ -1109,7 +1126,7 @@
 </div>
 
 <script src="signature-pad.js?v=1.0"></script>
-<script src="config.js?v=1.74"></script>
-<script src="app.js?v=1.59"></script>
+<script src="config.js?v=1.75"></script>
+<script src="app.js?v=1.60"></script>
 </body>
 </html>
