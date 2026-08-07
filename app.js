@@ -4326,22 +4326,53 @@ function aufnahmeDauerText(sek) {
   return m === 1 ? "1 Minute" : m + " Minuten";
 }
 
+// Die eigene Adresse ohne Anhängsel -- die Übersicht selbst im Rahmen.
+// Michel-Wunsch 2026-08-07: eine Vorführung soll auf dem Dashboard anfangen
+// können und von dort in ein Werkzeug führen.
+//
+// ⚠️ Das ist NICHT dasselbe wie die Betriebsart "seite". Dort läuft die Aufnahme
+// auf der echten Seite, und ein Klick auf eine Kachel navigiert das Fenster weg
+// -- damit stirbt die Aufnahme mitsamt allem, was schon aufgezeichnet war. Im
+// Rahmen navigiert nur der Rahmen, die Aufnahme läuft weiter. Der Weg
+// "Dashboard → Kachel → im Werkzeug etwas zeigen" geht deshalb NUR hierüber.
+function aufnahmeUebersichtUrl() {
+  return location.origin + location.pathname;
+}
+
+// ⚠️ Sortierung und Gruppierung spiegeln das Dashboard (Michel-Vorgabe): dieselbe
+// Kategorienfolge wie renderToolGrid() und dieselbe persönliche Reihenfolge über
+// applyCustomOrder(). Eine eigene Sortierung hier liefe auseinander, sobald jemand
+// seine Kacheln umsortiert -- und man sucht ein Werkzeug an der Stelle, an der es
+// auf der Übersicht steht.
 function aufnahmeToolListe() {
   const sel = aufnahmeEl("aufnahme-tool");
   if (!sel) return;
   sel.innerHTML = "";
-  TOOLS.filter((t) => t.url && isVisibleToUser(t.id, currentUser)).forEach((t) => {
-    const o = document.createElement("option");
-    o.value = t.url;
-    o.textContent = (t.icon ? t.icon + " " : "") + t.name;
-    sel.appendChild(o);
+
+  const dash = document.createElement("option");
+  dash.value = aufnahmeUebersichtUrl();
+  dash.textContent = "🧰 Dashboard — die Tools-Übersicht";
+  sel.appendChild(dash);
+
+  let anzahl = 0;
+  [...new Set(TOOLS.map((t) => t.category))].forEach((kategorie) => {
+    const sichtbar = TOOLS.filter((t) => t.category === kategorie && t.url && isVisibleToUser(t.id, currentUser));
+    if (!sichtbar.length) return;
+    const gruppe = document.createElement("optgroup");
+    gruppe.label = kategorie;
+    applyCustomOrder(kategorie, sichtbar).forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t.url;
+      o.textContent = (t.icon ? t.icon + " " : "") + t.name;
+      // Öffnet das Werkzeug in einem neuen Tab, führt im Rahmen also aus der
+      // Aufnahme heraus. Beim Namen sagen statt hinterher wundern.
+      if (t.newTab) o.textContent += " (öffnet ein eigenes Fenster)";
+      gruppe.appendChild(o);
+      anzahl++;
+    });
+    sel.appendChild(gruppe);
   });
-  if (!sel.options.length) {
-    const o = document.createElement("option");
-    o.value = "";
-    o.textContent = "— kein Werkzeug sichtbar —";
-    sel.appendChild(o);
-  }
+  if (!anzahl) dash.textContent += " (nur diese)";
 }
 
 function aufnahmeHinweisSetzen() {
@@ -4357,8 +4388,13 @@ function aufnahmeHinweisSetzen() {
   teile.push("Höchstens " + aufnahmeMB(AUFNAHME_ZIEL_BYTES) + ": die Bildqualität wird so eingestellt, "
     + "dass " + aufnahmeDauerText(maxSek) + " in dieses Budget passen. Nach "
     + aufnahmeDauerText(maxSek) + " endet die Aufnahme von selbst.");
+  if (quelle === "tool") {
+    teile.push("Beginnst du auf dem Dashboard, kannst du von dort in ein Werkzeug klicken — die Aufnahme läuft mit, weil sich nur der Rahmen bewegt.");
+  }
   if (quelle === "seite") {
     teile.push("Die Aufnahme beginnt oben auf der Übersicht, nicht hier in den Einstellungen. Danach bist du wieder bei deinem Meldungs-Entwurf.");
+    // ⚠️ Der Unterschied, der sonst erst auffällt, wenn die Aufnahme weg ist.
+    teile.push("⚠️ Hier geht der Weg in ein Werkzeug NICHT: ein Klick auf eine Kachel verlässt die Seite und beendet die Aufnahme ersatzlos. Dafür ist die erste Betriebsart da.");
   }
   if (quelle === "frei") {
     teile.push("In dieser Betriebsart gibt es keine Klick-Kreise — eine Seite erfährt nichts von Klicks außerhalb ihres eigenen Tabs. Der Mauszeiger des Rechners wird aber mit aufgezeichnet.");
@@ -4433,6 +4469,7 @@ function aufnahmeAufraeumen() {
     st.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
   });
   if (s.video) { try { s.video.pause(); } catch (_) {} s.video.srcObject = null; }
+  if (s.abfahrtWaechter) window.removeEventListener("beforeunload", s.abfahrtWaechter);
   aufnahmeLauscherLoesen(s);
   if (s.blobUrl) { try { URL.revokeObjectURL(s.blobUrl); } catch (_) {} }
 }
@@ -4671,7 +4708,7 @@ async function aufnahmeStarten() {
     rec: null, chunks: [], bytes: 0, blob: null, blobUrl: null, dateiname: "",
     mimeType: format, startMs: 0, tick: null, maltakt: null, gesamtBits: 0,
     klicks: [], maus: { x: 0, y: 0, da: false }, lauscher: [],
-    bereich: null, ziel: null, rahmenStumm: false, grund: ""
+    bereich: null, ziel: null, rahmenStumm: false, grund: "", abfahrtWaechter: null
   };
   const s = aufnahmeState;
 
@@ -4787,6 +4824,16 @@ async function aufnahmeStarten() {
   // Einstellungs-Dialog im ersten Bild der Vorführung stehen.
   aufnahmeEl("aufnahme-leiste").style.display = "flex";
   if (quelle !== "tool") aufnahmeEl("aufnahme-overlay").style.display = "none";
+  // ⚠️ Bei "seite" läuft die Aufnahme auf der echten Seite. Ein Klick auf eine
+  // Kachel navigiert das Fenster weg -- und nimmt die ganze bis dahin
+  // aufgezeichnete Vorführung ersatzlos mit, ohne Nachfrage und ohne Datei.
+  // Der Browser fragt dank dieses Wächters vorher nach. Bei "tool" bewegt sich
+  // nur der Rahmen, bei "frei" ist die Seite gar nicht im Bild -- dort wäre die
+  // Rückfrage bloß lästig.
+  if (quelle === "seite") {
+    s.abfahrtWaechter = (ev) => { ev.preventDefault(); ev.returnValue = ""; return ""; };
+    window.addEventListener("beforeunload", s.abfahrtWaechter);
+  }
   s.startMs = Date.now();
   // Ein Block je Sekunde: nur so lässt sich die Größe überhaupt laufend messen,
   // wo der Muxer sie herausgibt (bei MP4 tut er das nicht, siehe oben).
@@ -4812,6 +4859,9 @@ function aufnahmeErgebnisZeigen() {
     st.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
   });
   aufnahmeLauscherLoesen(s);
+  // Der Wächter hat seinen Zweck erfüllt -- jetzt ist die Datei da, und eine
+  // Rückfrage beim Verlassen wäre nur noch im Weg.
+  if (s.abfahrtWaechter) { window.removeEventListener("beforeunload", s.abfahrtWaechter); s.abfahrtWaechter = null; }
 
   const ov = aufnahmeEl("aufnahme-overlay");
   ov.classList.remove("laeuft");
