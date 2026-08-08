@@ -441,82 +441,12 @@ const MITTEILUNG_EMOJIS = [
 
 const APP_CHANGELOG = [
   {
-    version: "2.1",
-    groups: [
-      {
-        title: "Gruppen umbenennen",
-        items: [
-          "In der Gruppenverwaltung steht jetzt ein Knopf „Umbenennen“. Bisher war ein Tippfehler im Gruppennamen nur über Löschen und Neuanlegen zu beheben — und das kostet die Gruppe alle Mitglieder und jedes Recht, das an ihr hängt.",
-          "Geändert wird ausschließlich die Beschriftung. Mitglieder, Sichtbarkeiten, Bearbeiten- und Administrieren-Rechte bleiben unangetastet: intern führt die Gruppe weiter denselben unveränderlichen Schlüssel.",
-          "Am Handy brechen die Knöpfe einer Gruppenzeile jetzt um. Vorher zogen sie die Seite seitlich auf, sodass man quer scrollen musste — das war schon vor dem neuen Knopf so."
-        ]
-      }
-    ]
-  },
-  {
-    version: "2.0",
-    groups: [
-      {
-        title: "Nachricht an alle Handys: gezielt an Gruppen oder Einzelne",
-        items: [
-          "Unter dem Empfängerkreis steht jetzt „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt.",
-          "Ohne Haken bleibt alles wie bisher: die Nachricht geht an den ganzen gewählten Kreis.",
-          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
-          "Die Reichweitenzeile rechnet sofort mit: „Erreicht im Moment 4 von 7 Personen auf 6 Geräten. Eingegrenzt.“ Dieselbe Zahl steht in der Sicherheitsabfrage, zusammen mit den Namen der gewählten Gruppen.",
-          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
-          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
-          "Im Verlauf steht bei jeder Nachricht, worauf sie eingegrenzt war."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.9",
-    groups: [
-      {
-        title: "Zuletzt verschickt: nur noch die letzten drei",
-        items: [
-          "Unter „Nachricht an alle Handys“ standen bisher alle 30 protokollierten Nachrichten untereinander. Angezeigt werden jetzt die drei neuesten — mehr braucht man beim Schreiben der nächsten nicht.",
-          "Protokolliert werden weiterhin 30. Eine Push-Nachricht lässt sich nicht zurückholen; wer wann was an alle geschickt hat, ist der Nachweis dahinter und bleibt vollständig gespeichert. Stehen mehr dahinter, sagt die Überschrift das — „Zuletzt verschickt (3 von 12)“."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.8",
-    groups: [
-      {
-        title: "Emojis für die Nachricht an alle Handys",
-        items: [
-          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht.",
-          "Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere. Über jedem Zeichen steht beim Überfahren, wofür es gedacht ist.",
-          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
-          "Die Auswahl bleibt nach dem Einsetzen offen, damit mehrere Zeichen hintereinander gehen. Sie schließt mit Escape, mit einem Klick daneben oder mit einem zweiten Druck auf den Emoji-Knopf."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.7",
-    groups: [
-      {
-        title: "Nachricht an alle Handys: wen sie wirklich erreicht",
-        items: [
-          "Im Panel „Nachricht an alle Handys“ stand bisher nur, wie viele Personen erreicht werden. Jetzt steht die Gesamtzahl daneben — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht.",
-          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet.",
-          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
-          "Beide Listen sieht nur, wer die Nachricht auch verschicken darf."
-        ]
-      }
-    ]
-  },
-  {
-    version: "1.6",
+    version: "1.0",
     groups: [
       {
         title: "Bildschirmvideos für die Neuigkeiten",
         items: [
-          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ jetzt „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
+          "Beim Schreiben einer Meldung gibt es neben „Bild oder Video hinzufügen“ auch „Bildschirmvideo aufnehmen“: eine kurze Vorführung selbst aufzeichnen, statt sie in Worten zu beschreiben.",
           "Unter dem Mauszeiger liegt im Video ein Kreis, und jeder Klick hinterlässt einen kurzen roten Ring — so ist beim Zusehen wirklich zu erkennen, wo gedrückt wurde. Bei einer reinen Bildschirmaufnahme zeichnet der Browser den Mauszeiger nicht mit; ohne diesen Kreis wäre gar nicht zu sehen, wohin die Maus zeigt.",
           "Aufnehmen lässt sich ein einzelnes Vereins-Werkzeug, das Dashboard, die Tools-Übersicht selbst, oder frei ein beliebiges Fenster des Rechners. Die Klick-Kreise gibt es bei den ersten dreien — von Klicks außerhalb des Browsers erfährt eine Internetseite grundsätzlich nichts.",
           "Beginnt die Aufnahme im Rahmen auf dem Dashboard, lässt sich von dort in ein Werkzeug klicken und die Aufnahme läuft mit — so wird ein ganzer Weg am Stück gezeigt, von der Kachel bis in die App. Die Werkzeuge stehen dabei in derselben Reihenfolge zur Wahl, in der sie auch auf der eigenen Übersicht liegen.",
@@ -525,57 +455,43 @@ const APP_CHANGELOG = [
           "Ist die Aufnahme fertig, lässt sie sich ansehen und mit einem Knopf direkt an die Meldung hängen — oder herunterladen, wenn sie woanders gebraucht wird.",
           "Aufgenommen wird als MP4, damit das Video auch auf älteren iPhones abspielt. Auf dem Handy selbst gibt es das Aufnehmen nicht: Bildschirmaufnahme im Browser können nur die Rechner-Browser."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.5",
-    groups: [
+      },
       {
         title: "Kacheln oder Liste — und die eigene Reihenfolge",
         items: [
-          "Über den Werkzeugen steht ein Umschalter: Kacheln wie bisher, oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
+          "Über den Werkzeugen steht ein Umschalter: Kacheln oder eine kompakte Liste, in der mehr auf einen Blick zu sehen ist.",
           "Der Knopf „Anordnen“ schaltet das Verschieben ein. Erst dann erscheinen die Greifpunkte, und erst dann lassen sich die Werkzeuge innerhalb ihrer Kategorie umsortieren — mit Maus wie mit dem Finger. Solange angeordnet wird, führt kein Klick versehentlich in ein Werkzeug.",
-          "Vorher hing der Greifpunkt dauerhaft an jeder Kachel; ein Fehlgriff daneben verschob etwas, ohne dass jemand das vorhatte.",
-          "Ansicht und Reihenfolge hängen jetzt am Konto statt am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich. Bisher merkte sich das jedes Gerät für sich — die Sortierung vom Laptop kannte das Handy nicht.",
-          "Eine schon vorhandene Reihenfolge wird beim ersten Aufruf einmalig ans Konto übernommen und geht damit nicht verloren."
+          "Ansicht und Reihenfolge hängen am Konto, nicht am Browser: am Laptop, am Handy und nach jeder Neuanmeldung steht die Übersicht gleich."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.4",
-    groups: [
+      },
       {
         title: "Nachricht an alle Handys",
         items: [
           "Administratoren können im Einstellungen-Bereich eine eigene Push-Nachricht schreiben und sofort verschicken — für Kurzfristiges, das zu keinem Werkzeug gehört: Training fällt aus, Platz gesperrt, Halle zu.",
-          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
           "Zur Wahl steht, ob nur die Mitarbeiter oder alle Konten einschließlich der Spieler angeschrieben werden.",
-          "Jede verschickte Nachricht bleibt unter „Zuletzt verschickt“ nachlesbar — mit Absender, Zeitpunkt und erreichter Anzahl.",
+          "Unter dem Empfängerkreis steht „Eingrenzen“. Dort lassen sich einzelne Gruppen anhaken (Geschäftsstelle, Trainer, Vorstand …) und zusätzlich einzelne Personen — mit Suchfeld, weil die Liste alle Konten führt. Ohne Haken geht die Nachricht an den ganzen gewählten Kreis.",
+          "Die Haken können den Kreis nur verkleinern, nie erweitern. Wer ein Spielerkonto auswählt, während oben „Mitarbeiter — ohne Spielerkonten“ steht, erreicht es nicht — beim Umschalten des Kreises wird es aus der Auswahl genommen und das steht auch da.",
+          "Eine Auswahl, die niemanden trifft (leere Gruppe), wird abgelehnt statt stillschweigend an alle zu gehen — der häufigste und teuerste Bedienfehler an dieser Stelle.",
+          "Nach dem Absenden fällt die Eingrenzung zurück auf „alle im gewählten Kreis“: sie gilt für die eine Nachricht und soll die nächste nicht heimlich beschneiden.",
+          "Vor dem Absenden steht da, wie viele Personen und Geräte gerade wirklich erreicht werden, und wie viele es insgesamt sind — „erreicht 15 von 87 Personen“. Eine Zahl ohne Vergleich klingt nach einer vollständigen Zustellung, und genau das ist sie meistens nicht. Die Sicherheitsabfrage nennt dieselbe Zahl noch einmal, denn zurückholen lässt sich eine Push-Nachricht nicht.",
+          "Darunter lassen sich zwei Listen aufklappen: wer die Nachricht bekommt und wer nicht. Die zweite ist die wichtigere — an ihr ist zu sehen, wen man ansprechen muss, damit er die Benachrichtigungen einschaltet. Beide Listen sieht nur, wer die Nachricht auch verschicken darf.",
+          "Eine Push-Nachricht erreicht nur, wer die Übersicht als App auf dem Startbildschirm abgelegt und danach in seinem Konto die Benachrichtigungen eingeschaltet hat. Auf dem iPhone gibt es Push ausschließlich für abgelegte Apps, im Safari-Fenster gar nicht.",
+          "Unter der Überschrift und unter dem Text steht je ein Knopf „🙂 Emoji“. Ein Druck darauf klappt eine Auswahl auf; ein Druck auf ein Zeichen setzt es genau dort ein, wo die Schreibmarke gerade steht. Zur Wahl stehen die Zeichen, um die es in einer kurzfristigen Mitteilung tatsächlich geht: Achtung, Fällt aus, Findet statt, Termin, Uhrzeit, Bus, Parken, Regen, Gewitter, Frost, Gesperrt, Feier und weitere.",
+          "Ein Emoji zählt wie zwei Zeichen. Passt es nicht mehr in die 100 bzw. 200 Zeichen, sagt die App das — angehängt und dann vom Server halbiert würde daraus auf dem Sperrbildschirm ein leeres Kästchen.",
+          "Unter „Zuletzt verschickt“ stehen die drei neuesten Nachrichten mit Absender, Zeitpunkt, erreichter Anzahl und der Eingrenzung. Protokolliert werden 30 — eine Push-Nachricht lässt sich nicht zurückholen, wer wann was an alle geschickt hat, ist der Nachweis dahinter.",
           "Empfangen wird sie nur von denen, die im Tab „Mein Konto“ unter „Benachrichtigungen“ den Schalter „Mitteilungen des Vereins“ anhaben. Er ist wie alle anderen von Anfang an eingeschaltet und lässt sich einzeln abstellen."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.3",
-    groups: [
+      },
       {
-        title: "Neue Kachel: Mitgliedsantrag",
+        title: "Kachel Mitgliedsantrag",
         items: [
           "Der Aufnahmeantrag der Vereinsverwaltung hat eine eigene Kachel bekommen — sie führt direkt auf das Formular zum Ausfüllen und Unterschreiben am Handy.",
           "Die Kachel ist bewusst öffentlich: wer Mitglied werden will, hat noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
           "Ausgefüllt und unterschrieben geht der Antrag an die Geschäftsstelle. Über die Aufnahme entscheidet nach § 4 der Satzung der Gesamtvorstand — der Antrag allein ist noch keine Mitgliedschaft."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.2",
-    groups: [
+      },
       {
-        title: "Neue Kachel: Anmeldung Nachwuchs",
+        title: "Kachel Anmeldung Nachwuchs",
         items: [
           "Neue Jugendspieler werden über einen Link angemeldet — Aufnahmeantrag und Antrag auf Spielerlaubnis beim Thüringer Fußball-Verband entstehen daraus zusammen. Zweimal dieselben Angaben einzutragen entfällt.",
           "Die Kachel ist wie der Mitgliedsantrag öffentlich: Eltern eines Neuzugangs haben noch kein Vereinskonto. Der Link lässt sich weitergeben und auf der Vereinsseite verlinken.",
@@ -583,28 +499,18 @@ const APP_CHANGELOG = [
           "Die Nachweise, die der Verband als Anlage verlangt, lassen sich als Foto mit dem Handy mitschicken. Sie liegen getrennt von den übrigen Daten und sind nur für die Geschäftsstelle einsehbar.",
           "Aus der eingegangenen Anmeldung erzeugt die Geschäftsstelle das ausgefüllte Verbandsformular auf Knopfdruck — mit den Unterschriften darauf. Zu tun bleibt der Vereinsstempel."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.1",
-    groups: [
+      },
       {
         title: "Antworten auf Feedback und Wünsche",
         items: [
           "Auf jede Einreichung aus dem Tab „Feedback & Hilfe“ kann jetzt geantwortet werden — direkt beim Eintrag im Einstellungen-Bereich.",
-          "Wer etwas eingereicht hat, findet die Antwort im Tab „Feedback & Hilfe“ unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt). Vorher war eine abgeschickte Rückmeldung für den Absender nirgends mehr zu sehen.",
+          "Wer etwas eingereicht hat, findet die Antwort im Tab „Feedback & Hilfe“ unter „Meine Einreichungen“, zusammen mit dem eigenen Text und dem Stand (offen oder erledigt).",
           "Zur Antwort kommt eine Push-Nachricht aufs Handy. Sie lässt sich im Tab „Mein Konto“ unter „Benachrichtigungen“ einzeln abschalten wie jeder andere Anlass auch.",
           "Eine Antwort lässt sich nachträglich ändern; das Leeren des Feldes nimmt sie wieder zurück. Eine erneute Push-Nachricht geht nur raus, wenn wirklich neu geantwortet wurde."
         ]
-      }
-    ]
-  },
-  {
-    version: "1.0",
-    groups: [
+      },
       {
-        title: "Neues Werkzeug: Schulsport",
+        title: "Werkzeug Schulsport",
         items: [
           "Die Sport- und Fußball-AGs, die der Verein an Schulen und im Hort anbietet, haben ein eigenes Werkzeug — zusammen mit den Fußballcamps in den Ferien.",
           "Eine AG wird einmal als Serie angelegt: Schule, Ort, Wochentag, Uhrzeit und Zeitraum. Alle Termine des Schuljahres entstehen daraus von selbst und lassen Ferien und Feiertage automatisch aus. Camps liegen umgekehrt genau in den Ferien.",
@@ -748,6 +654,7 @@ const APP_CHANGELOG = [
           "Text-Massenimport für größere Listen: ein Name je Zeile. Alle durchlaufen danach den normalen Erstanmelde-Weg.",
           "Die Nutzerliste hat genau zwei Abschnitte, Personal und Spieler, damit jedes Konto an genau einer Stelle steht. Darüber filtern eine Namenssuche und eine Gruppenauswahl.",
           "Gruppen anlegen und Mitglieder zuordnen, direkt in der Nutzerliste oder in der Gruppenverwaltung.",
+          "Ein Knopf „Umbenennen“ korrigiert einen Tippfehler im Gruppennamen. Geändert wird ausschließlich die Beschriftung — Mitglieder, Sichtbarkeiten, Bearbeiten- und Administrieren-Rechte bleiben unangetastet, intern führt die Gruppe weiter denselben unveränderlichen Schlüssel.",
           "Beim allerersten Besuch, wenn es noch kein Konto gibt, öffnet sich das Formular zum Anlegen des ersten Administrators. Danach ist dieser Weg dauerhaft zu."
         ]
       },
