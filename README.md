@@ -54,9 +54,21 @@ Erreichbar, aber bewusst nicht als Kachel gelistet:
 | **[Kassenbuch](https://sc1911heiligenstadt.github.io/kassenbuch/)** | Einnahmen und Ausgaben erfassen und gegenrechnen. | [`kassenbuch`](https://github.com/sc1911heiligenstadt/kassenbuch) |
 | **[Toolbox Wiki](https://sc1911heiligenstadt.github.io/Vereinswiki/)** | Nachschlagewerk zu allen Vereins-Werkzeugen: welches Tool wofür da ist, wie es bedient wird, und ein Assistent, der Fragen dazu … | [`Vereinswiki`](https://github.com/sc1911heiligenstadt/Vereinswiki) |
 
+## Was die Startseite selbst kann
+
+- **Kacheln oder Liste**, und die eigene Reihenfolge über den Knopf „Anordnen“. Beides hängt am Konto, nicht am Browser — am Laptop und am Handy steht die Übersicht gleich.
+- **Als App ablegen**: die Flotte lässt sich auf dem Startbildschirm ablegen und läuft dann wie eine eigene App.
+- **Benachrichtigungen aufs Handy** für geteilte Termine, neue Aufgaben, Dokumente zum Unterschreiben und weitere Anlässe — je Anlass einzeln abschaltbar unter „Mein Konto“.
+- **Nachricht an alle Handys** (Administratoren): eine eigene Mitteilung schreiben und sofort verschicken, wahlweise eingegrenzt auf Gruppen oder einzelne Personen. Vor dem Absenden steht da, wie viele Geräte wirklich erreicht werden.
+- **Neuigkeiten** mit Bildern, Videos und Reaktionen — auf Wunsch mit einem selbst aufgezeichneten Bildschirmvideo.
+- **Meine ToDos** und **Unterschriften anfordern** als eigene Fenster in der Kopfzeile.
+- **Eigenes Foto im Konto**, das im Kadermanager und in der Besprechung erscheint.
+- **Aktivitätspunkte** für die Arbeit mit den Werkzeugen, mit Widerspruchsmöglichkeit im eigenen Konto.
+- **Materialcontainer-Code** und **Feedback & Hilfe** samt Antwort auf die eigene Einreichung.
+
 ## Zugang
 
-Hier meldet man sich an. Sichtbar ist nur, wofür das eigene Konto freigeschaltet ist. Die Rechte gelten je Werkzeug in drei Stufen: **Sehen**, **Bearbeiten** und **Administrieren**.
+Hier meldet man sich an. Sichtbar ist nur, wofür das eigene Konto freigeschaltet ist. Die Rechte gelten je Werkzeug in drei Stufen: **Sehen**, **Bearbeiten** und **Administrieren**. Gruppen lassen sich anlegen, mit Mitgliedern füllen und umbenennen, ohne dass dabei Rechte verloren gehen.
 
 ## Lokal starten
 
